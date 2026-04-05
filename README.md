@@ -14,7 +14,7 @@ Remplacer les outils fragmentés de gestion des incidents réseau par une soluti
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ Architecture   
 ```
 React (Frontend) ←→ Django REST API (Backend) ←→ PostgreSQL
 ```
