@@ -8,14 +8,14 @@ class SiteReseauSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'code_site',
-            'nom_site',
-            'technologie',
-            'wilaya',
-            'adresse',
-            'latitude',
-            'longitude',
-            'statut',
-            'derniere_maj',
-            'created_at',
+            'name', 
+            'wilaya', 
+            'commune', 
+            'longitude', 
+            'latitude', 
+            'adresse', 
+            'statut', 
+            'derniere_maj', 
+            'created_at'
         ]
         read_only_fields = ['derniere_maj', 'created_at']
