@@ -1,20 +1,15 @@
-# Environnement virtuel
-venv/
+# Backend
+backend/venv/
+backend/.env
+backend/__pycache__/
+backend/*.pyc
+backend/staticfiles/
+backend/media/
 
-# Fichiers secrets
-.env
+# Frontend
+frontend/node_modules/
+frontend/build/
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-
-# Django
-staticfiles/
-media/
-
-# VS Code
+# Général
+.DS_Store
 .vscode/
-
-# Base de données locale
-db.sqlite3
