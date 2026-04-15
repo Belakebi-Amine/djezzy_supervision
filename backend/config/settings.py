@@ -4,9 +4,11 @@ Django Settings - Djezzy Supervision Réseau
 
 from pathlib import Path
 from decouple import config
+import os
 
 # ─── Chemins ────────────────────────────────────────────────
-BASE_DIR = Path(__file__).resolve().parent.parent
+# Comme settings.py est dans backend/config/, on remonte 3 fois pour la racine
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # ─── Sécurité ────────────────────────────────────────────────
 SECRET_KEY = config('SECRET_KEY', default='change-me-in-production')
@@ -28,12 +30,12 @@ INSTALLED_APPS = [
     'crispy_forms',
     'crispy_bootstrap5',
     
-    # Applications du projet
-    'accounts',
-    'reclamations',
-    'sites_reseau',
-    'cartographie',
-    'dashboard',
+    # Applications du projet (Chemin vers les Configs)
+    'backend.accounts.apps.AccountsConfig',
+    'backend.reclamations.apps.ReclamationsConfig',
+    'backend.sites_reseau.apps.SitesReseauConfig',
+    'backend.cartographie.apps.CartographieConfig',
+    'backend.dashboard.apps.DashboardConfig',
 ]
 
 # ─── Middleware ───────────────────────────────────────────────
@@ -48,9 +50,38 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'config.urls'
+ROOT_URLCONF = 'backend.config.urls'
 
-WSGI_APPLICATION = 'config.wsgi.application'
+# ─── Configuration Templates (Requis pour l'Admin) ───────────
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [], # Vide car tu utilises React
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'context_processors': [
+                'django.template.context_processors.debug',
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+            ],
+        },
+    },
+]
+
+# ─── Fichiers Statiques ──────────────────────────────────────
+# URL pour accéder aux fichiers statiques (ex: http://127.0.0.1:8000/static/)
+STATIC_URL = '/static/'
+
+# Dossier où Django va collecter tous les fichiers statiques du projet
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# Dossiers additionnels où chercher des fichiers statiques
+STATICFILES_DIRS = [
+    # BASE_DIR / "static", # Décommente si tu as un dossier 'static' à la racine
+]
+
+WSGI_APPLICATION = 'backend.config.wsgi.application'
 
 # ─── Base de données PostgreSQL ──────────────────────────────
 DATABASES = {
@@ -81,10 +112,9 @@ TIME_ZONE = 'Africa/Algiers'
 USE_I18N = True
 USE_TZ = True
 
-# ─── Fichier médias ────────────────────────────
-
+# ─── Fichiers médias ────────────────────────────
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # ─── Clé primaire par défaut ─────────────────────────────────
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
@@ -117,4 +147,3 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
-
