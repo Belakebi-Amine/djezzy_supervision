@@ -4,7 +4,7 @@ from .models import CustomUser
 
 @admin.register(CustomUser)
 class CustomUserAdmin(UserAdmin):
-    # Ce que tu vois dans la liste
+    # Ce que je vois dans la liste
     list_display = ['username', 'email', 'role', 'is_active']
     list_filter = ['role', 'is_active']
 

@@ -73,10 +73,10 @@ TEMPLATES = [
 # URL pour accéder aux fichiers statiques (ex: http://127.0.0.1:8000/static/)
 STATIC_URL = '/static/'
 
-# Dossier où Django va collecter tous les fichiers statiques du projet
+# Dossier ou Django va collecter tous les fichiers statiques du projet
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-# Dossiers additionnels où chercher des fichiers statiques
+# Dossiers additionnels ou chercher des fichiers statiques
 STATICFILES_DIRS = [
     # BASE_DIR / "static", # Décommente si tu as un dossier 'static' à la racine
 ]
@@ -95,7 +95,7 @@ DATABASES = {
     }
 }
 
-# ─── Modèle utilisateur personnalisé ────────────────────────
+# ─── Modèle utilisateur personnalise ────────────────────────
 AUTH_USER_MODEL = 'accounts.CustomUser'
 
 # ─── Validation des mots de passe ────────────────────────────

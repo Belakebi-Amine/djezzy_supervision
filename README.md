@@ -1,38 +1,44 @@
 # 🛰️ Djezzy Supervision Réseau
 
-Plateforme web centralisée de supervision opérationnelle développée dans le cadre d'un projet de fin d'études (PFE), inspirée des besoins réels d'un opérateur télécom algérien.
+Plateforme web de supervision réseau développée dans le cadre de notre PFE. L'idée de base : Djezzy gère des centaines de sites BTS à travers l'Algérie, et les outils actuels sont soit trop fragmentés, soit pas adaptés aux besoins terrain. On a voulu construire quelque chose de plus cohérent.
 
 ---
 
-## 🎯 Objectif
+## 🎯 Ce qu'on essaie de résoudre
 
-Remplacer les outils fragmentés de gestion des incidents réseau par une solution unifiée permettant :
-- La gestion des réclamations clients sous forme de tickets
-- La supervision en temps réel des sites réseau (BTS)
-- La visualisation cartographique des sites
-- L'analyse des performances via des tableaux de bord KPI
+En gros, quand un client appelle pour signaler un problème réseau, l'agent du call center crée un ticket. Ce ticket doit ensuite atterrir chez le bon ingénieur, qui lui doit pouvoir voir l'état du site concerné sur une carte, suivre les KPIs, etc. Aujourd'hui tout ça se fait sur des outils séparés. Notre plateforme centralise tout ça en un seul endroit :
+
+- Gestion des réclamations clients (tickets)
+- Supervision en temps réel des sites BTS
+- Carte interactive des sites réseau
+- Tableaux de bord KPI pour le reporting
 
 ---
 
-## 🏗️ Architecture   
+## 🏗️ Architecture
+
+Simple et classique — React côté front, Django pour l'API, PostgreSQL pour la base :
+
 ```
 React (Frontend) ←→ Django REST API (Backend) ←→ PostgreSQL
 ```
 
 ---
 
-## 👥 Rôles utilisateurs
+## 👥 Qui peut faire quoi
+
+On a 4 profils utilisateurs, chacun voit uniquement ce dont il a besoin :
 
 | Rôle | Accès |
 |---|---|
-| 🔴 Administrateur | Accès total |
-| 🔵 Ingénieur Réseau | Gestion des sites + traitement des tickets |
-| 🟡 Agent Call Center | Création et suivi des tickets |
-| 🟢 Reporting | Consultation KPI et cartographie |
+| 🔴 Administrateur | Accès total — gestion des comptes, config globale |
+| 🔵 Ingénieur Réseau | Gère les sites BTS + traite les tickets techniques |
+| 🟡 Agent Call Center | Crée et suit les réclamations clients |
+| 🟢 Reporting | Lecture seule — KPIs et cartographie |
 
 ---
 
-## 📡 APIs disponibles
+## 📡 Endpoints principaux
 
 | Module | Endpoint |
 |---|---|
@@ -44,47 +50,47 @@ React (Frontend) ←→ Django REST API (Backend) ←→ PostgreSQL
 
 ---
 
-## 🛠️ Technologies utilisées
+## 🛠️ Stack technique
 
 **Backend**
 - Python / Django 4.2
 - Django REST Framework
 - PostgreSQL
-- django-cors-headers
+- django-cors-headers (pour autoriser les requêtes depuis React)
 
 **Frontend**
 - React.js
 
 ---
 
-## 🚀 Installation
+## 🚀 Lancer le projet en local
 
-### Prérequis
+### Ce qu'il faut avoir installé
 - Python 3.10+
-- PostgreSQL
-- Node.js (pour React)
+- PostgreSQL (et avoir créé une base vide avant de lancer les migrations)
+- Node.js (pour le front React)
 
 ### Backend
 ```bash
-# Cloner le projet
+# Cloner le repo
 git clone https://github.com/Belakebi-Amine/djezzy_supervision.git
 cd djezzy_supervision
 
-# Créer et activer l'environnement virtuel
+# Créer l'environnement virtuel (on travaille sous Windows)
 python -m venv venv
 venv\Scripts\activate
 
-# Installer les dépendances
+# Installer les dépendances Python
 pip install -r requirements.txt
 
-# Configurer les variables d'environnement
+# Copier le fichier d'env et le remplir avec tes infos locales
+# (DB name, user, password, secret key Django, etc.)
 cp .env.example .env
-# Remplir le fichier .env avec tes infos
 
-# Appliquer les migrations
+# Appliquer les migrations — s'assurer que PostgreSQL tourne avant ça
 python manage.py migrate
 
-# Lancer le serveur
+# C'est parti
 python manage.py runserver
 ```
 
