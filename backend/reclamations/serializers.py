@@ -3,7 +3,6 @@ from .models import Reclamation, CommentaireTicket
 from accounts.serializers import UserSerializer
 from sites_reseau.serializers import SiteReseauSerializer
 
-
 class CommentaireSerializer(serializers.ModelSerializer):
     auteur = UserSerializer(read_only=True)
 

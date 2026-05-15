@@ -1,19 +1,52 @@
+# accounts/admin.py
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import CustomUser
 
 @admin.register(CustomUser)
 class CustomUserAdmin(UserAdmin):
-    # Ce que je vois dans la liste
-    list_display = ['username', 'email', 'role', 'is_active']
-    list_filter = ['role', 'is_active']
+    """
+    Ici, je configure l'interface d'administration pour qu'elle respecte 
+    mon Use Case 'Gérer les Utilisateurs'.
+    """
 
-    # 🟢 AJOUTE CECI : Pour voir et modifier le rôle dans la fiche
-    fieldsets = UserAdmin.fieldsets + (
-        ('Informations Djezzy', {'fields': ('role',)}),
-    )
+    # Je définis les colonnes visibles dans ma liste d'utilisateurs.
+    # 'nom_user' et 'role' sont les noms exacts de mon diagramme de classes.
+    list_display = ['id', 'username', 'nom_user', 'email', 'role', 'is_active']
     
-    # Pour le formulaire de création d'un nouvel utilisateur
-    add_fieldsets = UserAdmin.add_fieldsets + (
-        ('Informations Djezzy', {'fields': ('role',)}),
+    # Je rajoute des filtres pour que l'Admin puisse trier par rôle 
+    # (ex: voir uniquement les Agents Call Center).
+    list_filter = ['role', 'is_active']
+    
+    # Je définis les champs sur lesquels l'Admin peut faire une recherche.
+    search_fields = ['username', 'email', 'first_name', 'last_name']
+    
+    # L'ID (id_user) ne doit jamais être modifié manuellement, donc je le mets en lecture seule.
+    readonly_fields = ['id']
+
+    # --- CONFIGURATION DES FORMULAIRES ---
+
+    # Ici, je modifie le formulaire d'édition (quand je clique sur un utilisateur).
+    # Je retire tout ce qui n'est pas dans mon diagramme (comme le téléphone) 
+    # et j'ajoute mon champ 'role'.
+    fieldsets = UserAdmin.fieldsets + (
+        ('Informations du Diagramme', {
+            'fields': ('role',),
+        }),
     )
+
+    # Ici, je configure le formulaire de création (Ajouter un utilisateur).
+    # Cela correspond à l'action 'créerUtilisateur(data)' de mon diagramme.
+    add_fieldsets = UserAdmin.add_fieldsets + (
+        ('Informations du Diagramme', {
+            'fields': ('role', 'first_name', 'last_name', 'email'),
+        }),
+    )
+
+    @admin.display(description='nom_user')
+    def nom_user(self, obj):
+        """
+        Je crée cette méthode pour afficher le 'nom_user' (prénom + nom) 
+        dans mon tableau de bord Admin, comme prévu dans mon schéma.
+        """
+        return obj.nom_user

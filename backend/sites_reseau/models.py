@@ -1,30 +1,72 @@
+# sites_reseau/models.py
 from django.db import models
 
-
 class SiteReseau(models.Model):
+    """
+    Entité Site5G de mon diagramme de classes.
+    J'ai adapté les noms pour qu'ils correspondent exactement à ma conception.
+    """
 
     STATUT_CHOICES = [
-        ('UP',       'UP — Opérationnel'),
-        ('DOWN',     'DOWN — Hors service'),
+        ('UP',       'Opérationnel'),
+        ('DOWN',     'Hors service'),
         ('DEGRADE',  'Dégradé'),
         ('PERTURBE', 'Perturbé'),
     ]
 
-    code_site    = models.CharField(max_length=50, unique=True)
-    name         = models.CharField(max_length=200)
-    wilaya       = models.CharField(max_length=100)
-    commune      = models.CharField(max_length=100)
-    longitude    = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
-    latitude     = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
-    adresse      = models.TextField(blank=True)
-    statut       = models.CharField(max_length=10, choices=STATUT_CHOICES, default='UP')
+    # --- ATTRIBUTS DU DIAGRAMME ---
+    # codeSite dans mon diagramme
+    codeSite = models.CharField(max_length=50, verbose_name="Code du Site")
+    
+    # nom dans mon diagramme
+    nom = models.CharField(max_length=200)
+    
+    # wilaya et commune
+    wilaya = models.CharField(max_length=100)
+    commune = models.CharField(max_length=100)
+    
+    # coordX et coordY (longitude et latitude dans mon diagramme)
+    coordX = models.DecimalField(max_digits=12, decimal_places=9, null=True, blank=True, verbose_name="Longitude (X)")
+    coordY = models.DecimalField(max_digits=12, decimal_places=9, null=True, blank=True, verbose_name="Latitude (Y)")
+    
+    # adresse
+    adresse = models.TextField(blank=True)
+    
+    # statut : j'ajoute ce champ pour la gestion opérationnelle
+    statut = models.CharField(max_length=10, choices=STATUT_CHOICES, default='UP')
+
+    # Dates de suivi technique
     derniere_maj = models.DateTimeField(auto_now=True)
-    created_at   = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = 'Site Réseau'
         verbose_name_plural = 'Sites Réseau'
-        ordering = ['wilaya', 'name']
+        ordering = ['wilaya', 'nom']
 
     def __str__(self):
-        return f"[{self.code_site}] {self.name} — {self.statut}"
+        return f"{self.codeSite} - {self.nom} ({self.wilaya})"
+
+    # --- MÉTHODES DU DIAGRAMME ---
+
+    def ajouterSite(self):
+        """
+        Je sauvegarde mon nouveau site dans la base.
+        """
+        self.save()
+
+    def modifierSite(self, data):
+        """
+        Je mets à jour les informations de mon site avec les données reçues.
+        """
+        for key, value in data.items():
+            setattr(self, key, value)
+        self.save()
+
+    def archiverSite(self):
+        """
+        Au lieu de supprimer, je peux changer un statut ou marquer le site
+        comme 'Hors service' de façon permanente.
+        """
+        self.statut = 'DOWN'
+        self.save()
