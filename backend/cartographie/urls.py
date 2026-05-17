@@ -1,6 +1,7 @@
 from django.urls import path
-from . import views
+from .views import carte_sites # J'importe la fonction qu'on a optimisée ensemble
 
 urlpatterns = [
-    path('', views.carte_sites, name='carte-sites'),
+    # Cette route combinée avec ton config donne : /api/carte/sites/
+    path('sites/', carte_sites, name='api-carte-sites'),
 ]
