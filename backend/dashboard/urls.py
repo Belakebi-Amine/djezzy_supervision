@@ -1,7 +1,14 @@
 from django.urls import path
-from .views import statistiques # J'importe ta fonction enrichie avec les graphiques
+# J'importe mes trois vues du module dashboard
+from .views import statistiques, stats_reporting, liste_sites_carto
 
 urlpatterns = [
-    # Cette route combinée avec ton config donne : /api/dashboard/stats/
-    path('stats/', statistiques, name='api-dashboard-stats'),
+    # Route 1 : Dashboard Général (Admin / Call Center)
+    path('stats/', statistiques, name='stats_dashboard'),
+    
+    # Route 2 : Vue Reporting Analytique (Responsable Reporting / Wilayas)
+    path('reporting/', stats_reporting, name='stats_reporting'),
+    
+    # Route 3 : Données Cartographiques (Mini-map et Page Dédiée)
+    path('carte-sites/', liste_sites_carto, name='liste_sites_carto'),
 ]

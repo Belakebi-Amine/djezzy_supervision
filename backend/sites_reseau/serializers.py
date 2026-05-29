@@ -11,12 +11,12 @@ class SiteReseauSerializer(serializers.ModelSerializer):
         model = SiteReseau
         fields = [
             'id',
-            'codeSite',   # Nouveau nom
-            'nom',        # Nouveau nom
+            'codeSite',   # Mon nom exact
+            'nom',        # Mon nom exact
             'wilaya', 
             'commune', 
-            'coordX',     # Nouveau nom (Longitude)
-            'coordY',     # Nouveau nom (Latitude)
+            'coordX',     # Mon nom exact (Longitude)
+            'coordY',     # Mon nom exact (Latitude)
             'adresse', 
             'statut', 
             'derniere_maj', 

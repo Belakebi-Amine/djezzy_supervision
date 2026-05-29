@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram id="diagram1" name="Diagramme de Classes">
-        <mxGraphModel dx="4910" dy="1298" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+        <mxGraphModel dx="3645" dy="422" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -22,7 +22,7 @@
                 <mxCell id="ir_h" value="IngenieurReseaux" style="text;html=1;strokeColor=#1A252F;fillColor=#2C3E50;align=center;verticalAlign=middle;fontStyle=1;fontSize=13;fontColor=#FFFFFF;" parent="1" vertex="1">
                     <mxGeometry x="-80" y="360" width="250" height="40" as="geometry"/>
                 </mxCell>
-                <mxCell id="ir_m" value="+ consulterTickets() : void&#xa;+ modifierStatutTicket(id) : void&#xa;+ ajouterSite() : void&#xa;+ modifierSite(id) : void&#xa;+ archiverSite(id) : void&#xa;+ rechercherSite(critere) : List&lt;Site5G&gt;&#xa;+ consulterSite(id) : Site5G&#xa;+ filtrerTickets(statut, idSite) : List&#xa;+ exporterRapport() : File&#xa;+ superviserAlarmes() : List&lt;Alerte&gt;" style="text;html=1;strokeColor=#2C3E50;fillColor=#FFFFFF;align=left;verticalAlign=top;spacingLeft=8;fontSize=12;fontColor=#000000;" parent="1" vertex="1">
+                <mxCell id="ir_m" value="+ consulterTickets() : void&lt;br&gt;+ modifierStatutTicket(id) : void&lt;br&gt;+ ajouterSite() : void&lt;br&gt;+ modifierSite(id) : void&lt;br&gt;+ archiverSite(id) : void&lt;br&gt;+ rechercherSite(critere) : List&lt;br&gt;+ consulterSite(id) : Site5G&lt;br&gt;+ filtrerTickets(statut, idSite) : List&lt;br&gt;+ exporterRapport() : File&lt;br&gt;+ superviserAlerts() : List" style="text;html=1;strokeColor=#2C3E50;fillColor=#FFFFFF;align=left;verticalAlign=top;spacingLeft=8;fontSize=12;fontColor=#000000;" parent="1" vertex="1">
                     <mxGeometry x="-80" y="400" width="250" height="160" as="geometry"/>
                 </mxCell>
                 <mxCell id="ac_h" value="AgentCallCenter" style="text;html=1;strokeColor=#1A252F;fillColor=#2C3E50;align=center;verticalAlign=middle;fontStyle=1;fontSize=13;fontColor=#FFFFFF;" parent="1" vertex="1">
@@ -136,7 +136,7 @@
                 <mxCell id="10" value="0..*" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" parent="1" vertex="1">
                     <mxGeometry x="1020" y="722.5" width="60" height="30" as="geometry"/>
                 </mxCell>
-                <mxCell id="47" value="" style="edgeStyle=none;html=1;" edge="1" parent="1" source="11" target="ac_m">
+                <mxCell id="47" value="" style="edgeStyle=none;html=1;" parent="1" source="11" target="ac_m" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="11" value="1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" parent="1" vertex="1">
@@ -244,7 +244,7 @@
                 <mxCell id="45" value="0.1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" parent="1" vertex="1">
                     <mxGeometry x="710" y="1051.3600000000001" width="60" height="30" as="geometry"/>
                 </mxCell>
-                <mxCell id="54" value="" style="endArrow=none;html=1;exitX=0.25;exitY=0;exitDx=0;exitDy=0;entryX=0.674;entryY=0.99;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="cl_h" target="ac_m">
+                <mxCell id="54" value="" style="endArrow=none;html=1;exitX=0.25;exitY=0;exitDx=0;exitDy=0;entryX=0.674;entryY=0.99;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="cl_h" target="ac_m" edge="1">
                     <mxGeometry width="50" height="50" relative="1" as="geometry">
                         <mxPoint x="850" y="1060" as="sourcePoint"/>
                         <mxPoint x="900" y="1010" as="targetPoint"/>
