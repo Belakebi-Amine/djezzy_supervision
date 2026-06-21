@@ -64,7 +64,9 @@ class Reclamation(models.Model):
     # automatiquement le rapport détaillé et structuré à l'intérieur.
     description = models.TextField(verbose_name='Description de l\'incident', blank=True)
     priorite = models.CharField(max_length=10, choices=PRIORITE_CHOICES, default='normale')
-    statut = models.CharField(max_length=10, choices=STATUT_CHOICES, default='ouvert')
+    
+    # MODIFICATION : Statut mis à 'ferme' par défaut selon tes exigences
+    statut = models.CharField(max_length=10, choices=STATUT_CHOICES, default='ferme')
 
     # --- ACTEURS (Utilisateurs du système) ---
     # Je relie le ticket à l'agent qui l'a créé et à l'ingénieur réseau qui va le traiter.
@@ -115,7 +117,7 @@ class Reclamation(models.Model):
                 mots_cles=self.mots_cles_ia
             )
 
-        # 2. GÉNÉRATION DU NUMÉRO DE TICKET (Ex: TK202605250001)
+        # 2. GÉNÉRATION DU NUMÉRO DE TICKET (Ex: TK202606130001)
         # Si c'est un nouveau ticket, je construis un identifiant unique basé sur la date 
         # du jour et un compteur pour que l'indexation soit propre.
         if not self.numero_ticket:

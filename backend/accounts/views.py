@@ -2,7 +2,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import logout
+from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import CustomUser, Role
 from .serializers import (
@@ -10,32 +11,19 @@ from .serializers import (
     RegisterSerializer,
     ChangePasswordSerializer,
     UpdateProfileSerializer,
+    CustomTokenObtainPairSerializer,
 )
 
-# ── sAuthentifier() ───────────────────────────────────────────
+# ── sAuthentifier() (JWT) ───────────────────────────────────
 
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def login_view(request):
+class CustomTokenObtainPairView(TokenObtainPairView):
     """
-    Ici, j'implémente ma méthode sAuthentifier(). 
-    Je vérifie les accès et je connecte l'utilisateur à la session.
+    Ici, j'implémente ma méthode sAuthentifier().
+    Elle remplace l'authentification par session classique par une génération de jetons JWT,
+    incluant le rôle de l'utilisateur pour l'aiguillage automatique sur le Front-end.
     """
-    username = request.data.get('username')
-    password = request.data.get('password')
+    serializer_class = CustomTokenObtainPairSerializer
 
-    user = authenticate(request, username=username, password=password)
-
-    if user is not None:
-        login(request, user)
-        return Response({
-            'message': 'Connexion réussie',
-            'user': UserSerializer(user).data
-        })
-    return Response(
-        {'error': "Nom d'utilisateur ou mot de passe incorrect"},
-        status=status.HTTP_400_BAD_REQUEST
-    )
 
 # ── deconnecter() ─────────────────────────────────────────────
 
@@ -45,6 +33,7 @@ def logout_view(request):
     """Correspond à : deconnecter() dans mon diagramme de classes."""
     logout(request)
     return Response({'message': 'Déconnexion réussie'})
+
 
 # ── Profil courant (me_view) ──────────────────────────────────
 
@@ -56,6 +45,7 @@ def me_view(request):
     C'est essentiel pour mon Front-end pour savoir qui est logué.
     """
     return Response(UserSerializer(request.user).data)
+
 
 # ── modifierMotDePasse(ancien, nouveau) ───────────────────────
 
@@ -76,6 +66,7 @@ def change_password_view(request):
             return Response({'message': 'Mot de passe modifié avec succès'})
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 # ── mettreAJourProfil(data) ───────────────────────────────────
 
 @api_view(['PUT', 'PATCH'])
@@ -94,6 +85,7 @@ def update_profile_view(request):
         })
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 # ── Admin : gestion des utilisateurs ─────────────────────────
 
 @api_view(['GET'])
@@ -103,10 +95,11 @@ def list_users_view(request):
     Ici, j'implémente la liste des utilisateurs pour mon Admin.
     """
     if request.user.role != Role.ADMIN:
-        return Response({'error': 'Accès réservé à l\'administrateur'}, status=status.HTTP_403_FORBIDDEN)
+        return Response({'error': "Accès réservé à l'administrateur"}, status=status.HTTP_403_FORBIDDEN)
     
     users = CustomUser.objects.all().order_by('id')
     return Response(UserSerializer(users, many=True).data)
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -115,7 +108,7 @@ def register_view(request):
     Ici, j'implémente 'creerUtilisateur(data)' de l'Admin.
     """
     if request.user.role != Role.ADMIN:
-        return Response({'error': 'Accès réservé à l\'administrateur'}, status=status.HTTP_403_FORBIDDEN)
+        return Response({'error': "Accès réservé à l'administrateur"}, status=status.HTTP_403_FORBIDDEN)
 
     serializer = RegisterSerializer(data=request.data)
     if serializer.is_valid():
@@ -126,6 +119,7 @@ def register_view(request):
         )
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def archive_user_view(request, pk):
@@ -133,7 +127,7 @@ def archive_user_view(request, pk):
     Action 'archiverUtilisateur(id)' de mon Use Case Admin.
     """
     if request.user.role != Role.ADMIN:
-        return Response({'error': 'Accès réservé à l\'administrateur'}, status=status.HTTP_403_FORBIDDEN)
+        return Response({'error': "Accès réservé à l'administrateur"}, status=status.HTTP_403_FORBIDDEN)
 
     try:
         user = CustomUser.objects.get(pk=pk)

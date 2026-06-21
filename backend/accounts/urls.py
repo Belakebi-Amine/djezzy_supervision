@@ -1,26 +1,27 @@
-# accounts/urls.py
 from django.urls import path
-from . import views
+from .views import (
+    CustomTokenObtainPairView,
+    logout_view,
+    me_view,
+    change_password_view,
+    update_profile_view,
+    list_users_view,
+    register_view,
+    archive_user_view,
+)
 
 urlpatterns = [
-    # --- MÉTHODES DE L'UTILISATEUR (Diagramme de Classes) ---
+    # On utilise maintenant la nouvelle vue JWT à la place de login_view
+    path('token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     
-    # J'utilise directement le nom de ma fonction définie dans views.py
-    path('login/', views.login_view, name='login'),
+    # Le reste de tes routes reste identique
+    path('logout/', logout_view, name='logout'),
+    path('me/', me_view, name='me'),
+    path('change-password/', change_password_view, name='change_password'),
+    path('update-profile/', update_profile_view, name='update_profile'),
     
-    path('logout/', views.logout_view, name='logout'),
-    
-    path('me/', views.me_view, name='me'),
-    
-    path('change-password/', views.change_password_view, name='change-password'),
-    
-    path('update-profile/', views.update_profile_view, name='update-profile'),
-
-    # --- ACTIONS DE L'ADMIN (Use Case Admin) ---
-    
-    path('users/', views.list_users_view, name='list-users'),
-    
-    path('users/register/', views.register_view, name='register'),
-    
-    path('users/<int:pk>/archive/', views.archive_user_view, name='archive-user'),
+    # Routes Admin
+    path('users/', list_users_view, name='list_users'),
+    path('users/register/', register_view, name='register_user'),
+    path('users/<int:pk>/archive/', archive_user_view, name='archive_user'),
 ]

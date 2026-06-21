@@ -1,7 +1,31 @@
-# accounts/serializers.py
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import CustomUser
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    Personnalisation du token JWT pour y inclure les informations de rôle
+    directement exploitables par le Front-end React.
+    """
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+
+        # On ajoute les attributs nécessaires au payload du token
+        token['username'] = user.username
+        token['role'] = getattr(user, 'role', 'aucun')  # Récupère la valeur du rôle ou 'aucun' par défaut
+        
+        return token
+
+    def validate(self, attrs):
+        # On récupère les tokens standard (access et refresh)
+        data = super().validate(attrs)
+        
+        # On ajoute également l'utilisateur sérialisé dans la réponse HTTP directe
+        data['user'] = UserSerializer(self.user).data
+        return data
+
 
 class UserSerializer(serializers.ModelSerializer):
     """
@@ -24,6 +48,7 @@ class UserSerializer(serializers.ModelSerializer):
             'role_user',
         ]
         read_only_fields = ['id', 'nom_user']
+
 
 class RegisterSerializer(serializers.ModelSerializer):
     """
@@ -57,6 +82,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         user.save()
         return user
 
+
 class ChangePasswordSerializer(serializers.Serializer):
     """
     Je traduis ici la méthode 'modifierMotDePasse(ancien, nouveau)' de mon diagramme.
@@ -74,6 +100,7 @@ class ChangePasswordSerializer(serializers.Serializer):
         if not user.check_password(value):
             raise serializers.ValidationError('Ancien mot de passe incorrect.')
         return value
+
 
 class UpdateProfileSerializer(serializers.ModelSerializer):
     """
