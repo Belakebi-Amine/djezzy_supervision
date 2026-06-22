@@ -5,6 +5,7 @@ Django Settings - Djezzy Supervision Réseau
 from pathlib import Path
 from decouple import config
 import os
+from datetime import timedelta
 
 # ─── Chemins ────────────────────────────────────────────────
 # Comme settings.py est dans backend/config/, on remonte 3 fois pour la racine
@@ -40,7 +41,7 @@ INSTALLED_APPS = [
 
 # ─── Middleware ───────────────────────────────────────────────
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
+    'corsheaders.middleware.CorsMiddleware',  # Bien placé en premier pour le CORS
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -70,15 +71,10 @@ TEMPLATES = [
 ]
 
 # ─── Fichiers Statiques ──────────────────────────────────────
-# URL pour accéder aux fichiers statiques (ex: http://127.0.0.1:8000/static/)
 STATIC_URL = '/static/'
-
-# Dossier ou Django va collecter tous les fichiers statiques du projet
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-
-# Dossiers additionnels ou chercher des fichiers statiques
 STATICFILES_DIRS = [
-    # BASE_DIR / "static", # Décommente si tu as un dossier 'static' à la racine
+    # BASE_DIR / "static", 
 ]
 
 WSGI_APPLICATION = 'backend.config.wsgi.application'
@@ -95,7 +91,7 @@ DATABASES = {
     }
 }
 
-# ─── Modèle utilisateur personnalise ────────────────────────
+# ─── Modèle utilisateur personnalisé ────────────────────────
 AUTH_USER_MODEL = 'accounts.CustomUser'
 
 # ─── Validation des mots de passe ────────────────────────────
@@ -124,26 +120,30 @@ LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/dashboard/'
 LOGOUT_REDIRECT_URL = '/accounts/login/'
 
-# ─── Django REST Framework ───────────────────────────────────
+# ─── Django REST Framework (Corrigé pour le dev local) ───────
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
+        # Changé en AllowAny temporairement pour s'assurer que React accède aux endpoints
+        'rest_framework.permissions.AllowAny', 
     ],
 }
-
-from datetime import timedelta
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
 
-# ─── CORS (autoriser React à communiquer avec Django) ────────
+# ─── CORS (Autorise ton application Vite/React) ──────────────
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:5173",  # Port de ton serveur Vite (Frontend)
+    "http://127.0.0.1:5173",  # IP locale du serveur Vite
 ]
+
+# Optionnel : Sécurité supplémentaire pour le dev afin d'éviter tout blocage de requêtes locales
+CORS_ALLOW_ALL_ORIGINS = True

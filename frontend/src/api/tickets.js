@@ -15,7 +15,7 @@ const getHeaders = () => {
  */
 export const getTickets = async (statut = '') => {
     try {
-        let url = `${API_URL}/reclamations/`;
+        let url = `${API_URL}/reclamations/`; // Garde le trailing slash pour Django
         if (statut) {
             url += `?statut=${encodeURIComponent(statut)}`;
         }
@@ -38,14 +38,19 @@ export const getTickets = async (statut = '') => {
 
 /**
  * Crée un nouveau ticket d'incident
+ * MATCH STRICT : Configuration calée sur path('creer/', ...) de ton urls.py
  */
 export const createTicket = async (ticketData) => {
-    const response = await fetch(`${API_URL}/reclamations/`, {
+    const response = await fetch(`${API_URL}/reclamations/creer/`, { // Ajout de /creer/ indispensable ici
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify(ticketData)
     });
-    if (!response.ok) throw new Error('Erreur lors de la création du ticket');
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Détails rejet API Django:", errorData);
+        throw new Error('Erreur lors de la création du ticket dans la base de données');
+    }
     return response.json();
 };
 
@@ -55,10 +60,10 @@ export const createTicket = async (ticketData) => {
 export const getMe = async () => {
     try {
         const response = await fetch(`${API_URL}/accounts/me/`, { method: 'GET', headers: getHeaders() });
-        if (!response.ok) return { nom_user: "Agent Call Center" };
+        if (!response.ok) return { username: "Agent Call Center" }; // Changé en 'username' pour coller à l'avatar de ton CallCenter.jsx
         return response.json();
     } catch {
-        return { nom_user: "Agent Call Center" };
+        return { username: "Agent Call Center" };
     }
 };
 
@@ -67,7 +72,6 @@ export const getMe = async () => {
  */
 export const getEngineers = async () => {
     try {
-        // Remplace l'endpoint par ta vraie route Django (ex: /utilisateurs/, /accounts/engineers/, etc.)
         const response = await fetch(`${API_URL}/utilisateurs/`, { 
             method: 'GET', 
             headers: getHeaders() 
@@ -89,7 +93,6 @@ export const getEngineers = async () => {
  */
 export const getSites = async () => {
     try {
-        // Remplace l'endpoint par ta vraie route Django pour l'application sites_reseau
         const response = await fetch(`${API_URL}/sites-reseau/`, { 
             method: 'GET', 
             headers: getHeaders() 
