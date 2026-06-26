@@ -1,435 +1,622 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { getTickets, createTicket, getSites } from '../api/tickets';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
-import { getTickets, createTicket, getMe, getSites } from '../api/tickets';
 
-// Palette Djezzy Premium [cite: ]
-const THEME = {
-    primary: '#E8401A', 
-    primaryHover: '#CF3512',
-    navy: '#0A1628', 
-    navyLight: '#112239', // Pour le survol des boutons inactifs
-    bgMain: '#F6F8FA', 
-    border: '#E9EDF0',
-    textMain: '#1E293B',
-    textMuted: '#64748B',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+const COLORS = {
+  sidebarBg: '#0A1628',
+  sidebarActive: '#E8401A',
+  mainBg: '#F4F5F7',
+  cardBg: '#FFFFFF',
+  textDark: '#0A1628',
+  textMuted: '#64748B',
+  border: '#E2E8F0',
+  djezzyRed: '#E8401A',
+  djezzyOrange: '#FF6B3D',
+
+  types: {
+    PARTICULIER: { bg: '#E2E8F0', text: '#475569', border: '#CBD5E1' },
+    ENTREPRISE: { bg: '#475569', text: '#FFFFFF', border: '#334155' },
+  },
+  priorities: {
+    BASSE: { bg: '#E0F2FE', text: '#0284C7', side: '#0284C7' },
+    NORMALE: { bg: '#DCFCE7', text: '#15803D', side: '#15803D' },
+    HAUTE: { bg: '#FEF3C7', text: '#D97706', side: '#D97706' },
+    CRITIQUE: { bg: '#FEE2E2', text: '#DC2626', side: '#DC2626' },
+  },
+  status: {
+    OUVERT: { bg: '#E0F2FE', text: '#0284C7', dot: '#0284C7' },
+    'EN COURS': { bg: '#FEF3C7', text: '#D97706', dot: '#D97706' },
+    RESOLU: { bg: '#DCFCE7', text: '#15803D', dot: '#15803D' },
+    FERME: { bg: '#FEE2E2', text: '#DC2626', dot: '#DC2626' },
+  },
 };
 
-const BADGE_STYLES = {
-    basse: { bg: '#F1F5F9', text: '#475569' }, 
-    normale: { bg: '#E0F2FE', text: '#0369A1' },
-    haute: { bg: '#FEF3C7', text: '#B45309' }, 
-    critique: { bg: '#FEE2E2', text: '#991B1B' },
-    ouvert: { bg: '#ECFDF5', text: '#065F46' }, 
-    en_cours: { bg: '#FFEDD5', text: '#9A3412' },
-    resolu: { bg: '#E0F2FE', text: '#0369A1' }, 
-    ferme: { bg: '#F1F5F9', text: '#475569' }
+const MOIS_FR = ['JAN', 'FEV', 'MAR', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOU', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+const formatDateFr = (isoString) => {
+  if (!isoString) return '-';
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return '-';
+  return `${d.getDate()} ${MOIS_FR[d.getMonth()]}`;
 };
 
-const CallCenter = () => {
-    const [view, setView] = useState('non-traites'); 
-    const [tickets, setTickets] = useState([]);
-    const [sites, setSites] = useState([]);         
-    const [user, setUser] = useState(null);
-    const [loading, setLoading] = useState(true);
-    
-    // Filtres et Sélection
-    const [filterSite, setFilterSite] = useState('');
-    const [filterDate, setFilterDate] = useState('');
-    const [selectedTicket, setSelectedTicket] = useState(null);
-    const [showProfileMenu, setShowProfileMenu] = useState(false);
+const formatDateTimeFr = (isoString) => {
+  if (!isoString) return '-';
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return '-';
+  return `${d.getDate()} ${MOIS_FR[d.getMonth()]} ${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
 
-    const profileMenuRef = useRef(null);
+const iconProps = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' };
 
-    const [formData, setFormData] = useState({
-        nom_client: '', 
-        prenom_client: '', 
-        telephone_client: '', 
-        site: '', 
-        priorite: 'normale',
-        description: ''
-    });
+const IconTicket = (p) => (
+  <svg {...iconProps} {...p}><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 6v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-6V7Z" /><path d="M10 6v2M10 16v2" /></svg>
+);
+const IconArchive = (p) => (
+  <svg {...iconProps} {...p}><rect x="3" y="4" width="18" height="4" rx="1" /><path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8" /><path d="M10 13h4" /></svg>
+);
+const IconUser = (p) => (
+  <svg {...iconProps} {...p}><circle cx="12" cy="8" r="3.2" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /></svg>
+);
+const IconLogout = (p) => (
+  <svg {...iconProps} {...p}><path d="M15 16l4-4-4-4" /><path d="M19 12H8" /><path d="M12 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6" /></svg>
+);
+const IconPin = (p) => (
+  <svg {...iconProps} {...p}><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z" /><circle cx="12" cy="9.5" r="2.3" /></svg>
+);
+const IconChevronLeft = (p) => (
+  <svg {...iconProps} {...p}><path d="M15 6l-6 6 6 6" /></svg>
+);
+const IconSearch = (p) => (
+  <svg {...iconProps} {...p}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
+);
+const IconRefresh = (p) => (
+  <svg {...iconProps} {...p}><path d="M3 12a9 9 0 0 1 15.5-6.3M21 12a9 9 0 0 1-15.5 6.3" /><path d="M3 4v5h5M21 20v-5h-5" /></svg>
+);
+const IconPlus = (p) => (
+  <svg {...iconProps} {...p}><path d="M12 5v14M5 12h14" /></svg>
+);
+const IconCheck = (p) => (
+  <svg {...iconProps} {...p}><path d="M4 12l5 5 11-11" /></svg>
+);
+const IconX = (p) => (
+  <svg {...iconProps} {...p}><path d="M18 6L6 18M6 6l12 12" /></svg>
+);
+const IconEye = (p) => (
+  <svg {...iconProps} {...p}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+);
 
-    useEffect(() => {
-        getMe().then(data => setUser(data)).catch(err => console.error(err));
-        chargerDonnees();
+const INITIAL_FORM = {
+  nom_client: '', telephone_client: '', email_client: '',
+  type_client: 'particulier',
+  site_id: '', priorite: 'normale',
+  mots_cles_ia: '', statut: 'ferme',
+};
 
-        // Fermer le menu profil au clic à l'extérieur
-        const handleClickOutside = (event) => {
-            if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
-                setShowProfileMenu(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
+export default function CallCenter() {
+  const navigate = useNavigate();
+  const [currentView, setCurrentView] = useState('non-traites');
+  const [tickets, setTickets] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [showFilters, setShowFilters] = useState(false);
 
-    const chargerDonnees = () => {
-        setLoading(true);
-        getTickets()
-            .then((ticketsData) => {
-                const listeTickets = Array.isArray(ticketsData) ? ticketsData : (ticketsData?.results || []);
-                setTickets(listeTickets);
-            })
-            .catch(err => console.error(err));
+  const [formData, setFormData] = useState(INITIAL_FORM);
+  const [sites, setSites] = useState([]);
+  const [filterDate, setFilterDate] = useState('');
+  const [filterSiteId, setFilterSiteId] = useState('');
 
-        getSites()
-            .then((sitesData) => {
-                const listeSites = Array.isArray(sitesData) ? sitesData : (sitesData?.results || []);
-                setSites(listeSites);
-            })
-            .catch(() => {
-                setSites([
-                    { id: 1, nom_site: "Site Alger Centre - Grande Poste" },
-                    { id: 2, nom_site: "Site Oran Akid Lotfi" },
-                    { id: 3, nom_site: "Site Constantine Ville" },
-                    { id: 4, nom_site: "Site Annaba Corniche" },
-                    { id: 5, nom_site: "Site Setif Ain El Fouara" }
-                ]);
-            })
-            .finally(() => setLoading(false));
-    };
+  useEffect(() => {
+    getSites().then(setSites).catch(() => setSites([]));
+  }, []);
 
-    const handleLogout = () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('access_token');
-        window.location.href = '/accounts/login/';
-    };
+  const fetchTickets = useCallback(async () => {
+    setLoading(true);
+    try {
+      const statut = currentView === 'non-traites' ? 'ferme,ouvert,en_cours' : 'resolu';
+      const data = await getTickets(statut);
+      setTickets(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Impossible de charger les reclamations', err);
+      setTickets([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentView]);
 
-    const handleCreateTicketSubmit = async (e) => {
-        e.preventDefault();
-        const nomCompletClient = `${formData.nom_client} ${formData.prenom_client}`.trim();
+  useEffect(() => {
+    if (currentView !== 'nouveau-ticket') {
+      fetchTickets();
+    }
+  }, [currentView, fetchTickets]);
 
-        const ticketDataBackend = {
-            nom_client: nomCompletClient,
-            telephone_client: formData.telephone_client,
-            site: formData.site ? parseInt(formData.site) : null, 
-            priorite: formData.priorite,
-            description: formData.description,
-            statut: 'ferme'
-        };
+  const handleCreateTicket = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await createTicket({
+        nom_client: formData.nom_client,
+        telephone_client: formData.telephone_client,
+        email_client: formData.email_client,
+        type_client: formData.type_client,
+        statut: 'ferme',
+        site_id: formData.site_id ? Number(formData.site_id) : null,
+        priorite: formData.priorite,
+        mots_cles_ia: formData.mots_cles_ia,
+      });
+      setFormData(INITIAL_FORM);
+      setCurrentView('non-traites');
+    } catch (err) {
+      console.error(err);
+      alert('Erreur: ' + err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-        try {
-            await createTicket(ticketDataBackend);
-            chargerDonnees();
-            setView('non-traites'); 
-            setFormData({ nom_client: '', prenom_client: '', telephone_client: '', site: '', priorite: 'normale', description: '' });
-        } catch (err) { 
-            alert("Erreur lors de la création."); 
-        }
-    };
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    navigate('/login');
+  };
 
-    const simulerChangementStatutIngenieur = (ticketId, nvStatut) => {
-        setTickets(prevTickets => prevTickets.map(t => {
-            if (t.id === ticketId) {
-                let assigneA = t.assigne_a;
-                if (nvStatut.toLowerCase() === 'ouvert') {
-                    assigneA = { username: user?.username || "belakebi" };
-                }
-                const updated = { ...t, statut: nvStatut, assigne_a: assigneA };
-                if (selectedTicket?.id === ticketId) setSelectedTicket(updated);
-                return updated;
-            }
-            return t;
-        }));
-    };
+  const handleInputChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
 
-    const sitesConcernesParDesTickets = sites.filter(s => 
-        tickets.some(t => {
-            const tSiteId = t.site && typeof t.site === 'object' ? t.site.id : t.site;
-            return tSiteId === s.id;
-        })
-    );
+  const filteredTickets = tickets.filter((t) => {
+    const term = searchTerm.toLowerCase();
+    const matchSearch =
+      t.nom_complet_client?.toLowerCase().includes(term) ||
+      t.numero_ticket?.toLowerCase().includes(term) ||
+      t.site_display?.toLowerCase().includes(term);
+    if (!matchSearch) return false;
+    if (filterDate) {
+      const d = new Date(t.created_at);
+      if (d.toISOString().slice(0, 10) !== filterDate) return false;
+    }
+    if (filterSiteId) {
+      const sid = t.site?.id;
+      if (String(sid) !== String(filterSiteId)) return false;
+    }
+    return true;
+  });
 
-    const ticketsFinaux = tickets.filter(t => {
-        const statutRaw = t.statut ? t.statut.toString().toLowerCase().trim() : 'ferme';
-        const statut = statutRaw === 'résolu' ? 'resolu' : (statutRaw === 'fermé' ? 'ferme' : statutRaw);
+  const getStatutKey = (statut) => statut?.replace('_', ' ').toUpperCase();
 
-        if (view === 'non-traites') {
-            if (statut === 'resolu' || statut === 'ferme') return false;
-        } else if (view === 'traites') {
-            if (statut !== 'resolu' && statut !== 'ferme') return false;
-        }
-
-        const siteId = t.site && typeof t.site === 'object' ? t.site.id : t.site;
-        if (filterSite !== '' && (!siteId || siteId.toString() !== filterSite)) return false;
-        
-        const dateFormatee = t.created_at ? t.created_at.substring(0, 10) : '';
-        if (filterDate !== '' && dateFormatee !== filterDate) return false;
-
-        return true;
-    });
-
-    return (
-        <div style={styles.appContainer}>
-            {/* Sidebar avec boutons fixés */}
-            <aside style={styles.sidebar}>
-                <div style={styles.brandContainer}>
-                    <img src={logoDjezzy} alt="Djezzy Logo" style={styles.sidebarLogo} />
-                    <div>
-                        <div style={styles.brandTitle}>Djezzy</div>
-                        <div style={styles.brandSub}>Supervision Hub</div>
-                    </div>
-                </div>
-                <div style={styles.menuGroup}>
-                    <button style={{ ...styles.menuItem, ...(view === 'non-traites' ? styles.menuItemActive : {}) }} onClick={() => { setView('non-traites'); setSelectedTicket(null); }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '10px', verticalAlign: 'middle' }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                        Tickets Actifs ({tickets.filter(t => t.statut !== 'ferme' && t.statut !== 'resolu').length})
-                    </button>
-                    <button style={{ ...styles.menuItem, ...(view === 'traites' ? styles.menuItemActive : {}) }} onClick={() => { setView('traites'); setSelectedTicket(null); }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '10px', verticalAlign: 'middle' }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                        Historique Archivés
-                    </button>
-                </div>
-            </aside>
-
-            {/* Zone Principale avec Header réparé */}
-            <main style={styles.mainContent}>
-                <header style={styles.mainHeader}>
-                    <h1 style={styles.pageTitle}>Console de Supervision Réseau</h1>
-                    
-                    {/* Module Profil cliquable calé tout à droite */}
-                    <div style={styles.profileWrapper} ref={profileMenuRef}>
-                        <div style={styles.userInfo} onClick={() => setShowProfileMenu(!showProfileMenu)}>
-                            <div style={styles.userAvatar}>{user?.username ? user.username.charAt(0).toUpperCase() : "B"}</div>
-                            <span style={styles.userName}>{user?.username || "belakebi"}</span>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginLeft: '4px', color: THEME.textMuted }}><polyline points="6 9 12 15 18 9"/></svg>
-                        </div>
-                        
-                        {showProfileMenu && (
-                            <div style={styles.dropdownMenu}>
-                                <button style={styles.dropdownItem} onClick={handleLogout}>
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '8px' }}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-                                    Se déconnecter
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </header>
-
-                <div style={styles.contentWrapper}>
-                    {loading ? (
-                        <div style={styles.stateMessage}>Connexion aux serveurs Djezzy...</div>
-                    ) : (
-                        view !== 'nouveau-ticket' ? (
-                            <div style={styles.dashboardLayout}>
-                                <div style={{ flex: 1, overflowX: 'auto' }}>
-                                    {/* Barre d'actions et filtres */}
-                                    <div style={styles.actionBar}>
-                                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: 1 }}>
-                                            <select style={styles.minimalSelect} value={filterSite} onChange={e => setFilterSite(e.target.value)}>
-                                                <option value="">Tous les sites avec incidents</option>
-                                                {sitesConcernesParDesTickets.map(s => <option key={s.id} value={s.id}>{s.nom_site || s.nom}</option>)}
-                                            </select>
-                                            <input type="date" style={styles.minimalInput} value={filterDate} onChange={e => setFilterDate(e.target.value)} />
-                                            
-                                            {(filterSite || filterDate) && (
-                                                <button style={styles.resetFilterBtn} onClick={() => { setFilterSite(''); setFilterDate(''); }}>
-                                                    Effacer les filtres
-                                                </button>
-                                            )}
-                                        </div>
-                                        <button style={styles.primaryButton} onClick={() => setView('nouveau-ticket')}>
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: '6px', verticalAlign: 'middle' }}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                                            + Nouveau Ticket
-                                        </button>
-                                    </div>
-
-                                    {/* Tableau Esthétique */}
-                                    <table style={styles.table}>
-                                        <thead>
-                                            <tr style={styles.thRow}>
-                                                <th style={styles.th}>NOM & PRÉNOM CLIENT</th>
-                                                <th style={styles.th}>N° TÉLÉPHONE</th>
-                                                <th style={styles.th}>SITE CONCERNÉ</th>
-                                                <th style={styles.th}>DATE CRÉATION</th>
-                                                <th style={styles.th}>PRIORITÉ</th>
-                                                <th style={styles.th}>STATUT</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {ticketsFinaux.map((ticket, idx) => (
-                                                <tr key={ticket.id || idx} style={{ ...styles.tr, ...(selectedTicket?.id === ticket.id ? styles.trSelected : {}) }} onClick={() => setSelectedTicket(ticket)}>
-                                                    <td style={styles.tdName}>{ticket.nom_client}</td>
-                                                    <td style={styles.td}>{ticket.telephone_client}</td>
-                                                    <td style={styles.td}>{typeof ticket.site === 'object' ? (ticket.site?.nom_site || ticket.site?.nom) : (sites.find(s => s.id === ticket.site)?.nom_site || 'Site Indisponible')}</td>
-                                                    <td style={styles.tdMuted}>{ticket.created_at ? ticket.created_at.substring(0, 10) : new Date().toLocaleDateString('fr-FR')}</td>
-                                                    <td style={styles.td}>
-                                                        <span style={{ ...styles.badge, backgroundColor: (BADGE_STYLES[ticket.priorite?.toLowerCase()] || BADGE_STYLES.normale).bg, color: (BADGE_STYLES[ticket.priorite?.toLowerCase()] || BADGE_STYLES.normale).text }}>
-                                                            {ticket.priorite}
-                                                        </span>
-                                                    </td>
-                                                    <td style={styles.td}>
-                                                        <span style={{ ...styles.badge, backgroundColor: (BADGE_STYLES[ticket.statut?.toLowerCase()] || BADGE_STYLES.ferme).bg, color: (BADGE_STYLES[ticket.statut?.toLowerCase()] || BADGE_STYLES.ferme).text }}>
-                                                            {ticket.statut}
-                                                        </span>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                            {ticketsFinaux.length === 0 && (
-                                                <tr>
-                                                    <td colSpan="6" style={styles.tableEmpty}>Aucun incident enregistré dans cette section.</td>
-                                                </tr>
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
-
-                                {/* Panneau latéral droit */}
-                                {selectedTicket && (
-                                    <div style={styles.detailPanel}>
-                                        <div style={styles.panelHeader}>
-                                            <h3 style={styles.panelTitle}>Détails de l'incident</h3>
-                                            <button style={styles.closePanelBtn} onClick={() => setSelectedTicket(null)}>✕</button>
-                                        </div>
-                                        <div style={styles.panelContent}>
-                                            <div style={styles.detailRow}><span style={styles.detailLabel}>Client:</span> <strong>{selectedTicket.nom_client}</strong></div>
-                                            <div style={styles.detailRow}><span style={styles.detailLabel}>Téléphone:</span> {selectedTicket.telephone_client}</div>
-                                            <div style={styles.detailRow}><span style={styles.detailLabel}>Priorité:</span> <span style={{ ...styles.badge, backgroundColor: (BADGE_STYLES[selectedTicket.priorite?.toLowerCase()] || BADGE_STYLES.normale).bg, color: (BADGE_STYLES[selectedTicket.priorite?.toLowerCase()] || BADGE_STYLES.normale).text }}>{selectedTicket.priorite}</span></div>
-                                            <div style={styles.detailRow}><span style={styles.detailLabel}>Statut Actuel:</span> <span style={{ ...styles.badge, backgroundColor: (BADGE_STYLES[selectedTicket.statut?.toLowerCase()] || BADGE_STYLES.ferme).bg, color: (BADGE_STYLES[selectedTicket.statut?.toLowerCase()] || BADGE_STYLES.ferme).text }}>{selectedTicket.statut}</span></div>
-                                            <div style={styles.detailRow}><span style={styles.detailLabel}>Ingénieur Connecté:</span> <span style={styles.engineerText}>{selectedTicket.assigne_a?.username || "Non assigné"}</span></div>
-                                            <div style={{ ...styles.detailRow, flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}><span style={styles.detailLabel}>Description technique:</span> <p style={styles.panelDesc}>{selectedTicket.description || "Aucune description fournie."}</p></div>
-                                            
-                                            <div style={styles.engineerActionBlock}>
-                                                <div style={styles.detailLabel}>Action Ingénieur Réseau :</div>
-                                                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                                                    {selectedTicket.statut === 'ferme' && (
-                                                        <button style={styles.actionOpenBtn} onClick={() => simulerChangementStatutIngenieur(selectedTicket.id, 'ouvert')}>Ouvrir & M'assigner</button>
-                                                    )}
-                                                    {selectedTicket.statut === 'ouvert' && (
-                                                        <button style={styles.actionResolveBtn} onClick={() => simulerChangementStatutIngenieur(selectedTicket.id, 'resolu')}>Marquer comme Résolu</button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        ) : (
-                            /* Formulaire */
-                            <div style={styles.cardForm}>
-                                <h3 style={styles.formTitle}>Ouvrir un dossier de réclamation</h3>
-                                <form onSubmit={handleCreateTicketSubmit} style={styles.form}>
-                                    <div style={styles.formGrid}>
-                                        <div style={styles.inputGroup}>
-                                            <label style={styles.formLabel}>Nom du client</label>
-                                            <input type="text" style={styles.formInput} value={formData.nom_client} onChange={e => setFormData({...formData, nom_client: e.target.value})} required />
-                                        </div>
-                                        <div style={styles.inputGroup}>
-                                            <label style={styles.formLabel}>Prénom du client</label>
-                                            <input type="text" style={styles.formInput} value={formData.prenom_client} onChange={e => setFormData({...formData, prenom_client: e.target.value})} required />
-                                        </div>
-                                        <div style={styles.inputGroup}>
-                                            <label style={styles.formLabel}>Numéro de téléphone</label>
-                                            <input type="text" style={styles.formInput} value={formData.telephone_client} onChange={e => setFormData({...formData, telephone_client: e.target.value})} required />
-                                        </div>
-                                        <div style={styles.inputGroup}>
-                                            <label style={styles.formLabel}>Site Réseau Concerné</label>
-                                            <select style={styles.formSelect} value={formData.site} onChange={e => setFormData({...formData, site: e.target.value})} required>
-                                                <option value="">Sélectionner un équipement réseau...</option>
-                                                {sites.map(s => <option value={s.id} key={s.id}>{s.nom_site || s.nom}</option>)}
-                                            </select>
-                                        </div>
-                                        <div style={{ ...styles.inputGroup, gridColumn: 'span 2' }}>
-                                            <label style={styles.formLabel}>Urgence / Priorité</label>
-                                            <select style={styles.formSelect} value={formData.priorite} onChange={e => setFormData({...formData, priorite: e.target.value})}>
-                                                <option value="basse">Basse - Anomalie mineure</option>
-                                                <option value="normale">Normale - Ralentissement</option>
-                                                <option value="haute">Haute - Interruption partielle</option>
-                                                <option value="critique">Critique - Blackout Site</option>
-                                            </select>
-                                        </div>
-                                        <div style={{ ...styles.inputGroup, gridColumn: 'span 2' }}>
-                                            <label style={styles.formLabel}>Description de l'incident</label>
-                                            <textarea rows="4" style={styles.formTextarea} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} required />
-                                        </div>
-                                    </div>
-                                    <div style={styles.formFooter}>
-                                        <button type="button" style={styles.cancelBtn} onClick={() => setView('non-traites')}>Annuler</button>
-                                        <button type="submit" style={styles.submitBtn}>Créer le ticket (Fermé)</button>
-                                    </div>
-                                </form>
-                            </div>
-                        )
-                    )}
-                </div>
-            </main>
+  return (
+    <div style={styles.appLayout}>
+      <aside style={styles.sidebar}>
+        <div style={styles.brandZone}>
+          <img src={logoDjezzy} alt="Djezzy" style={styles.logoImg} />
+          <div>
+            <div style={styles.brandName}>Djezzy</div>
+            <div style={styles.brandRole}>Agent Call Center</div>
+          </div>
         </div>
-    );
-};
 
-// Styles CSS mis à jour pour la perfection visuelle
+        <div style={styles.menuSection}>
+          <span style={styles.sectionLabel}>PRINCIPAL</span>
+          <button
+            onClick={() => setCurrentView('non-traites')}
+            style={{ ...styles.menuItem, ...(currentView === 'non-traites' ? styles.menuItemActive : {}) }}
+          >
+            <IconTicket style={{ marginRight: '10px', flexShrink: 0 }} /> Tickets Non-Traites
+          </button>
+          <button
+            onClick={() => setCurrentView('traites')}
+            style={{ ...styles.menuItem, ...(currentView === 'traites' ? styles.menuItemActive : {}) }}
+          >
+            <IconArchive style={{ marginRight: '10px', flexShrink: 0 }} /> Tickets Traites
+          </button>
+        </div>
+
+        <div style={{ ...styles.menuSection, marginTop: 'auto' }}>
+          <span style={styles.sectionLabel}>PERSONNEL</span>
+          <button style={styles.menuItem} onClick={() => navigate('/profile')}>
+            <IconUser style={{ marginRight: '10px', flexShrink: 0 }} /> Profile
+          </button>
+          <button style={styles.menuItem} onClick={handleLogout}>
+            <IconLogout style={{ marginRight: '10px', flexShrink: 0 }} /> Log out
+          </button>
+        </div>
+      </aside>
+
+      <div style={styles.mainContent}>
+        <header style={styles.topHeader}>
+          {currentView === 'nouveau-ticket' ? (
+            <div>
+              <div style={styles.backNav} onClick={() => setCurrentView('non-traites')}>
+                <IconChevronLeft />
+                <span style={{ marginLeft: '8px', fontWeight: 600 }}>Nouveau Ticket</span>
+              </div>
+              <div style={styles.breadcrumb}>
+                Reclamations &gt; <span style={{ color: COLORS.djezzyRed }}>Nouveau Ticket</span>
+              </div>
+            </div>
+          ) : (
+            <h1 style={styles.pageTitle}>Reclamations</h1>
+          )}
+        </header>
+
+        {currentView === 'nouveau-ticket' ? (
+          <div style={styles.tableCard}>
+            <div style={styles.formHeader}>
+              <IconPin style={{ color: COLORS.djezzyRed, marginRight: '10px' }} />
+              <span style={{ fontWeight: 700, fontSize: '14px' }}>Creer un nouveau ticket</span>
+            </div>
+
+            <form onSubmit={handleCreateTicket} style={styles.formBody}>
+              <div style={styles.formSectionTitle}>INFORMATIONS CLIENT</div>
+
+              <div style={styles.formGrid}>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>NOM CLIENT</label>
+                  <input type="text" name="nom_client" value={formData.nom_client} onChange={handleInputChange} placeholder="Nom" style={styles.input} required />
+                </div>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>NUMERO TELEPHONE</label>
+                  <input type="text" name="telephone_client" value={formData.telephone_client} onChange={handleInputChange} placeholder="0X XX XX XX XX" style={styles.input} required />
+                </div>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>EMAIL</label>
+                  <input type="email" name="email_client" value={formData.email_client} onChange={handleInputChange} placeholder="client@gmail.com" style={styles.input} />
+                </div>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>TYPE CLIENT</label>
+                  <select name="type_client" value={formData.type_client} onChange={handleInputChange} style={styles.select}>
+                    <option value="particulier">PARTICULIER</option>
+                    <option value="entreprise">ENTREPRISE</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ ...styles.formSectionTitle, marginTop: '24px' }}>RECLAMATION</div>
+
+              <div style={styles.formGrid}>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>SITE RESEAU CONCERNE</label>
+                  <select name="site_id" value={formData.site_id} onChange={handleInputChange} style={styles.select} required>
+                    <option value="">Selectionner un site...</option>
+                    {sites.map((site) => (
+                      <option key={site.id} value={site.id}>{site.nom}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>PRIORITE</label>
+                  <select name="priorite" value={formData.priorite} onChange={handleInputChange} style={styles.select}>
+                    <option value="basse">BASSE</option>
+                    <option value="normale">NORMALE</option>
+                    <option value="haute">HAUTE</option>
+                    <option value="critique">CRITIQUE</option>
+                  </select>
+                </div>
+                <div style={{ ...styles.inputGroup, gridColumn: '1 / -1' }}>
+                  <label style={styles.label}>MOTS CLES (notes rapides)</label>
+                  <textarea
+                    name="mots_cles_ia"
+                    value={formData.mots_cles_ia}
+                    onChange={handleInputChange}
+                    placeholder="Saisissez les mots-cles de la reclamation... (ex: perte signal, zone rurale, coupure frequente)"
+                    style={styles.textarea}
+                    rows={3}
+                  />
+                  <div style={{ fontSize: '11px', color: COLORS.textMuted, marginTop: '4px' }}>
+                    Une description detaillee sera automatiquement generee pour les ingenieurs.
+                  </div>
+                </div>
+              </div>
+
+              <div style={styles.formActions}>
+                <button type="button" onClick={() => setCurrentView('non-traites')} style={styles.btnCancel}>Annuler</button>
+                <button type="submit" disabled={submitting} style={styles.btnSubmit}>
+                  <IconCheck style={{ marginRight: '6px' }} /> {submitting ? 'Creation...' : 'Creer'}
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : (
+          <div style={styles.tableCard}>
+            <div style={styles.toolbar}>
+              <div style={styles.toolbarLeft}>
+                <h2 style={styles.tableTitle}>
+                  {currentView === 'non-traites' ? 'Listes des reclamations non-traitees' : 'Listes des reclamations'}
+                </h2>
+              </div>
+
+              <div style={styles.toolbarActions}>
+                <button onClick={fetchTickets} style={styles.btnFilter}>
+                  <IconRefresh style={{ marginRight: '6px' }} /> Actualiser
+                </button>
+                <button onClick={() => setShowFilters(!showFilters)} style={styles.btnFilter}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ marginRight: '6px' }}><path d="M4 4h16v2.5l-6 6V20l-4-2v-5.5l-6-6V4Z" /></svg> Filtrer
+                </button>
+                {showFilters && (
+                  <>
+                    <button style={styles.btnFilterSub} onClick={() => setFilterDate(filterDate ? '' : new Date().toISOString().slice(0, 10))}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ marginRight: '6px' }}><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M3 10h18M8 2v4M16 2v4" /></svg> Filtrer par date
+                    </button>
+                    {filterDate && (
+                      <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} style={styles.filterInput} />
+                    )}
+                    <button style={styles.btnFilterSub} onClick={() => setFilterSiteId(filterSiteId ? '' : sites[0]?.id?.toString() || '')}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ marginRight: '6px' }}><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z" /><circle cx="12" cy="9.5" r="2.3" /></svg> Filtrer par site
+                    </button>
+                    {filterSiteId && (
+                      <select value={filterSiteId} onChange={(e) => setFilterSiteId(e.target.value)} style={styles.filterSelect}>
+                        {sites.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
+                      </select>
+                    )}
+                  </>
+                )}
+                <div style={styles.searchWrapper}>
+                  <IconSearch style={styles.searchIcon} />
+                  <input
+                    type="text"
+                    placeholder="Rechercher..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    style={styles.searchInput}
+                  />
+                </div>
+                <button onClick={() => setCurrentView('nouveau-ticket')} style={styles.btnNew}>
+                  <IconPlus style={{ marginRight: '6px' }} /> Nouveau Ticket
+                </button>
+              </div>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={styles.table}>
+                <thead>
+                  <tr style={styles.thRow}>
+                    <th style={{ ...styles.th, paddingLeft: '20px' }}>TICKET</th>
+                    <th style={styles.th}>CLIENT</th>
+                    <th style={styles.th}>TYPE</th>
+                    <th style={styles.th}>SITE</th>
+                    <th style={styles.th}>PRIORITE</th>
+                    <th style={styles.th}>STATUT</th>
+                    <th style={styles.th}>DATE</th>
+                    <th style={{ ...styles.th, textAlign: 'center' }}>DETAILS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr><td colSpan="8" style={styles.emptyCell}>Chargement des donnees...</td></tr>
+                  ) : filteredTickets.length === 0 ? (
+                    <tr><td colSpan="8" style={styles.emptyCell}>Aucune reclamation trouvee.</td></tr>
+                  ) : filteredTickets.map((ticket) => {
+                    const prio = COLORS.priorities[ticket.priorite?.toUpperCase()] || COLORS.priorities.NORMALE;
+                    const statutKey = getStatutKey(ticket.statut);
+                    const stat = COLORS.status[statutKey] || COLORS.status.FERME;
+                    const typ = COLORS.types[ticket.type_client?.toUpperCase()] || COLORS.types.PARTICULIER;
+
+                    return (
+                      <tr
+                        key={ticket.id}
+                        style={styles.tr}
+                        onClick={() => setSelectedTicket(ticket)}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#F8FAFC'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
+                      >
+                        <td style={{ ...styles.td, borderLeft: `4px solid ${prio.side}`, paddingLeft: '16px', fontWeight: 600, cursor: 'pointer' }}>
+                          {ticket.numero_ticket}
+                        </td>
+                        <td style={{ ...styles.td, fontWeight: 600, cursor: 'pointer' }}>{ticket.nom_complet_client}</td>
+                        <td style={styles.td}>
+                          <span style={{ ...styles.badgeBase, backgroundColor: typ.bg, color: typ.text, border: `1px solid ${typ.border}`, fontSize: '10px' }}>
+                            {ticket.type_client?.toUpperCase()}
+                          </span>
+                        </td>
+                        <td style={{ ...styles.td, fontWeight: 600, cursor: 'pointer' }}>{ticket.site_display}</td>
+                        <td style={styles.td}>
+                          <span style={{ ...styles.badgeBase, backgroundColor: prio.bg, color: prio.text }}>
+                            {ticket.priorite?.toUpperCase()}
+                          </span>
+                        </td>
+                        <td style={styles.td}>
+                          <span style={{ ...styles.badgeBase, backgroundColor: stat.bg, color: stat.text }}>
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: stat.dot, marginRight: '6px', display: 'inline-block' }} />
+                            {statutKey}
+                          </span>
+                        </td>
+                        <td style={{ ...styles.td, color: COLORS.textMuted, fontWeight: 600 }}>{formatDateFr(ticket.created_at)}</td>
+                        <td style={{ ...styles.td, textAlign: 'center' }}>
+                          <button
+                            style={styles.actionBtn}
+                            title="Voir les details"
+                            onClick={(e) => { e.stopPropagation(); setSelectedTicket(ticket); }}
+                          >
+                            <IconEye />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {selectedTicket && (
+        <div style={styles.overlay} onClick={() => setSelectedTicket(null)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>Ticket {selectedTicket.numero_ticket}</h2>
+              <button style={styles.modalClose} onClick={() => setSelectedTicket(null)}><IconX /></button>
+            </div>
+
+            <div style={styles.modalBody}>
+              <div style={styles.modalGrid}>
+                <div style={styles.modalSection}>
+                  <h3 style={styles.modalSectionTitle}>Client</h3>
+                  <div style={styles.modalField}>
+                    <span style={styles.modalLabel}>Nom complet</span>
+                    <span style={styles.modalValue}>{selectedTicket.nom_complet_client || '-'}</span>
+                  </div>
+                  <div style={styles.modalField}>
+                    <span style={styles.modalLabel}>Telephone</span>
+                    <span style={styles.modalValue}>{selectedTicket.telephone_client || '-'}</span>
+                  </div>
+                  <div style={styles.modalField}>
+                    <span style={styles.modalLabel}>Email</span>
+                    <span style={styles.modalValue}>{selectedTicket.email_client || '-'}</span>
+                  </div>
+                  <div style={styles.modalField}>
+                    <span style={styles.modalLabel}>Type</span>
+                    <span style={styles.modalValue}>{selectedTicket.type_client || '-'}</span>
+                  </div>
+                </div>
+
+                <div style={styles.modalSection}>
+                  <h3 style={styles.modalSectionTitle}>Ticket</h3>
+                  <div style={styles.modalField}>
+                    <span style={styles.modalLabel}>Statut</span>
+                    <span style={styles.modalValue}>
+                      <span style={{ ...styles.badgeBase, ...COLORS.status[getStatutKey(selectedTicket.statut)] || COLORS.status.FERME }}>
+                        {getStatutKey(selectedTicket.statut)}
+                      </span>
+                    </span>
+                  </div>
+                  <div style={styles.modalField}>
+                    <span style={styles.modalLabel}>Priorite</span>
+                    <span style={styles.modalValue}>
+                      <span style={{ ...styles.badgeBase, ...(COLORS.priorities[selectedTicket.priorite?.toUpperCase()] || COLORS.priorities.NORMALE) }}>
+                        {selectedTicket.priorite?.toUpperCase()}
+                      </span>
+                    </span>
+                  </div>
+                  <div style={styles.modalField}>
+                    <span style={styles.modalLabel}>Site concerne</span>
+                    <span style={styles.modalValue}>{selectedTicket.site_display || '-'}</span>
+                  </div>
+                  <div style={styles.modalField}>
+                    <span style={styles.modalLabel}>Cree par</span>
+                    <span style={styles.modalValue}>{selectedTicket.cree_par?.nom_user || '-'}</span>
+                  </div>
+                  <div style={styles.modalField}>
+                    <span style={styles.modalLabel}>Assigne a</span>
+                    <span style={styles.modalValue}>{selectedTicket.assigne_a_display || '-'}</span>
+                  </div>
+                  <div style={styles.modalField}>
+                    <span style={styles.modalLabel}>Date creation</span>
+                    <span style={styles.modalValue}>{formatDateTimeFr(selectedTicket.created_at)}</span>
+                  </div>
+                  {selectedTicket.resolu_le && (
+                    <div style={styles.modalField}>
+                      <span style={styles.modalLabel}>Resolu le</span>
+                      <span style={styles.modalValue}>{formatDateTimeFr(selectedTicket.resolu_le)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div style={styles.modalSection}>
+                <h3 style={styles.modalSectionTitle}>Mots-cles saisis</h3>
+                <p style={styles.modalText}>{selectedTicket.mots_cles_ia || 'Aucun mot-cle saisi.'}</p>
+              </div>
+
+              {selectedTicket.description && (
+                <div style={styles.modalSection}>
+                  <h3 style={styles.modalSectionTitle}>Description (generee pour les ingenieurs)</h3>
+                  <p style={styles.modalText}>{selectedTicket.description}</p>
+                </div>
+              )}
+
+              {selectedTicket.commentaires && selectedTicket.commentaires.length > 0 && (
+                <div style={styles.modalSection}>
+                  <h3 style={styles.modalSectionTitle}>Commentaires ({selectedTicket.commentaires.length})</h3>
+                  {selectedTicket.commentaires.map((c) => (
+                    <div key={c.id} style={styles.comment}>
+                      <strong>{c.auteur?.nom_user || 'Inconnu'}</strong>
+                      <span style={{ color: COLORS.textMuted, fontSize: '11px', marginLeft: '12px' }}>{formatDateTimeFr(c.created_at)}</span>
+                      <p style={{ margin: '4px 0 0', fontSize: '13px' }}>{c.contenu}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={styles.modalFooter}>
+              <button style={styles.btnCancel} onClick={() => setSelectedTicket(null)}>Fermer</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const styles = {
-    appContainer: { display: 'flex', height: '100vh', backgroundColor: THEME.bgMain, fontFamily: THEME.fontFamily, WebkitFontSmoothing: 'antialiased' },
-    sidebar: { width: '240px', backgroundColor: THEME.navy, color: '#FFF', padding: '32px 20px', display: 'flex', flexDirection: 'column', gap: '40px' },
-    brandContainer: { display: 'flex', alignItems: 'center', gap: '12px' },
-    sidebarLogo: { width: '28px', height: '28px', objectFit: 'contain' },
-    brandTitle: { fontSize: '15px', fontWeight: '700', letterSpacing: '0.5px' }, brandSub: { fontSize: '11px', color: '#64748B', marginTop: '2px' },
-    menuGroup: { display: 'flex', flexDirection: 'column', gap: '8px' },
-    
-    // Correction de l'effet blanc moche : Tout reste bleu marine foncé sauf le bouton cliqué qui passe au rouge djezzy
-    menuItem: { background: 'transparent', color: '#94A3B8', border: 'none', padding: '14px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', textAlign: 'left', transition: 'all 0.2s', display: 'flex', alignItems: 'center' },
-    menuItemActive: { backgroundColor: THEME.primary, color: '#FFFFFF' },
-    
-    mainContent: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
-    
-    // Header corrigé pour repousser le profil complètement à sa place à droite
-    mainHeader: { height: '70px', backgroundColor: '#FFFFFF', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 40px', borderBottom: `1px solid ${THEME.border}` },
-    pageTitle: { fontSize: '16px', fontWeight: '600', color: THEME.navy },
-    
-    // Menu Déroulant Profil Cliquable Propre
-    profileWrapper: { position: 'relative' },
-    userInfo: { display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '6px 12px', borderRadius: '8px', transition: 'background 0.2s' },
-    userAvatar: { width: '32px', height: '32px', backgroundColor: '#F1F5F9', color: THEME.navy, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '12px', border: `1px solid ${THEME.border}` },
-    userName: { fontSize: '13px', color: THEME.textMain, fontWeight: '600' }, 
-    dropdownMenu: { position: 'absolute', top: '45px', right: '0', backgroundColor: '#FFFFFF', borderRadius: '8px', border: `1px solid ${THEME.border}`, boxShadow: '0 4px 12px rgba(0,0,0,0.08)', width: '160px', zIndex: 10, overflow: 'hidden' },
-    dropdownItem: { width: '100%', background: 'none', border: 'none', padding: '12px 16px', textAlgn: 'left', fontSize: '13px', color: '#991B1B', cursor: 'pointer', display: 'flex', alignItems: 'center', fontWeight: '500' },
+  appLayout: { display: 'flex', minHeight: '100vh', backgroundColor: COLORS.mainBg, fontFamily: "'Inter', system-ui, sans-serif", width: '100%' },
+  sidebar: { width: '260px', backgroundColor: COLORS.sidebarBg, color: '#94A3B8', display: 'flex', flexDirection: 'column', padding: '24px 16px', flexShrink: 0 },
+  brandZone: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '40px', paddingLeft: '8px' },
+  logoImg: { width: '36px', height: 'auto', objectFit: 'contain', borderRadius: '4px' },
+  brandName: { color: '#FFFFFF', fontWeight: 700, fontSize: '16px' },
+  brandRole: { fontSize: '12px', color: '#64748B' },
+  menuSection: { display: 'flex', flexDirection: 'column', gap: '4px' },
+  sectionLabel: { fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '6px', paddingLeft: '12px', letterSpacing: '0.5px' },
+  menuItem: { display: 'flex', alignItems: 'center', backgroundColor: 'transparent', border: 'none', color: '#94A3B8', padding: '11px 12px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', fontSize: '13px', width: '100%' },
+  menuItemActive: { backgroundColor: COLORS.sidebarActive, color: '#FFFFFF', fontWeight: 600 },
+  mainContent: { flex: 1, padding: '30px 40px', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' },
+  topHeader: { marginBottom: '20px' },
+  pageTitle: { margin: 0, fontSize: '22px', fontWeight: 700, color: COLORS.textDark },
+  backNav: { display: 'flex', alignItems: 'center', fontSize: '16px', color: COLORS.textDark, cursor: 'pointer', marginBottom: '4px' },
+  breadcrumb: { fontSize: '12px', color: COLORS.textMuted, fontWeight: 500 },
+  tableCard: { backgroundColor: COLORS.cardBg, borderRadius: '8px', border: `1px solid ${COLORS.border}`, display: 'flex', flexDirection: 'column', width: '100%' },
+  toolbar: { padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${COLORS.border}` },
+  toolbarLeft: { display: 'flex', alignItems: 'center', gap: '12px' },
+  tableTitle: { margin: 0, fontSize: '14px', fontWeight: 700, color: COLORS.textDark },
+  toolbarActions: { display: 'flex', alignItems: 'center', gap: '12px' },
+  btnFilter: { display: 'flex', alignItems: 'center', backgroundColor: '#FFFFFF', border: `1px solid ${COLORS.border}`, padding: '8px 14px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', color: COLORS.textDark },
+  btnFilterSub: { display: 'flex', alignItems: 'center', backgroundColor: '#FFFFFF', border: `1px solid ${COLORS.djezzyOrange}`, padding: '8px 14px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', color: COLORS.djezzyRed },
+  filterInput: { padding: '8px 12px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', outline: 'none' },
+  filterSelect: { padding: '8px 12px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', backgroundColor: '#FFFFFF', outline: 'none' },
+  searchWrapper: { position: 'relative', display: 'flex', alignItems: 'center' },
+  searchIcon: { position: 'absolute', left: '10px', color: '#94A3B8' },
+  searchInput: { padding: '8px 12px 8px 32px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, backgroundColor: '#F8FAFC', fontSize: '13px', width: '180px', outline: 'none' },
+  btnNew: { display: 'flex', alignItems: 'center', backgroundColor: COLORS.djezzyRed, color: '#FFFFFF', border: 'none', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' },
+  thRow: { backgroundColor: '#F8FAFC', borderBottom: `1px solid ${COLORS.border}` },
+  th: { padding: '12px 14px', fontWeight: 700, color: '#94A3B8', fontSize: '10px', textTransform: 'uppercase' },
+  tr: { borderBottom: `1px solid ${COLORS.border}` },
+  td: { padding: '14px', color: COLORS.textDark, verticalAlign: 'middle', whiteSpace: 'nowrap' },
+  emptyCell: { textAlign: 'center', padding: '30px', color: COLORS.textMuted },
+  badgeBase: { padding: '4px 10px', borderRadius: '4px', fontWeight: 700, fontSize: '10px', display: 'inline-flex', alignItems: 'center' },
+  actionBtn: { background: 'none', border: 'none', cursor: 'pointer', color: COLORS.textMuted, display: 'flex' },
 
-    contentWrapper: { flex: 1, padding: '40px', overflowY: 'auto' },
-    dashboardLayout: { display: 'flex', gap: '32px', alignItems: 'flex-start' },
-    actionBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', gap: '16px' },
-    minimalSelect: { padding: '10px 14px', borderRadius: '8px', border: `1px solid ${THEME.border}`, backgroundColor: '#FFF', fontSize: '13px', color: THEME.textMain, outline: 'none', minWidth: '220px' },
-    minimalInput: { padding: '9px 14px', borderRadius: '8px', border: `1px solid ${THEME.border}`, fontSize: '13px', color: THEME.textMain, outline: 'none' },
-    resetFilterBtn: { background: 'none', border: 'none', color: THEME.primary, fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
-    primaryButton: { backgroundColor: THEME.primary, color: '#FFF', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: '600', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center' },
-    
-    table: { width: '100%', borderCollapse: 'collapse', backgroundColor: '#FFFFFF', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }, 
-    thRow: { borderBottom: `1px solid ${THEME.border}`, backgroundColor: '#FAFAFA' },
-    th: { padding: '16px 20px', color: THEME.textMuted, fontWeight: '600', fontSize: '12px', textAlign: 'left', letterSpacing: '0.3px' },
-    tr: { borderBottom: `1px solid ${THEME.border}`, cursor: 'pointer', transition: 'background 0.15s' }, 
-    trSelected: { backgroundColor: '#F8FAFC', borderLeft: `3px solid ${THEME.primary}` },
-    td: { padding: '16px 20px', color: THEME.textMain, fontSize: '13px' }, 
-    tdName: { padding: '16px 20px', color: THEME.navy, fontWeight: '600', fontSize: '13px' }, 
-    tdMuted: { padding: '16px 20px', color: THEME.textMuted, fontSize: '13px' },
-    badge: { display: 'inline-flex', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '700' },
-    tableEmpty: { textAlign: 'center', padding: '48px', color: THEME.textMuted, fontSize: '13px' }, 
-    stateMessage: { display: 'flex', padding: '80px', justifyContent: 'center', color: THEME.textMuted, fontSize: '14px' },
-    
-    // Panneau de détails
-    detailPanel: { width: '320px', backgroundColor: '#FFFFFF', borderRadius: '12px', border: `1px solid ${THEME.border}`, padding: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', position: 'sticky', top: 0 },
-    panelHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '12px', borderBottom: `1px solid ${THEME.border}` },
-    panelTitle: { fontSize: '14px', fontWeight: '600', color: THEME.navy },
-    closePanelBtn: { background: 'transparent', border: 'none', color: THEME.textMuted, cursor: 'pointer', fontSize: '14px' },
-    panelContent: { display: 'flex', flexDirection: 'column', gap: '16px' },
-    detailRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' },
-    detailLabel: { color: THEME.textMuted },
-    panelDesc: { margin: '4px 0 0 0', color: THEME.textMain, fontSize: '13px', lineHeight: '1.5', backgroundColor: '#F8FAFC', padding: '12px', borderRadius: '8px', border: `1px solid ${THEME.border}`, width: '100%', boxSizing: 'border-box' },
-    engineerText: { fontWeight: '600', color: THEME.navy },
-    engineerActionBlock: { marginTop: '12px', paddingTop: '16px', borderTop: `1px solid ${THEME.border}` },
-    actionOpenBtn: { width: '100%', backgroundColor: THEME.navy, color: '#FFF', border: 'none', padding: '8px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' },
-    actionResolveBtn: { width: '100%', backgroundColor: '#065F46', color: '#FFF', border: 'none', padding: '8px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' },
+  formHeader: { padding: '16px 20px', borderBottom: `1px solid ${COLORS.border}`, display: 'flex', alignItems: 'center' },
+  formBody: { padding: '24px 30px' },
+  formSectionTitle: { fontSize: '11px', fontWeight: 700, color: '#94A3B8', letterSpacing: '0.5px', marginBottom: '16px' },
+  formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px', marginBottom: '12px' },
+  inputGroup: { display: 'flex', flexDirection: 'column', gap: '6px' },
+  label: { fontSize: '11px', fontWeight: 700, color: COLORS.textDark },
+  input: { padding: '10px 14px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', outline: 'none' },
+  select: { padding: '10px 14px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', backgroundColor: '#FFFFFF', outline: 'none' },
+  textarea: { padding: '10px 14px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', resize: 'none', outline: 'none' },
+  formActions: { display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '30px' },
+  btnCancel: { backgroundColor: '#FFFFFF', border: `1px solid ${COLORS.border}`, padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' },
+  btnSubmit: { display: 'flex', alignItems: 'center', backgroundColor: COLORS.djezzyRed, color: '#FFFFFF', border: 'none', padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' },
 
-    // Formulaire
-    cardForm: { backgroundColor: '#FFFFFF', borderRadius: '12px', border: `1px solid ${THEME.border}`, padding: '32px', maxWidth: '700px', margin: '0 auto' },
-    formTitle: { fontSize: '16px', fontWeight: '600', color: THEME.navy, marginBottom: '24px' },
-    form: { display: 'flex', flexDirection: 'column' }, formGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' },
-    inputGroup: { display: 'flex', flexDirection: 'column', gap: '6px' }, formLabel: { fontSize: '12px', color: THEME.textMuted, fontWeight: '500' },
-    formInput: { padding: '11px 14px', borderRadius: '8px', border: `1px solid ${THEME.border}`, fontSize: '13px', outline: 'none', color: THEME.textMain },
-    formSelect: { padding: '11px 14px', borderRadius: '8px', border: `1px solid ${THEME.border}`, backgroundColor: '#FFF', fontSize: '13px', outline: 'none', color: THEME.textMain },
-    formTextarea: { padding: '11px 14px', borderRadius: '8px', border: `1px solid ${THEME.border}`, fontSize: '13px', outline: 'none', color: THEME.textMain, fontFamily: 'inherit', resize: 'vertical' },
-    formFooter: { display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '32px' },
-    cancelBtn: { backgroundColor: '#FFF', border: `1px solid ${THEME.border}`, padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', color: THEME.textMuted },
-    submitBtn: { backgroundColor: THEME.primary, color: '#FFF', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }
+  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
+  modal: { backgroundColor: '#FFFFFF', borderRadius: '12px', width: '700px', maxWidth: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' },
+  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}` },
+  modalTitle: { margin: 0, fontSize: '18px', fontWeight: 700, color: COLORS.textDark },
+  modalClose: { background: 'none', border: 'none', cursor: 'pointer', color: COLORS.textMuted, padding: '4px' },
+  modalBody: { padding: '24px', overflowY: 'auto', flex: 1 },
+  modalGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' },
+  modalSection: { marginBottom: '20px' },
+  modalSectionTitle: { fontSize: '12px', fontWeight: 700, color: COLORS.textMuted, textTransform: 'uppercase', margin: '0 0 12px 0', letterSpacing: '0.5px' },
+  modalField: { display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${COLORS.border}` },
+  modalLabel: { fontSize: '12px', color: COLORS.textMuted, fontWeight: 500 },
+  modalValue: { fontSize: '13px', color: COLORS.textDark, fontWeight: 600 },
+  modalText: { fontSize: '13px', color: COLORS.textDark, lineHeight: '1.6', margin: 0, whiteSpace: 'pre-wrap' },
+  comment: { padding: '12px', backgroundColor: '#F8FAFC', borderRadius: '8px', marginBottom: '8px' },
+  modalFooter: { padding: '16px 24px', borderTop: `1px solid ${COLORS.border}`, display: 'flex', justifyContent: 'flex-end' },
 };
-
-export default CallCenter;

@@ -13,9 +13,15 @@ def liste_sites(request):
     Je récupère tous les sites pour mon tableau ou ma cartographie.
     J'ai ajouté un système de filtre par statut pour que mon frontend puisse 
     demander uniquement les sites en panne (ex: ?statut=DOWN).
+    Par defaut, les sites archivés sont cachés ; ajouter ?archive=true pour les voir.
     """
     # Je commence par charger l'ensemble de mes sites réseau
     sites_queryset = SiteReseau.objects.all()
+    
+    # Je cache les sites archivés sauf si le frontend demande explicitement à les voir
+    afficher_archives = request.query_params.get('archive', 'false').lower() == 'true'
+    if not afficher_archives:
+        sites_queryset = sites_queryset.filter(archive=False)
     
     # Je récupère le paramètre 'statut' depuis l'URL si mon frontend l'envoie
     statut_filtre = request.query_params.get('statut', None)
@@ -36,7 +42,7 @@ def liste_sites(request):
 @permission_classes([IsAuthenticated])
 def creer_site(request):
     """Correspond à la méthode ajouterSite() de mon diagramme."""
-    if request.user.role not in [Role.ADMIN, Role.INGENIEUR]:
+    if request.user.role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX]:
         return Response({'error': 'Accès réservé aux ingénieurs réseau'}, status=status.HTTP_403_FORBIDDEN)
     
     serializer = SiteReseauSerializer(data=request.data)
@@ -58,7 +64,7 @@ def detail_site(request, pk):
         serializer = SiteReseauSerializer(site)
         return Response(serializer.data)
 
-    if request.user.role not in [Role.ADMIN, Role.INGENIEUR]:
+    if request.user.role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX]:
         return Response({'error': 'Permission refusée'}, status=status.HTTP_403_FORBIDDEN)
 
     if request.method == 'PUT':
@@ -71,3 +77,19 @@ def detail_site(request, pk):
     if request.method == 'DELETE':
         site.delete()
         return Response({'message': 'Site supprimé avec succès'}, status=status.HTTP_204_NO_CONTENT)
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def archiver_site(request, pk):
+    """Archive un site (archive=True) au lieu de le supprimer definitivement."""
+    try:
+        site = SiteReseau.objects.get(pk=pk)
+    except SiteReseau.DoesNotExist:
+        return Response({'error': 'Site introuvable'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.user.role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX]:
+        return Response({'error': 'Permission refusée'}, status=status.HTTP_403_FORBIDDEN)
+
+    site.archiverSite()
+    serializer = SiteReseauSerializer(site)
+    return Response(serializer.data, status=status.HTTP_200_OK)

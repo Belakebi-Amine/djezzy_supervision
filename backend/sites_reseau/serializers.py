@@ -19,6 +19,7 @@ class SiteReseauSerializer(serializers.ModelSerializer):
             'coordY',    
             'adresse', 
             'statut', 
+            'archive',
             'derniere_maj', 
             'created_at'
         ]

@@ -120,6 +120,25 @@ def register_view(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+
+# ── Liste des agents Call Center (pour le filtre 'créé par') ──
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def liste_agents_cc(request):
+    agents = CustomUser.objects.filter(role=Role.AGENT_CALL_CENTER).order_by('id')
+    return Response(UserSerializer(agents, many=True).data)
+
+
+# ── Liste des ingénieurs réseau (pour assignation) ──
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def liste_ingenieurs(request):
+    ingenieurs = CustomUser.objects.filter(role=Role.INGENIEUR_RESEAUX).order_by('id')
+    return Response(UserSerializer(ingenieurs, many=True).data)
+
+
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def archive_user_view(request, pk):

@@ -35,6 +35,9 @@ class SiteReseau(models.Model):
     # statut : j'ajoute ce champ pour la gestion opérationnelle
     statut = models.CharField(max_length=10, choices=STATUT_CHOICES, default='UP')
 
+    # archive : true = site archivé (caché de l'interface mais conservé en BD)
+    archive = models.BooleanField(default=False)
+
     # Dates de suivi technique
     derniere_maj = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -65,8 +68,7 @@ class SiteReseau(models.Model):
 
     def archiverSite(self):
         """
-        Au lieu de supprimer, je peux changer un statut ou marquer le site
-        comme 'Hors service' de façon permanente.
+        Au lieu de supprimer, je marque le site comme archivé (caché par défaut).
         """
-        self.statut = 'DOWN'
+        self.archive = True
         self.save()

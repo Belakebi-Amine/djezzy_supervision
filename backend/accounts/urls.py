@@ -8,6 +8,8 @@ from .views import (
     list_users_view,
     register_view,
     archive_user_view,
+    liste_agents_cc,
+    liste_ingenieurs,
 )
 
 urlpatterns = [
@@ -19,6 +21,10 @@ urlpatterns = [
     path('me/', me_view, name='me'),
     path('change-password/', change_password_view, name='change_password'),
     path('update-profile/', update_profile_view, name='update_profile'),
+    
+    # Routes pour les listes
+    path('agents-cc/', liste_agents_cc, name='liste-agents-cc'),
+    path('ingenieurs/', liste_ingenieurs, name='liste-ingenieurs'),
     
     # Routes Admin
     path('users/', list_users_view, name='list_users'),

@@ -13,4 +13,7 @@ urlpatterns = [
     # 3. Je l'utilise pour le clic sur la carte (GET), modifier (PUT) ou supprimer (DELETE)
     # Exemple au clic sur le marqueur ID 12 : /api/sites_reseau/12/
     path('<int:pk>/', views.detail_site, name='detail-site'),
+
+    # 4. Archive un site (DOWN) au lieu de le supprimer
+    path('<int:pk>/archiver/', views.archiver_site, name='archiver-site'),
 ]

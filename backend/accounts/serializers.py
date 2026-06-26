@@ -33,7 +33,11 @@ class UserSerializer(serializers.ModelSerializer):
     Je l'utilise pour transformer mon objet Utilisateur en JSON pour mon API.
     """
     # Ici, je fais correspondre 'nom_user' de mon diagramme au nom complet de Django
-    nom_user = serializers.CharField(source='get_full_name', read_only=True)
+    nom_user = serializers.SerializerMethodField()
+
+    def get_nom_user(self, obj):
+        full = obj.get_full_name().strip()
+        return full if full else obj.username
     # Je renomme l'affichage pour coller au 'role_user' de mon schéma
     role_user = serializers.CharField(source='role', read_only=True)
 

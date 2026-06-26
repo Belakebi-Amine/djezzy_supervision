@@ -51,7 +51,17 @@ const Login = () => {
                 userRole = decoded.role || decoded.user_type || decoded.groups?.[0] || decoded.role_name;
             }
             if (!userRole) {
-                userRole = response.data.role || response.data.user_type || response.data.user?.role;
+                userRole = response.data.role || response.data.user_type || response.data.user?.role || response.data.user?.role_user;
+            }
+
+            // Si pas de rôle dans la réponse du login, on va le chercher via /me/
+            if (!userRole && response.data.access) {
+                try {
+                    const meResp = await axios.get('http://127.0.0.1:8000/api/accounts/me/', {
+                        headers: { Authorization: 'Bearer ' + response.data.access }
+                    });
+                    userRole = meResp.data?.role_user || meResp.data?.role;
+                } catch (_) {}
             }
 
             console.log("Rôle détecté :", userRole);
@@ -70,7 +80,7 @@ const Login = () => {
                 navigate('/call-center-dashboard');
             } else if (normalizedRole.includes("admin")) {
                 navigate('/admin-dashboard');
-            } else if (normalizedRole.includes("ingénieur") || normalizedRole.includes("engineer") || normalizedRole.includes("reseau")) {
+            } else if (normalizedRole.includes("ingénieur") || normalizedRole.includes("ingenieur") || normalizedRole.includes("engineer") || normalizedRole.includes("reseau")) {
                 navigate('/engineer-dashboard');
             } else if (normalizedRole.includes("reporting") || normalizedRole.includes("responsable") || normalizedRole.includes("supervisor")) {
                 navigate('/supervisor-dashboard');
