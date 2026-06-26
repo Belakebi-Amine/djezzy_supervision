@@ -35,16 +35,16 @@ const COLORS = {
 const MOIS_FR = ['JAN', 'FEV', 'MAR', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOU', 'SEP', 'OCT', 'NOV', 'DEC'];
 
 const formatDateFr = (isoString) => {
-  if (!isoString) return '-';
+  if (!isoString) return '\u2014';
   const d = new Date(isoString);
-  if (Number.isNaN(d.getTime())) return '-';
+  if (Number.isNaN(d.getTime())) return '\u2014';
   return `${d.getDate()} ${MOIS_FR[d.getMonth()]}`;
 };
 
 const formatDateTimeFr = (isoString) => {
-  if (!isoString) return '-';
+  if (!isoString) return '\u2014';
   const d = new Date(isoString);
-  if (Number.isNaN(d.getTime())) return '-';
+  if (Number.isNaN(d.getTime())) return '\u2014';
   return `${d.getDate()} ${MOIS_FR[d.getMonth()]} ${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
@@ -83,15 +83,12 @@ const IconCheck = (p) => (
 const IconX = (p) => (
   <svg {...iconProps} {...p}><path d="M18 6L6 18M6 6l12 12" /></svg>
 );
-const IconEye = (p) => (
-  <svg {...iconProps} {...p}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
-);
 
 const INITIAL_FORM = {
-  nom_client: '', telephone_client: '', email_client: '',
+  nom_client: '', telephone: '', email: '',
   type_client: 'particulier',
   site_id: '', priorite: 'normale',
-  mots_cles_ia: '', statut: 'ferme',
+  mots_cles_ia: '',
 };
 
 export default function CallCenter() {
@@ -103,11 +100,14 @@ export default function CallCenter() {
   const [submitting, setSubmitting] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [filterDate, setFilterDate] = useState('');
+  const [filterSiteId, setFilterSiteId] = useState('');
+  const [filterPriority, setFilterPriority] = useState('');
+  const [filterType, setFilterType] = useState('');
 
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [sites, setSites] = useState([]);
-  const [filterDate, setFilterDate] = useState('');
-  const [filterSiteId, setFilterSiteId] = useState('');
+  const [hoveredUser, setHoveredUser] = useState(null);
 
   useEffect(() => {
     getSites().then(setSites).catch(() => setSites([]));
@@ -116,7 +116,7 @@ export default function CallCenter() {
   const fetchTickets = useCallback(async () => {
     setLoading(true);
     try {
-      const statut = currentView === 'non-traites' ? 'ferme,ouvert,en_cours' : 'resolu';
+      const statut = currentView === 'non-traites' ? 'ferme,ouvert' : 'resolu';
       const data = await getTickets(statut);
       setTickets(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -139,10 +139,9 @@ export default function CallCenter() {
     try {
       await createTicket({
         nom_client: formData.nom_client,
-        telephone_client: formData.telephone_client,
-        email_client: formData.email_client,
+        telephone_client: formData.telephone,
+        email_client: formData.email,
         type_client: formData.type_client,
-        statut: 'ferme',
         site_id: formData.site_id ? Number(formData.site_id) : null,
         priorite: formData.priorite,
         mots_cles_ia: formData.mots_cles_ia,
@@ -151,7 +150,7 @@ export default function CallCenter() {
       setCurrentView('non-traites');
     } catch (err) {
       console.error(err);
-      alert('Erreur: ' + err.message);
+      alert('Erreur lors de la creation du ticket.');
     } finally {
       setSubmitting(false);
     }
@@ -175,6 +174,14 @@ export default function CallCenter() {
       t.numero_ticket?.toLowerCase().includes(term) ||
       t.site_display?.toLowerCase().includes(term);
     if (!matchSearch) return false;
+    if (filterPriority) {
+      const prio = (t.priorite || '').toUpperCase();
+      if (prio !== filterPriority.toUpperCase()) return false;
+    }
+    if (filterType) {
+      const typ = (t.type_client || '').toUpperCase();
+      if (typ !== filterType.toUpperCase()) return false;
+    }
     if (filterDate) {
       const d = new Date(t.created_at);
       if (d.toISOString().slice(0, 10) !== filterDate) return false;
@@ -192,7 +199,7 @@ export default function CallCenter() {
     <div style={styles.appLayout}>
       <aside style={styles.sidebar}>
         <div style={styles.brandZone}>
-          <img src={logoDjezzy} alt="Djezzy" style={styles.logoImg} />
+          <img src={logoDjezzy} alt="Djezzy" style={styles.brandLogo} />
           <div>
             <div style={styles.brandName}>Djezzy</div>
             <div style={styles.brandRole}>Agent Call Center</div>
@@ -215,7 +222,7 @@ export default function CallCenter() {
           </button>
         </div>
 
-        <div style={{ ...styles.menuSection, marginTop: 'auto' }}>
+        <div style={{ ...styles.menuSection, marginTop: '40px' }}>
           <span style={styles.sectionLabel}>PERSONNEL</span>
           <button style={styles.menuItem} onClick={() => navigate('/profile')}>
             <IconUser style={{ marginRight: '10px', flexShrink: 0 }} /> Profile
@@ -224,10 +231,11 @@ export default function CallCenter() {
             <IconLogout style={{ marginRight: '10px', flexShrink: 0 }} /> Log out
           </button>
         </div>
+
       </aside>
 
-      <div style={styles.mainContent}>
-        <header style={styles.topHeader}>
+      <div style={{ ...styles.mainContent, backgroundColor: COLORS.mainBg }}>
+        <header style={{ ...styles.topHeader, backgroundColor: COLORS.cardBg }}>
           {currentView === 'nouveau-ticket' ? (
             <div>
               <div style={styles.backNav} onClick={() => setCurrentView('non-traites')}>
@@ -239,7 +247,7 @@ export default function CallCenter() {
               </div>
             </div>
           ) : (
-            <h1 style={styles.pageTitle}>Reclamations</h1>
+            <h1 style={{ ...styles.pageTitle, color: '#0A1628' }}>Reclamations</h1>
           )}
         </header>
 
@@ -256,15 +264,15 @@ export default function CallCenter() {
               <div style={styles.formGrid}>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>NOM CLIENT</label>
-                  <input type="text" name="nom_client" value={formData.nom_client} onChange={handleInputChange} placeholder="Nom" style={styles.input} required />
+                  <input type="text" name="nom_client" value={formData.nom_client} onChange={handleInputChange} placeholder="Nom et prenom" style={styles.input} required />
                 </div>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>NUMERO TELEPHONE</label>
-                  <input type="text" name="telephone_client" value={formData.telephone_client} onChange={handleInputChange} placeholder="0X XX XX XX XX" style={styles.input} required />
+                  <input type="text" name="telephone" value={formData.telephone} onChange={handleInputChange} placeholder="0X XX XX XX XX" style={styles.input} required />
                 </div>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>EMAIL</label>
-                  <input type="email" name="email_client" value={formData.email_client} onChange={handleInputChange} placeholder="client@gmail.com" style={styles.input} />
+                  <input type="email" name="email" value={formData.email} onChange={handleInputChange} placeholder="client@gmail.com" style={styles.input} />
                 </div>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>TYPE CLIENT</label>
@@ -334,26 +342,8 @@ export default function CallCenter() {
                   <IconRefresh style={{ marginRight: '6px' }} /> Actualiser
                 </button>
                 <button onClick={() => setShowFilters(!showFilters)} style={styles.btnFilter}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ marginRight: '6px' }}><path d="M4 4h16v2.5l-6 6V20l-4-2v-5.5l-6-6V4Z" /></svg> Filtrer
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ marginRight: '6px' }}><path d="M4 5h16l-6 7v6l-4 1v-7L4 5Z" /></svg> Filtrer
                 </button>
-                {showFilters && (
-                  <>
-                    <button style={styles.btnFilterSub} onClick={() => setFilterDate(filterDate ? '' : new Date().toISOString().slice(0, 10))}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ marginRight: '6px' }}><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M3 10h18M8 2v4M16 2v4" /></svg> Filtrer par date
-                    </button>
-                    {filterDate && (
-                      <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} style={styles.filterInput} />
-                    )}
-                    <button style={styles.btnFilterSub} onClick={() => setFilterSiteId(filterSiteId ? '' : sites[0]?.id?.toString() || '')}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ marginRight: '6px' }}><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z" /><circle cx="12" cy="9.5" r="2.3" /></svg> Filtrer par site
-                    </button>
-                    {filterSiteId && (
-                      <select value={filterSiteId} onChange={(e) => setFilterSiteId(e.target.value)} style={styles.filterSelect}>
-                        {sites.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
-                      </select>
-                    )}
-                  </>
-                )}
                 <div style={styles.searchWrapper}>
                   <IconSearch style={styles.searchIcon} />
                   <input
@@ -370,6 +360,47 @@ export default function CallCenter() {
               </div>
             </div>
 
+            {showFilters && (
+              <div style={styles.filterArea}>
+                <input
+                  type="date"
+                  value={filterDate}
+                  onChange={(e) => setFilterDate(e.target.value)}
+                  style={styles.filterSelect}
+                />
+                <select
+                  value={filterSiteId}
+                  onChange={(e) => setFilterSiteId(e.target.value)}
+                  style={styles.filterSelect}
+                >
+                  <option value="">Tous les sites</option>
+                  {sites.map((s) => (
+                    <option key={s.id} value={s.id}>{s.nom}</option>
+                  ))}
+                </select>
+                <select
+                  value={filterPriority}
+                  onChange={(e) => setFilterPriority(e.target.value)}
+                  style={styles.filterSelect}
+                >
+                  <option value="">Toutes priorites</option>
+                  <option value="critique">Critique</option>
+                  <option value="haute">Haute</option>
+                  <option value="normale">Normale</option>
+                  <option value="basse">Basse</option>
+                </select>
+                <select
+                  value={filterType}
+                  onChange={(e) => setFilterType(e.target.value)}
+                  style={styles.filterSelect}
+                >
+                  <option value="">Tous types</option>
+                  <option value="particulier">Particulier</option>
+                  <option value="entreprise">Entreprise</option>
+                </select>
+              </div>
+            )}
+
             <div style={{ overflowX: 'auto' }}>
               <table style={styles.table}>
                 <thead>
@@ -381,14 +412,13 @@ export default function CallCenter() {
                     <th style={styles.th}>PRIORITE</th>
                     <th style={styles.th}>STATUT</th>
                     <th style={styles.th}>DATE</th>
-                    <th style={{ ...styles.th, textAlign: 'center' }}>DETAILS</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan="8" style={styles.emptyCell}>Chargement des donnees...</td></tr>
+                    <tr><td colSpan="7" style={styles.emptyCell}>Chargement des donnees...</td></tr>
                   ) : filteredTickets.length === 0 ? (
-                    <tr><td colSpan="8" style={styles.emptyCell}>Aucune reclamation trouvee.</td></tr>
+                    <tr><td colSpan="7" style={styles.emptyCell}>Aucune reclamation trouvee.</td></tr>
                   ) : filteredTickets.map((ticket) => {
                     const prio = COLORS.priorities[ticket.priorite?.toUpperCase()] || COLORS.priorities.NORMALE;
                     const statutKey = getStatutKey(ticket.statut);
@@ -425,15 +455,6 @@ export default function CallCenter() {
                           </span>
                         </td>
                         <td style={{ ...styles.td, color: COLORS.textMuted, fontWeight: 600 }}>{formatDateFr(ticket.created_at)}</td>
-                        <td style={{ ...styles.td, textAlign: 'center' }}>
-                          <button
-                            style={styles.actionBtn}
-                            title="Voir les details"
-                            onClick={(e) => { e.stopPropagation(); setSelectedTicket(ticket); }}
-                          >
-                            <IconEye />
-                          </button>
-                        </td>
                       </tr>
                     );
                   })}
@@ -445,8 +466,8 @@ export default function CallCenter() {
       </div>
 
       {selectedTicket && (
-        <div style={styles.overlay} onClick={() => setSelectedTicket(null)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div className="fade-in" style={styles.overlay} onClick={() => setSelectedTicket(null)}>
+          <div className="scale-in" style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <h2 style={styles.modalTitle}>Ticket {selectedTicket.numero_ticket}</h2>
               <button style={styles.modalClose} onClick={() => setSelectedTicket(null)}><IconX /></button>
@@ -458,19 +479,19 @@ export default function CallCenter() {
                   <h3 style={styles.modalSectionTitle}>Client</h3>
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Nom complet</span>
-                    <span style={styles.modalValue}>{selectedTicket.nom_complet_client || '-'}</span>
+                    <span style={styles.modalValue}>{selectedTicket.nom_complet_client || '\u2014'}</span>
                   </div>
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Telephone</span>
-                    <span style={styles.modalValue}>{selectedTicket.telephone_client || '-'}</span>
+                    <span style={styles.modalValue}>{selectedTicket.telephone_client || '\u2014'}</span>
                   </div>
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Email</span>
-                    <span style={styles.modalValue}>{selectedTicket.email_client || '-'}</span>
+                    <span style={styles.modalValue}>{selectedTicket.email_client || '\u2014'}</span>
                   </div>
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Type</span>
-                    <span style={styles.modalValue}>{selectedTicket.type_client || '-'}</span>
+                    <span style={styles.modalValue}>{selectedTicket.type_client || '\u2014'}</span>
                   </div>
                 </div>
 
@@ -494,15 +515,33 @@ export default function CallCenter() {
                   </div>
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Site concerne</span>
-                    <span style={styles.modalValue}>{selectedTicket.site_display || '-'}</span>
+                    <span style={styles.modalValue}>{selectedTicket.site_display || '\u2014'}</span>
                   </div>
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Cree par</span>
-                    <span style={styles.modalValue}>{selectedTicket.cree_par?.nom_user || '-'}</span>
+                    {selectedTicket.cree_par ? (
+                      <span style={styles.userChip}
+                        onMouseEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); setHoveredUser({ user: selectedTicket.cree_par, rect: r }); }}
+                        onMouseLeave={() => setHoveredUser(null)}
+                      >
+                        {selectedTicket.cree_par.code_user}
+                      </span>
+                    ) : (
+                      <span style={styles.modalValue}>{selectedTicket.cree_par?.code_user || '\u2014'}</span>
+                    )}
                   </div>
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Assigne a</span>
-                    <span style={styles.modalValue}>{selectedTicket.assigne_a_display || '-'}</span>
+                    {selectedTicket.assigne_a ? (
+                      <span style={styles.userChip}
+                        onMouseEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); setHoveredUser({ user: selectedTicket.assigne_a, rect: r }); }}
+                        onMouseLeave={() => setHoveredUser(null)}
+                      >
+                        {selectedTicket.assigne_a_display}
+                      </span>
+                    ) : (
+                      <span style={styles.modalValue}>{selectedTicket.assigne_a_display || '\u2014'}</span>
+                    )}
                   </div>
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Date creation</span>
@@ -524,21 +563,25 @@ export default function CallCenter() {
 
               {selectedTicket.description && (
                 <div style={styles.modalSection}>
-                  <h3 style={styles.modalSectionTitle}>Description (generee pour les ingenieurs)</h3>
+                  <h3 style={styles.modalSectionTitle}>Description generee par IA</h3>
                   <p style={styles.modalText}>{selectedTicket.description}</p>
                 </div>
               )}
 
-              {selectedTicket.commentaires && selectedTicket.commentaires.length > 0 && (
+              {selectedTicket.mots_cles_ia && (
                 <div style={styles.modalSection}>
-                  <h3 style={styles.modalSectionTitle}>Commentaires ({selectedTicket.commentaires.length})</h3>
-                  {selectedTicket.commentaires.map((c) => (
-                    <div key={c.id} style={styles.comment}>
-                      <strong>{c.auteur?.nom_user || 'Inconnu'}</strong>
-                      <span style={{ color: COLORS.textMuted, fontSize: '11px', marginLeft: '12px' }}>{formatDateTimeFr(c.created_at)}</span>
-                      <p style={{ margin: '4px 0 0', fontSize: '13px' }}>{c.contenu}</p>
-                    </div>
-                  ))}
+                  <h3 style={styles.modalSectionTitle}>Mots-cles saisis</h3>
+                  <p style={styles.modalText}>{selectedTicket.mots_cles_ia}</p>
+                </div>
+              )}
+
+              {hoveredUser && (
+                <div style={{ ...styles.userTooltip, top: hoveredUser.rect.bottom + 6, left: hoveredUser.rect.left }}>
+                  <div style={styles.userTooltipArrow} />
+                  <div style={styles.userTooltipName}>{hoveredUser.user.nom_user || hoveredUser.user.code_user}</div>
+                  <div style={styles.userTooltipDetail}>{hoveredUser.user.code_user}</div>
+                  <div style={styles.userTooltipDetail}>{hoveredUser.user.email}</div>
+                  <div style={styles.userTooltipDetail}>{hoveredUser.user.role_user || hoveredUser.user.role}</div>
                 </div>
               )}
             </div>
@@ -555,15 +598,15 @@ export default function CallCenter() {
 
 const styles = {
   appLayout: { display: 'flex', minHeight: '100vh', backgroundColor: COLORS.mainBg, fontFamily: "'Inter', system-ui, sans-serif", width: '100%' },
-  sidebar: { width: '260px', backgroundColor: COLORS.sidebarBg, color: '#94A3B8', display: 'flex', flexDirection: 'column', padding: '24px 16px', flexShrink: 0 },
-  brandZone: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '40px', paddingLeft: '8px' },
-  logoImg: { width: '36px', height: 'auto', objectFit: 'contain', borderRadius: '4px' },
+  sidebar: { width: '193px', backgroundColor: COLORS.sidebarBg, color: '#94A3B8', display: 'flex', flexDirection: 'column', padding: '0', flexShrink: 0 },
+  brandZone: { height: '82px', display: 'flex', alignItems: 'center', gap: '13px', padding: '0 17px', borderBottom: '1px solid rgba(255,255,255,0.07)' },
+  brandLogo: { width: '34px', height: 'auto', objectFit: 'contain' },
   brandName: { color: '#FFFFFF', fontWeight: 700, fontSize: '16px' },
-  brandRole: { fontSize: '12px', color: '#64748B' },
-  menuSection: { display: 'flex', flexDirection: 'column', gap: '4px' },
-  sectionLabel: { fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '6px', paddingLeft: '12px', letterSpacing: '0.5px' },
-  menuItem: { display: 'flex', alignItems: 'center', backgroundColor: 'transparent', border: 'none', color: '#94A3B8', padding: '11px 12px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', fontSize: '13px', width: '100%' },
-  menuItemActive: { backgroundColor: COLORS.sidebarActive, color: '#FFFFFF', fontWeight: 600 },
+  brandRole: { marginTop: '6px', fontSize: '10px', color: '#9492a0' },
+  menuSection: { display: 'flex', flexDirection: 'column', gap: '5px', padding: '26px 12px 0' },
+  sectionLabel: { margin: '0 5px 10px', fontSize: '6px', fontWeight: 700, color: '#4e4b5c', letterSpacing: '1px' },
+  menuItem: { display: 'flex', alignItems: 'center', background: 'transparent', border: 'none', color: '#92909e', padding: '0 10px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', fontSize: '13px', width: '100%', height: '34px', textDecoration: 'none', outline: 'none' },
+  menuItemActive: { background: 'linear-gradient(90deg, #E8401A, #C0340D)', color: '#FFFFFF', fontWeight: 600, position: 'relative' },
   mainContent: { flex: 1, padding: '30px 40px', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' },
   topHeader: { marginBottom: '20px' },
   pageTitle: { margin: 0, fontSize: '22px', fontWeight: 700, color: COLORS.textDark },
@@ -574,22 +617,20 @@ const styles = {
   toolbarLeft: { display: 'flex', alignItems: 'center', gap: '12px' },
   tableTitle: { margin: 0, fontSize: '14px', fontWeight: 700, color: COLORS.textDark },
   toolbarActions: { display: 'flex', alignItems: 'center', gap: '12px' },
-  btnFilter: { display: 'flex', alignItems: 'center', backgroundColor: '#FFFFFF', border: `1px solid ${COLORS.border}`, padding: '8px 14px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', color: COLORS.textDark },
-  btnFilterSub: { display: 'flex', alignItems: 'center', backgroundColor: '#FFFFFF', border: `1px solid ${COLORS.djezzyOrange}`, padding: '8px 14px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', color: COLORS.djezzyRed },
-  filterInput: { padding: '8px 12px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', outline: 'none' },
-  filterSelect: { padding: '8px 12px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', backgroundColor: '#FFFFFF', outline: 'none' },
+  btnFilter: { display: 'flex', alignItems: 'center', backgroundColor: 'var(--cardBg, #FFFFFF)', border: `1px solid ${COLORS.border}`, padding: '8px 14px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', color: COLORS.textDark, transition: 'all 0.15s ease' },
+  filterArea: { display: 'flex', gap: '10px', padding: '12px 18px', backgroundColor: 'var(--mainBg, #fafbfc)', borderBottom: `1px solid ${COLORS.border}`, flexWrap: 'wrap' },
+  filterSelect: { minWidth: '150px', height: '31px', padding: '0 10px', color: COLORS.textDark, backgroundColor: 'var(--inputBg, #FFFFFF)', border: `1px solid ${COLORS.border}`, borderRadius: '5px', outline: 'none', transition: 'border-color 0.15s ease' },
   searchWrapper: { position: 'relative', display: 'flex', alignItems: 'center' },
-  searchIcon: { position: 'absolute', left: '10px', color: '#94A3B8' },
-  searchInput: { padding: '8px 12px 8px 32px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, backgroundColor: '#F8FAFC', fontSize: '13px', width: '180px', outline: 'none' },
-  btnNew: { display: 'flex', alignItems: 'center', backgroundColor: COLORS.djezzyRed, color: '#FFFFFF', border: 'none', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' },
+  searchIcon: { position: 'absolute', left: '10px', color: COLORS.textMuted },
+  searchInput: { padding: '8px 12px 8px 32px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, backgroundColor: 'var(--inputBg, #F8FAFC)', fontSize: '13px', width: '180px', outline: 'none', color: COLORS.textDark, transition: 'border-color 0.15s ease' },
+  btnNew: { display: 'flex', alignItems: 'center', backgroundColor: COLORS.djezzyRed, color: '#FFFFFF', border: 'none', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s ease' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' },
-  thRow: { backgroundColor: '#F8FAFC', borderBottom: `1px solid ${COLORS.border}` },
+  thRow: { backgroundColor: 'var(--mainBg, #F8FAFC)', borderBottom: `1px solid ${COLORS.border}` },
   th: { padding: '12px 14px', fontWeight: 700, color: '#94A3B8', fontSize: '10px', textTransform: 'uppercase' },
-  tr: { borderBottom: `1px solid ${COLORS.border}` },
+  tr: { borderBottom: `1px solid ${COLORS.border}`, transition: 'background 0.1s' },
   td: { padding: '14px', color: COLORS.textDark, verticalAlign: 'middle', whiteSpace: 'nowrap' },
   emptyCell: { textAlign: 'center', padding: '30px', color: COLORS.textMuted },
   badgeBase: { padding: '4px 10px', borderRadius: '4px', fontWeight: 700, fontSize: '10px', display: 'inline-flex', alignItems: 'center' },
-  actionBtn: { background: 'none', border: 'none', cursor: 'pointer', color: COLORS.textMuted, display: 'flex' },
 
   formHeader: { padding: '16px 20px', borderBottom: `1px solid ${COLORS.border}`, display: 'flex', alignItems: 'center' },
   formBody: { padding: '24px 30px' },
@@ -597,15 +638,15 @@ const styles = {
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px', marginBottom: '12px' },
   inputGroup: { display: 'flex', flexDirection: 'column', gap: '6px' },
   label: { fontSize: '11px', fontWeight: 700, color: COLORS.textDark },
-  input: { padding: '10px 14px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', outline: 'none' },
-  select: { padding: '10px 14px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', backgroundColor: '#FFFFFF', outline: 'none' },
-  textarea: { padding: '10px 14px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', resize: 'none', outline: 'none' },
+  input: { padding: '10px 14px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', backgroundColor: 'var(--inputBg, #FFFFFF)', outline: 'none' },
+  select: { padding: '10px 14px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', backgroundColor: 'var(--inputBg, #FFFFFF)', outline: 'none', color: COLORS.textDark },
+  textarea: { padding: '10px 14px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', resize: 'none', backgroundColor: 'var(--inputBg, #FFFFFF)', outline: 'none' },
   formActions: { display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '30px' },
-  btnCancel: { backgroundColor: '#FFFFFF', border: `1px solid ${COLORS.border}`, padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' },
+  btnCancel: { backgroundColor: 'var(--cardBg, #FFFFFF)', border: `1px solid ${COLORS.border}`, padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', color: COLORS.textDark },
   btnSubmit: { display: 'flex', alignItems: 'center', backgroundColor: COLORS.djezzyRed, color: '#FFFFFF', border: 'none', padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' },
 
   overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modal: { backgroundColor: '#FFFFFF', borderRadius: '12px', width: '700px', maxWidth: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' },
+  modal: { backgroundColor: 'var(--cardBg, #FFFFFF)', borderRadius: '12px', width: '700px', maxWidth: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}` },
   modalTitle: { margin: 0, fontSize: '18px', fontWeight: 700, color: COLORS.textDark },
   modalClose: { background: 'none', border: 'none', cursor: 'pointer', color: COLORS.textMuted, padding: '4px' },
@@ -617,6 +658,13 @@ const styles = {
   modalLabel: { fontSize: '12px', color: COLORS.textMuted, fontWeight: 500 },
   modalValue: { fontSize: '13px', color: COLORS.textDark, fontWeight: 600 },
   modalText: { fontSize: '13px', color: COLORS.textDark, lineHeight: '1.6', margin: 0, whiteSpace: 'pre-wrap' },
-  comment: { padding: '12px', backgroundColor: '#F8FAFC', borderRadius: '8px', marginBottom: '8px' },
+  comment: { padding: '12px', backgroundColor: 'var(--inputBg, #F8FAFC)', borderRadius: '8px', marginBottom: '8px' },
   modalFooter: { padding: '16px 24px', borderTop: `1px solid ${COLORS.border}`, display: 'flex', justifyContent: 'flex-end' },
+
+  userChip: { fontSize: '13px', color: COLORS.djezzyRed, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px', textDecorationColor: 'rgba(232,64,26,0.3)', position: 'relative' },
+
+  userTooltip: { position: 'fixed', zIndex: 1200, backgroundColor: '#1E293B', color: '#F1F5F9', padding: '10px 14px', borderRadius: '8px', fontSize: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.3)', pointerEvents: 'none', whiteSpace: 'nowrap' },
+  userTooltipArrow: { position: 'absolute', top: '-5px', left: '16px', width: '10px', height: '10px', backgroundColor: '#1E293B', transform: 'rotate(45deg)', borderRadius: '2px' },
+  userTooltipName: { fontWeight: 700, fontSize: '13px', marginBottom: '4px' },
+  userTooltipDetail: { color: '#94A3B8', fontSize: '11px', lineHeight: '1.6' },
 };

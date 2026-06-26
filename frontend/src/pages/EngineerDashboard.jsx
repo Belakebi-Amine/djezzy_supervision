@@ -24,10 +24,10 @@ const COLORS = {
     CRITIQUE: { bg: '#FEE2E2', text: '#DC2626', side: '#DC2626' },
   },
   status: {
-    OUVERT: { bg: '#E0F2FE', text: '#0284C7', dot: '#0284C7' },
-    'EN COURS': { bg: '#FEF3C7', text: '#D97706', dot: '#D97706' },
-    RESOLU: { bg: '#DCFCE7', text: '#15803D', dot: '#15803D' },
-    FERME: { bg: '#FEE2E2', text: '#DC2626', dot: '#DC2626' },
+    OUVERT: { bg: '#BAE6FD', text: '#0369A1', dot: '#0284C7' },
+    'EN COURS': { bg: '#FDE68A', text: '#B45309', dot: '#D97706' },
+    RESOLU: { bg: '#A7F3D0', text: '#047857', dot: '#15803D' },
+    FERME: { bg: '#FECACA', text: '#B91C1C', dot: '#DC2626' },
   },
 };
 
@@ -81,6 +81,7 @@ const IconChevronLeft = (p) => (
 );
 const ALL_STATUSES = ['ferme', 'ouvert', 'resolu'];
 const ALL_LABELS = { ferme: 'Ferme', ouvert: 'Ouvert', resolu: 'Resolu' };
+const SITE_LABELS = { UP: 'Actif', DOWN: 'Inactif' };
 
 const getForwardStatuses = (statut) => {
   switch (statut) {
@@ -100,6 +101,7 @@ export default function EngineerDashboard() {
   const [loading, setLoading] = useState(false);
   const [sitesLoading, setSitesLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatut, setFilterStatut] = useState('');
   const [filterPriority, setFilterPriority] = useState('');
   const [filterType, setFilterType] = useState('');
   const [filterDate, setFilterDate] = useState('');
@@ -111,6 +113,11 @@ export default function EngineerDashboard() {
   const [selectedSite, setSelectedSite] = useState(null);
   const [showSiteForm, setShowSiteForm] = useState(false);
   const [siteSubmitting, setSiteSubmitting] = useState(false);
+  const [siteFilterCommune, setSiteFilterCommune] = useState('');
+  const [siteFilterWilaya, setSiteFilterWilaya] = useState('');
+  const [siteFilterStatut, setSiteFilterStatut] = useState('');
+  const [showSiteFilters, setShowSiteFilters] = useState(false);
+  const [hoveredUser, setHoveredUser] = useState(null);
   const [newSiteForm, setNewSiteForm] = useState({
     nom: '', wilaya: '', commune: '', coordX: '', coordY: '', adresse: '', statut: 'UP',
   });
@@ -213,10 +220,8 @@ export default function EngineerDashboard() {
     e.preventDefault();
     setSiteSubmitting(true);
     try {
-      const generatedCode = 'SITE-' + newSiteForm.nom.slice(0, 3).toUpperCase() + '-' + Date.now().toString(36).slice(-4).toUpperCase();
       const payload = {
         ...newSiteForm,
-        codeSite: generatedCode,
         coordX: newSiteForm.coordX || null,
         coordY: newSiteForm.coordY || null,
       };
@@ -245,7 +250,25 @@ export default function EngineerDashboard() {
 
   const getStatutKey = (statut) => statut?.replace('_', ' ').toUpperCase();
 
+  const filteredSites = sitesList.filter((s) => {
+    if (siteFilterCommune) {
+      if (!s.commune?.toLowerCase().includes(siteFilterCommune.toLowerCase())) return false;
+    }
+    if (siteFilterWilaya) {
+      if (!s.wilaya?.toLowerCase().includes(siteFilterWilaya.toLowerCase())) return false;
+    }
+    if (siteFilterStatut) {
+      if (s.statut !== siteFilterStatut) return false;
+    }
+    return true;
+  }).sort((a, b) => {
+    const numA = parseInt(a.codeSite?.replace(/\D/g, '')) || 0;
+    const numB = parseInt(b.codeSite?.replace(/\D/g, '')) || 0;
+    return numA - numB;
+  });
+
   const filteredTickets = tickets.filter((t) => {
+    if (t.statut === 'resolu') return false;
     const term = searchTerm.toLowerCase();
     const matchSearch =
       t.nom_complet_client?.toLowerCase().includes(term) ||
@@ -268,6 +291,10 @@ export default function EngineerDashboard() {
     if (filterSiteId) {
       const sid = t.site?.id;
       if (String(sid) !== String(filterSiteId)) return false;
+    }
+    if (filterStatut) {
+      const st = (t.statut || '').toLowerCase();
+      if (st !== filterStatut.toLowerCase()) return false;
     }
     return true;
   });
@@ -305,10 +332,13 @@ export default function EngineerDashboard() {
             <IconLogout style={{ marginRight: '10px', flexShrink: 0 }} /> Log out
           </button>
         </div>
+
+        <div style={{ ...styles.menuSection, marginTop: '10px' }}>
+        </div>
       </aside>
 
-      <div style={styles.mainContent}>
-        <header style={styles.topHeader}>
+      <div style={{ ...styles.mainContent, backgroundColor: COLORS.mainBg }}>
+        <header style={{ ...styles.topHeader, backgroundColor: COLORS.cardBg }}>
           {currentView === 'sites' && showSiteForm ? (
             <div>
               <div style={styles.backNav} onClick={() => setShowSiteForm(false)}>
@@ -320,7 +350,7 @@ export default function EngineerDashboard() {
               </div>
             </div>
           ) : (
-            <h1 style={styles.pageTitle}>{currentView === 'sites' ? 'Sites Reseau' : 'Reclamations'}</h1>
+            <h1 style={{ ...styles.pageTitle, color: '#171a21' }}>{currentView === 'sites' ? 'Sites Reseau' : 'Reclamations'}</h1>
           )}
         </header>
 
@@ -361,8 +391,8 @@ export default function EngineerDashboard() {
                   <div style={styles.inputGroup}>
                     <label style={styles.label}>STATUT</label>
                     <select name="statut" value={newSiteForm.statut} onChange={handleSiteFormChange} style={styles.select}>
-                      <option value="UP">UP</option>
-                      <option value="DOWN">DOWN</option>
+                      <option value="UP">Actif</option>
+                      <option value="DOWN">Inactif</option>
                     </select>
                   </div>
                 </div>
@@ -379,33 +409,64 @@ export default function EngineerDashboard() {
           ) : (
           <div style={styles.pageContent}>
             <div style={styles.statsRow}>
-              <div style={{ ...styles.statCard, borderLeftColor: '#3B82F6' }}>
-                <span style={styles.statNumber}>{sitesList.length}</span>
+              <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#3B82F6', backgroundColor: COLORS.cardBg, animationDelay: '0s' }}>
+                <span style={{ ...styles.statNumber, color: '#171a21' }}>{sitesList.length}</span>
                 <span style={styles.statLabel}>Total sites</span>
               </div>
-              <div style={{ ...styles.statCard, borderLeftColor: '#15803D' }}>
+              <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#15803D', backgroundColor: COLORS.cardBg, animationDelay: '0.05s' }}>
                 <span style={{ ...styles.statNumber, color: '#15803D' }}>{sitesList.filter((s) => s.statut === 'UP').length}</span>
-                <span style={styles.statLabel}>UP</span>
+                <span style={styles.statLabel}>Actif</span>
               </div>
-              <div style={{ ...styles.statCard, borderLeftColor: '#DC2626' }}>
+              <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#DC2626', backgroundColor: COLORS.cardBg, animationDelay: '0.1s' }}>
                 <span style={{ ...styles.statNumber, color: '#DC2626' }}>{sitesList.filter((s) => s.statut === 'DOWN').length}</span>
-                <span style={styles.statLabel}>DOWN</span>
+                <span style={styles.statLabel}>Inactif</span>
               </div>
             </div>
-            <div style={styles.tableCard}>
-              <div style={styles.toolbar}>
+            <div className="fade-in table-card" style={{ ...styles.tableCard, backgroundColor: COLORS.cardBg, animationDelay: '0.15s' }}>
+              <div style={{ ...styles.toolbar, borderBottom: `1px solid ${COLORS.border}` }}>
                 <div style={styles.toolbarLeft}>
-                  <h2 style={styles.tableTitle}>Liste des sites reseau</h2>
+                  <h2 style={{ ...styles.tableTitle, color: '#181c24' }}>Liste des sites reseau</h2>
                 </div>
                 <div style={styles.toolbarActions}>
                   <button onClick={fetchSitesData} style={styles.btnFilter}>
                     <IconRefresh style={{ marginRight: '6px' }} /> Actualiser
+                  </button>
+                  <button onClick={() => setShowSiteFilters(!showSiteFilters)} style={styles.btnFilter}>
+                    <IconFilter style={{ marginRight: '6px' }} /> Filtrer
                   </button>
                   <button onClick={() => { setShowSiteForm(true); setSelectedSite(null); }} style={styles.btnNew}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '6px' }}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Nouveau Site
                   </button>
                 </div>
               </div>
+
+              {showSiteFilters && (
+                <div style={styles.filterArea}>
+                  <input
+                    type="text"
+                    placeholder="Wilaya..."
+                    value={siteFilterWilaya}
+                    onChange={(e) => setSiteFilterWilaya(e.target.value)}
+                    style={styles.filterSelect}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Commune..."
+                    value={siteFilterCommune}
+                    onChange={(e) => setSiteFilterCommune(e.target.value)}
+                    style={styles.filterSelect}
+                  />
+                  <select
+                    value={siteFilterStatut}
+                    onChange={(e) => setSiteFilterStatut(e.target.value)}
+                    style={styles.filterSelect}
+                  >
+                    <option value="">Tous les etats</option>
+                    <option value="UP">Actif</option>
+                    <option value="DOWN">Inactif</option>
+                  </select>
+                </div>
+              )}
               <div style={{ overflowX: 'auto' }}>
                 <table style={styles.table}>
                   <thead>
@@ -420,9 +481,9 @@ export default function EngineerDashboard() {
                   <tbody>
                     {sitesLoading ? (
                       <tr><td colSpan="5" style={styles.emptyCell}>Chargement des sites...</td></tr>
-                    ) : sitesList.length === 0 ? (
+                    ) : filteredSites.length === 0 ? (
                       <tr><td colSpan="5" style={styles.emptyCell}>Aucun site trouve.</td></tr>
-                    ) : sitesList.map((site) => {
+                    ) : filteredSites.map((site) => {
                       return (
                         <tr
                           key={site.id}
@@ -434,8 +495,9 @@ export default function EngineerDashboard() {
                           <td style={{ ...styles.td, fontWeight: 600 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <span style={{
-                                width: 8, height: 8, borderRadius: '50%', display: 'inline-block', flexShrink: 0,
-                                backgroundColor: site.statut === 'UP' ? '#15803D' : site.statut === 'DOWN' ? '#DC2626' : '#D97706',
+                                width: 10, height: 10, borderRadius: '50%', display: 'inline-block', flexShrink: 0,
+                                backgroundColor: site.statut === 'UP' ? '#059669' : site.statut === 'DOWN' ? '#DC2626' : '#D97706',
+                                boxShadow: site.statut === 'UP' ? '0 0 6px rgba(5,150,105,0.6)' : site.statut === 'DOWN' ? '0 0 6px rgba(220,38,38,0.6)' : 'none',
                               }} />
                               {site.codeSite}
                             </div>
@@ -455,15 +517,14 @@ export default function EngineerDashboard() {
                                     onClick={() => handleSiteToggle(site.id, site.statut)}
                                     style={{
                                       ...styles.statusBtn,
-                                      backgroundColor: isActive ? (s === 'UP' ? '#DCFCE7' : '#FEE2E2') : '#FFFFFF',
-                                      color: isActive ? (s === 'UP' ? '#15803D' : '#DC2626') : (isTarget ? (s === 'UP' ? '#15803D' : '#DC2626') : '#D0D0D0'),
-                                      borderColor: isActive ? (s === 'UP' ? '#BBF7D0' : '#FECACA') : (isTarget ? (s === 'UP' ? '#BBF7D0' : '#FECACA') : '#E5E5E5'),
+                                      backgroundColor: isActive ? (s === 'UP' ? '#059669' : '#DC2626') : (isTarget ? '#FFFFFF' : '#FFFFFF'),
+                                      color: isActive ? '#FFFFFF' : (isTarget ? (s === 'UP' ? '#059669' : '#DC2626') : '#D0D0D0'),
+                                      borderColor: isActive ? (s === 'UP' ? '#059669' : '#DC2626') : (isTarget ? (s === 'UP' ? '#059669' : '#DC2626') : '#E5E5E5'),
                                       cursor: isTarget && togglingSiteId !== site.id ? 'pointer' : 'not-allowed',
-                                      opacity: isActive || isTarget ? 1 : 0.4,
-                                      fontWeight: isActive ? 700 : 600,
+                                      fontWeight: isActive ? 700 : (isTarget ? 600 : 500),
                                     }}
                                   >
-                                    {s}
+                                    {SITE_LABELS[s]}
                                   </button>
                                 );
                               })}
@@ -479,66 +540,61 @@ export default function EngineerDashboard() {
           </div>
         )) : (
         <div style={styles.pageContent}>
-          <div style={styles.tableCard}>
-            <div style={styles.toolbar}>
+          <div className="fade-in table-card" style={{ ...styles.tableCard, backgroundColor: COLORS.cardBg, animationDelay: '0.1s' }}>
+            <div style={{ ...styles.toolbar, borderBottom: `1px solid ${COLORS.border}` }}>
               <div style={styles.toolbarLeft}>
-                <h2 style={styles.tableTitle}>Listes des reclamations</h2>
+                <h2 style={{ ...styles.tableTitle, color: '#181c24' }}>Listes des reclamations</h2>
               </div>
 
               <div style={styles.toolbarActions}>
-                <button onClick={fetchTickets} style={styles.btnFilter}>
+                <button onClick={fetchTickets} style={{ ...styles.btnFilter, backgroundColor: COLORS.cardBg, color: '#3a404a', border: `1px solid ${COLORS.border}` }}>
                   <IconRefresh style={{ marginRight: '6px' }} /> Actualiser
                 </button>
-                <button onClick={() => setShowFilters(!showFilters)} style={styles.btnFilter}>
+                <button onClick={() => setShowFilters(!showFilters)} style={{ ...styles.btnFilter, backgroundColor: COLORS.cardBg, color: '#3a404a', border: `1px solid ${COLORS.border}` }}>
                   <IconFilter style={{ marginRight: '6px' }} /> Filtrer
                 </button>
-                <div style={styles.searchWrapper}>
+
+                <div style={{ ...styles.searchWrapper, backgroundColor: '#F8FAFC' }}>
                   <IconSearch style={styles.searchIcon} />
                   <input
                     type="text"
                     placeholder="Rechercher..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    style={styles.searchInput}
+                    style={{ ...styles.searchInput, backgroundColor: 'transparent', color: '#1c212b' }}
                   />
                 </div>
               </div>
             </div>
 
             {showFilters && (
-              <div style={styles.filterArea}>
+              <div style={{ ...styles.filterArea, backgroundColor: '#fafbfc', borderBottom: `1px solid ${COLORS.border}` }}>
                 <input
                   type="date"
                   value={filterDate}
                   onChange={(e) => setFilterDate(e.target.value)}
-                  style={styles.filterSelect}
+                  style={{ ...styles.filterSelect, backgroundColor: COLORS.inputBg, color: '#4e5561', border: `1px solid ${COLORS.border}` }}
                 />
-                <select
-                  value={filterSiteId}
-                  onChange={(e) => setFilterSiteId(e.target.value)}
-                  style={styles.filterSelect}
-                >
+                <select value={filterStatut} onChange={(e) => setFilterStatut(e.target.value)} style={{ ...styles.filterSelect, backgroundColor: COLORS.inputBg, color: '#4e5561', border: `1px solid ${COLORS.border}` }}>
+                  <option value="">Tous statuts</option>
+                  <option value="ferme">Ferme</option>
+                  <option value="ouvert">Ouvert</option>
+                  <option value="resolu">Resolu</option>
+                </select>
+                <select value={filterSiteId} onChange={(e) => setFilterSiteId(e.target.value)} style={{ ...styles.filterSelect, backgroundColor: COLORS.inputBg, color: '#4e5561', border: `1px solid ${COLORS.border}` }}>
                   <option value="">Tous les sites</option>
                   {sites.map((s) => (
                     <option key={s.id} value={s.id}>{s.nom}</option>
                   ))}
                 </select>
-                <select
-                  value={filterPriority}
-                  onChange={(e) => setFilterPriority(e.target.value)}
-                  style={styles.filterSelect}
-                >
+                <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} style={{ ...styles.filterSelect, backgroundColor: COLORS.inputBg, color: '#4e5561', border: `1px solid ${COLORS.border}` }}>
                   <option value="">Toutes priorites</option>
                   <option value="critique">Critique</option>
                   <option value="haute">Haute</option>
                   <option value="normale">Normale</option>
                   <option value="basse">Basse</option>
                 </select>
-                <select
-                  value={filterType}
-                  onChange={(e) => setFilterType(e.target.value)}
-                  style={styles.filterSelect}
-                >
+                <select value={filterType} onChange={(e) => setFilterType(e.target.value)} style={{ ...styles.filterSelect, backgroundColor: COLORS.inputBg, color: '#4e5561', border: `1px solid ${COLORS.border}` }}>
                   <option value="">Tous types</option>
                   <option value="particulier">Particulier</option>
                   <option value="entreprise">Entreprise</option>
@@ -547,14 +603,14 @@ export default function EngineerDashboard() {
             )}
 
             <div style={{ overflowX: 'auto' }}>
-              <table style={styles.table}>
+              <table style={{ ...styles.table, backgroundColor: COLORS.cardBg }}>
                 <thead>
                   <tr style={styles.thRow}>
                     <th style={styles.th}>ID</th>
                     <th style={styles.th}>TYPE</th>
                     <th style={styles.th}>SITE</th>
-                    <th style={styles.th}>DESCRIPTION</th>
                     <th style={styles.th}>PRIORITE</th>
+                    <th style={styles.th}>STATUT</th>
                     <th style={styles.th}>DATE</th>
                     <th style={{ ...styles.th, textAlign: 'center' }}>ACTION</th>
                   </tr>
@@ -567,6 +623,8 @@ export default function EngineerDashboard() {
                   ) : filteredTickets.map((ticket) => {
                     const prio = COLORS.priorities[ticket.priorite?.toUpperCase()] || COLORS.priorities.NORMALE;
                     const typ = COLORS.types[ticket.type_client?.toUpperCase()] || COLORS.types.PARTICULIER;
+                    const statutKey = getStatutKey(ticket.statut);
+                    const stat = COLORS.status[statutKey] || COLORS.status.FERME;
 
                     return (
                       <tr
@@ -585,12 +643,15 @@ export default function EngineerDashboard() {
                           </span>
                         </td>
                         <td style={styles.td}>{ticket.site_display}</td>
-                        <td style={{ ...styles.td, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {ticket.description || '-'}
-                        </td>
                         <td style={styles.td}>
                           <span style={{ ...styles.badgeBase, backgroundColor: prio.bg, color: prio.text }}>
                             {ticket.priorite?.toUpperCase()}
+                          </span>
+                        </td>
+                        <td style={styles.td}>
+                          <span style={{ ...styles.badgeBase, backgroundColor: stat.bg, color: stat.text }}>
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: stat.dot, marginRight: '6px', display: 'inline-block' }} />
+                            {getStatutKey(ticket.statut)}
                           </span>
                         </td>
                         <td style={{ ...styles.td, color: COLORS.textMuted }}>{formatDateFr(ticket.created_at)}</td>
@@ -609,12 +670,11 @@ export default function EngineerDashboard() {
                                   onClick={(e) => { e.stopPropagation(); handleStatusChange(ticket.id, s, ticket.statut); }}
                                   style={{
                                     ...styles.statusBtn,
-                                    backgroundColor: isCurrent ? sc.bg : '#FFFFFF',
+                                    backgroundColor: isCurrent ? sc.bg : (canGo ? '#FFFFFF' : '#FFFFFF'),
                                     color: isCurrent ? '#FFFFFF' : (canGo ? sc.text : '#D0D0D0'),
-                                    borderColor: isCurrent ? sc.bg : (canGo ? sc.dot : '#E5E5E5'),
+                                    borderColor: isCurrent ? sc.bg : (canGo ? sc.text : '#E5E5E5'),
                                     cursor: canGo && updatingId !== ticket.id ? 'pointer' : 'not-allowed',
-                                    opacity: canGo || isCurrent ? 1 : 0.4,
-                                    fontWeight: isCurrent ? 700 : 600,
+                                    fontWeight: isCurrent ? 700 : (canGo ? 600 : 500),
                                   }}
                                 >
                                   {ALL_LABELS[s]}
@@ -635,8 +695,8 @@ export default function EngineerDashboard() {
       </div>
 
       {selectedTicket && (
-        <div style={styles.overlay} onClick={() => setSelectedTicket(null)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div className="fade-in" style={styles.overlay} onClick={() => setSelectedTicket(null)}>
+          <div className="scale-in" style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <h2 style={styles.modalTitle}>Ticket {selectedTicket.numero_ticket}</h2>
               <button style={styles.modalClose} onClick={() => setSelectedTicket(null)}><IconX /></button>
@@ -688,11 +748,29 @@ export default function EngineerDashboard() {
                   </div>
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Cree par</span>
-                    <span style={styles.modalValue}>{selectedTicket.cree_par?.nom_user || '-'}</span>
+                    {selectedTicket.cree_par ? (
+                      <span style={styles.userChip}
+                        onMouseEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); setHoveredUser({ user: selectedTicket.cree_par, rect: r }); }}
+                        onMouseLeave={() => setHoveredUser(null)}
+                      >
+                        {selectedTicket.cree_par.code_user}
+                      </span>
+                    ) : (
+                      <span style={styles.modalValue}>{selectedTicket.cree_par?.code_user || '-'}</span>
+                    )}
                   </div>
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Assigne a</span>
-                    <span style={styles.modalValue}>{selectedTicket.assigne_a_display || '-'}</span>
+                    {selectedTicket.assigne_a ? (
+                      <span style={styles.userChip}
+                        onMouseEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); setHoveredUser({ user: selectedTicket.assigne_a, rect: r }); }}
+                        onMouseLeave={() => setHoveredUser(null)}
+                      >
+                        {selectedTicket.assigne_a_display}
+                      </span>
+                    ) : (
+                      <span style={styles.modalValue}>{selectedTicket.assigne_a_display || '-'}</span>
+                    )}
                   </div>
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Date creation</span>
@@ -731,6 +809,16 @@ export default function EngineerDashboard() {
                   ))}
                 </div>
               )}
+
+              {hoveredUser && (
+                <div style={{ ...styles.userTooltip, top: hoveredUser.rect.bottom + 6, left: hoveredUser.rect.left }}>
+                  <div style={styles.userTooltipArrow} />
+                  <div style={styles.userTooltipName}>{hoveredUser.user.nom_user || hoveredUser.user.code_user}</div>
+                  <div style={styles.userTooltipDetail}>{hoveredUser.user.code_user}</div>
+                  <div style={styles.userTooltipDetail}>{hoveredUser.user.email}</div>
+                  <div style={styles.userTooltipDetail}>{hoveredUser.user.role_user || hoveredUser.user.role}</div>
+                </div>
+              )}
             </div>
 
             <div style={styles.modalFooter}>
@@ -748,12 +836,11 @@ export default function EngineerDashboard() {
                       onClick={() => handleStatusChange(selectedTicket.id, s, selectedTicket.statut)}
                       style={{
                         ...styles.statusBtn,
-                        backgroundColor: isCurrent ? sc.bg : '#FFFFFF',
+                        backgroundColor: isCurrent ? sc.bg : (canGo ? '#FFFFFF' : '#FFFFFF'),
                         color: isCurrent ? '#FFFFFF' : (canGo ? sc.text : '#D0D0D0'),
-                        borderColor: isCurrent ? sc.bg : (canGo ? sc.dot : '#E5E5E5'),
+                        borderColor: isCurrent ? sc.bg : (canGo ? sc.text : '#E5E5E5'),
                         cursor: canGo && updatingId !== selectedTicket.id ? 'pointer' : 'not-allowed',
-                        opacity: canGo || isCurrent ? 1 : 0.4,
-                        fontWeight: isCurrent ? 700 : 600,
+                        fontWeight: isCurrent ? 700 : (canGo ? 600 : 500),
                       }}
                     >
                       {ALL_LABELS[s]}
@@ -768,8 +855,8 @@ export default function EngineerDashboard() {
       )}
 
       {selectedSite && (
-        <div style={styles.overlay} onClick={() => setSelectedSite(null)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div className="fade-in" style={styles.overlay} onClick={() => setSelectedSite(null)}>
+          <div className="scale-in" style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
               <h2 style={styles.modalTitle}>Site {selectedSite.codeSite}</h2>
               <button style={styles.modalClose} onClick={() => setSelectedSite(null)}><IconX /></button>
@@ -809,7 +896,7 @@ export default function EngineerDashboard() {
                         backgroundColor: selectedSite.statut === 'UP' ? '#DCFCE7' : '#FEE2E2',
                         color: selectedSite.statut === 'UP' ? '#15803D' : '#DC2626',
                       }}>
-                        {selectedSite.statut}
+                        {SITE_LABELS[selectedSite.statut]}
                       </span>
                     </span>
                   </div>
@@ -848,30 +935,27 @@ export default function EngineerDashboard() {
                       onClick={() => handleSiteToggle(selectedSite.id, selectedSite.statut)}
                       style={{
                         ...styles.statusBtn,
-                        backgroundColor: isActive ? (s === 'UP' ? '#DCFCE7' : '#FEE2E2') : '#FFFFFF',
-                        color: isActive ? (s === 'UP' ? '#15803D' : '#DC2626') : (isTarget ? (s === 'UP' ? '#15803D' : '#DC2626') : '#D0D0D0'),
-                        borderColor: isActive ? (s === 'UP' ? '#BBF7D0' : '#FECACA') : (isTarget ? (s === 'UP' ? '#BBF7D0' : '#FECACA') : '#E5E5E5'),
+                        backgroundColor: isActive ? (s === 'UP' ? '#059669' : '#DC2626') : (isTarget ? '#FFFFFF' : '#FFFFFF'),
+                        color: isActive ? '#FFFFFF' : (isTarget ? (s === 'UP' ? '#059669' : '#DC2626') : '#D0D0D0'),
+                        borderColor: isActive ? (s === 'UP' ? '#059669' : '#DC2626') : (isTarget ? (s === 'UP' ? '#059669' : '#DC2626') : '#E5E5E5'),
                         cursor: isTarget && togglingSiteId !== selectedSite.id ? 'pointer' : 'not-allowed',
-                        opacity: isActive || isTarget ? 1 : 0.4,
-                        fontWeight: isActive ? 700 : 600,
+                        fontWeight: isActive ? 700 : (isTarget ? 600 : 500),
                       }}
                     >
-                      {s}
+                      {SITE_LABELS[s]}
                     </button>
                   );
                 })}
               </div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                {selectedSite.statut !== 'DOWN' && (
-                  <button
-                    disabled={togglingSiteId === selectedSite.id}
-                    onClick={() => handleArchiverSite(selectedSite.id)}
-                    style={styles.btnDanger}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '6px' }}><path d="M21 4H3M8 2v2M16 2v2M4 7l1 12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2l1-12M10 11v6M14 11v6" /></svg>
-                    Archiver
-                  </button>
-                )}
+                <button
+                  disabled={togglingSiteId === selectedSite.id}
+                  onClick={() => handleArchiverSite(selectedSite.id)}
+                  style={styles.btnDanger}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '6px' }}><path d="M21 4H3M8 2v2M16 2v2M4 7l1 12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2l1-12M10 11v6M14 11v6" /></svg>
+                  Archiver
+                </button>
                 <button style={styles.btnCancel} onClick={() => setSelectedSite(null)}>Fermer</button>
               </div>
             </div>
@@ -884,7 +968,7 @@ export default function EngineerDashboard() {
 }
 
 const styles = {
-  appLayout: { display: 'flex', minHeight: '100vh', backgroundColor: COLORS.mainBg, fontFamily: "'Inter', system-ui, sans-serif", width: '100%' },
+  appLayout: { display: 'flex', minHeight: '100vh', fontFamily: "'Inter', system-ui, sans-serif", width: '100%' },
   sidebar: { width: '193px', backgroundColor: COLORS.sidebarBg, color: '#94A3B8', display: 'flex', flexDirection: 'column', padding: '0', flexShrink: 0 },
   brandZone: { height: '82px', display: 'flex', alignItems: 'center', gap: '13px', padding: '0 17px', borderBottom: '1px solid rgba(255,255,255,0.07)' },
   brandLogo: { width: '34px', height: 'auto', objectFit: 'contain' },
@@ -895,47 +979,48 @@ const styles = {
   menuItem: { display: 'flex', alignItems: 'center', background: 'transparent', border: 'none', color: '#92909e', padding: '0 10px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', fontSize: '13px', width: '100%', height: '34px', textDecoration: 'none', outline: 'none' },
   menuItemActive: { background: 'linear-gradient(90deg, #9a0c2d, #710820)', color: '#FFFFFF', fontWeight: 600, position: 'relative' },
   mainContent: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', boxSizing: 'border-box' },
-  topHeader: { position: 'sticky', top: 0, height: '51px', display: 'flex', alignItems: 'center', padding: '0 27px', backgroundColor: '#FFFFFF', borderBottom: '1px solid #dadde3', boxShadow: '0 1px 2px rgba(20,25,35,0.08)', zIndex: 10 },
+  topHeader: { position: 'sticky', top: 0, height: '51px', display: 'flex', alignItems: 'center', padding: '0 27px', borderBottom: '1px solid #dadde3', boxShadow: '0 1px 2px rgba(20,25,35,0.08)', zIndex: 10 },
   pageTitle: { margin: 0, fontSize: '14px', fontWeight: 700, color: '#171a21' },
+  pageTitleDark: { margin: 0, fontSize: '14px', fontWeight: 700, color: '#e2e8f0' },
   pageContent: { padding: '24px 21px 40px', flex: 1 },
   statsRow: { display: 'flex', gap: '16px', marginBottom: '20px' },
   statCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: '8px', padding: '16px 20px', borderLeft: '4px solid', border: '1px solid #d6dae1', borderLeftWidth: '4px', display: 'flex', flexDirection: 'column', gap: '4px' },
-  statNumber: { fontSize: '24px', fontWeight: 700, color: '#171a21' },
-  statLabel: { fontSize: '11px', fontWeight: 600, color: '#818898', textTransform: 'uppercase', letterSpacing: '0.3px' },
+  statNumber: { fontSize: '24px', fontWeight: 700, color: COLORS.textDark },
+  statLabel: { fontSize: '11px', fontWeight: 600, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: '0.3px' },
   backNav: { display: 'flex', alignItems: 'center', fontSize: '16px', color: COLORS.textDark, cursor: 'pointer', marginBottom: '4px' },
   breadcrumb: { fontSize: '12px', color: COLORS.textMuted, fontWeight: 500 },
-  tableCard: { backgroundColor: COLORS.cardBg, borderRadius: '7px', border: '1px solid #d6dae1', display: 'flex', flexDirection: 'column', width: '100%', boxShadow: '0 1px 4px rgba(25,31,42,0.16)' },
+  tableCard: { backgroundColor: COLORS.cardBg, borderRadius: '7px', border: `1px solid ${COLORS.border}`, display: 'flex', flexDirection: 'column', width: '100%', boxShadow: '0 1px 4px rgba(0,0,0,0.12)' },
   formHeader: { padding: '16px 20px', borderBottom: `1px solid ${COLORS.border}`, display: 'flex', alignItems: 'center' },
   formBody: { padding: '24px 30px' },
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px', marginBottom: '12px' },
   inputGroup: { display: 'flex', flexDirection: 'column', gap: '6px' },
   label: { fontSize: '11px', fontWeight: 700, color: COLORS.textDark },
   input: { padding: '10px 14px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', outline: 'none' },
-  select: { padding: '10px 14px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', backgroundColor: '#FFFFFF', outline: 'none' },
+  select: { padding: '10px 14px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', backgroundColor: 'var(--inputBg, #FFFFFF)', outline: 'none', color: COLORS.textDark },
   formActions: { display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '30px' },
   btnSubmit: { display: 'flex', alignItems: 'center', backgroundColor: COLORS.djezzyRed, color: '#FFFFFF', border: 'none', padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' },
   toolbar: { minHeight: '44px', padding: '0 18px', display: 'flex', alignItems: 'center', borderBottom: `1px solid ${COLORS.border}` },
   toolbarLeft: { display: 'flex', alignItems: 'center', gap: '11px' },
-  tableTitle: { margin: 0, fontSize: '11px', fontWeight: 700, color: '#181c24' },
+  tableTitle: { margin: 0, fontSize: '11px', fontWeight: 700, color: COLORS.textDark },
   toolbarActions: { marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '9px' },
-  btnFilter: { display: 'flex', alignItems: 'center', backgroundColor: '#FFFFFF', border: '1px solid #cbd0d9', padding: '0 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', color: '#3a404a', height: '28px' },
+  btnFilter: { display: 'flex', alignItems: 'center', backgroundColor: 'var(--cardBg, #FFFFFF)', border: `1px solid ${COLORS.border}`, padding: '0 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', color: COLORS.textDark, height: '28px', transition: 'all 0.15s ease' },
   searchWrapper: { position: 'relative', display: 'flex', alignItems: 'center', width: '188px', height: '28px' },
-  searchIcon: { position: 'absolute', left: '10px', color: '#7b8498' },
-  searchInput: { width: '100%', height: '100%', padding: '0 10px 0 31px', borderRadius: '6px', border: '1px solid #ced4de', backgroundColor: '#f8f9fc', fontSize: '9px', outline: 'none', color: '#242a34' },
-  filterArea: { display: 'flex', gap: '10px', padding: '12px 18px', backgroundColor: '#fafbfc', borderBottom: `1px solid ${COLORS.border}`, flexWrap: 'wrap' },
-  filterSelect: { minWidth: '150px', height: '31px', padding: '0 10px', color: '#4e5561', backgroundColor: '#FFFFFF', border: '1px solid #cfd4dd', borderRadius: '5px', outline: 'none' },
+  searchIcon: { position: 'absolute', left: '10px', color: COLORS.textMuted },
+  searchInput: { width: '100%', height: '100%', padding: '0 10px 0 31px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, backgroundColor: 'var(--inputBg, #f8f9fc)', fontSize: '9px', outline: 'none', color: COLORS.textDark, transition: 'border-color 0.15s ease' },
+  filterArea: { display: 'flex', gap: '10px', padding: '12px 18px', backgroundColor: 'var(--mainBg, #fafbfc)', borderBottom: `1px solid ${COLORS.border}`, flexWrap: 'wrap' },
+  filterSelect: { minWidth: '150px', height: '31px', padding: '0 10px', color: COLORS.textDark, backgroundColor: 'var(--inputBg, #FFFFFF)', border: `1px solid ${COLORS.border}`, borderRadius: '5px', outline: 'none' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left', minWidth: '1100px' },
-  thRow: { backgroundColor: '#f3f6f9' },
-  th: { height: '30px', padding: '0 14px', fontWeight: 500, color: '#7d8595', fontSize: '7px', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #cfd4dc' },
-  tr: { borderBottom: '1px solid #e0e4ea' },
+  thRow: { backgroundColor: 'var(--mainBg, #f3f6f9)' },
+  th: { height: '30px', padding: '0 14px', fontWeight: 500, color: COLORS.textMuted, fontSize: '7px', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: `1px solid ${COLORS.border}` },
+  tr: { borderBottom: `1px solid ${COLORS.border}`, transition: 'background 0.1s' },
   td: { height: '44px', padding: '0 14px', color: COLORS.textDark, verticalAlign: 'middle', whiteSpace: 'nowrap' },
   emptyCell: { textAlign: 'center', padding: '30px', color: COLORS.textMuted },
   badgeBase: { padding: '4px 10px', borderRadius: '4px', fontWeight: 700, fontSize: '10px', display: 'inline-flex', alignItems: 'center' },
   statusActions: { display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center', flexWrap: 'wrap' },
-  statusBtn: { display: 'inline-flex', alignItems: 'center', padding: '3px 8px', borderRadius: '9px', border: '1px solid', fontSize: '9px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' },
+  statusBtn: { display: 'inline-flex', alignItems: 'center', padding: '3px 8px', borderRadius: '9px', border: '1px solid', fontSize: '9px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.15s ease' },
 
   overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modal: { backgroundColor: '#FFFFFF', borderRadius: '12px', width: '700px', maxWidth: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' },
+  modal: { backgroundColor: 'var(--cardBg, #FFFFFF)', borderRadius: '12px', width: '700px', maxWidth: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}` },
   modalTitle: { margin: 0, fontSize: '18px', fontWeight: 700, color: COLORS.textDark },
   modalClose: { background: 'none', border: 'none', cursor: 'pointer', color: COLORS.textMuted, padding: '4px' },
@@ -947,9 +1032,16 @@ const styles = {
   modalLabel: { fontSize: '12px', color: COLORS.textMuted, fontWeight: 500 },
   modalValue: { fontSize: '13px', color: COLORS.textDark, fontWeight: 600 },
   modalText: { fontSize: '13px', color: COLORS.textDark, lineHeight: '1.6', margin: 0, whiteSpace: 'pre-wrap' },
-  comment: { padding: '12px', backgroundColor: '#F8FAFC', borderRadius: '8px', marginBottom: '8px' },
+  comment: { padding: '12px', backgroundColor: 'var(--inputBg, #F8FAFC)', borderRadius: '8px', marginBottom: '8px' },
   modalFooter: { padding: '16px 24px', borderTop: `1px solid ${COLORS.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  btnCancel: { backgroundColor: '#FFFFFF', border: `1px solid ${COLORS.border}`, padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' },
+  btnCancel: { backgroundColor: 'var(--cardBg, #FFFFFF)', border: `1px solid ${COLORS.border}`, padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', color: COLORS.textDark },
   btnNew: { display: 'flex', alignItems: 'center', backgroundColor: COLORS.djezzyRed, color: '#FFFFFF', border: 'none', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' },
   btnDanger: { display: 'flex', alignItems: 'center', backgroundColor: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA', padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' },
+
+  userChip: { fontSize: '13px', color: COLORS.djezzyRed, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px', textDecorationColor: 'rgba(230,0,35,0.3)', position: 'relative' },
+
+  userTooltip: { position: 'fixed', zIndex: 1200, backgroundColor: '#1E293B', color: '#F1F5F9', padding: '10px 14px', borderRadius: '8px', fontSize: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.3)', pointerEvents: 'none', whiteSpace: 'nowrap' },
+  userTooltipArrow: { position: 'absolute', top: '-5px', left: '16px', width: '10px', height: '10px', backgroundColor: '#1E293B', transform: 'rotate(45deg)', borderRadius: '2px' },
+  userTooltipName: { fontWeight: 700, fontSize: '13px', marginBottom: '4px' },
+  userTooltipDetail: { color: '#94A3B8', fontSize: '11px', lineHeight: '1.6' },
 };

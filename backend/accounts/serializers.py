@@ -13,7 +13,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token = super().get_token(user)
 
         # On ajoute les attributs nécessaires au payload du token
-        token['username'] = user.username
+        token['code_user'] = user.code_user
         token['role'] = getattr(user, 'role', 'aucun')  # Récupère la valeur du rôle ou 'aucun' par défaut
         
         return token
@@ -37,21 +37,21 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_nom_user(self, obj):
         full = obj.get_full_name().strip()
-        return full if full else obj.username
+        return full if full else obj.code_user
     # Je renomme l'affichage pour coller au 'role_user' de mon schéma
     role_user = serializers.CharField(source='role', read_only=True)
 
     class Meta:
         model = CustomUser
-        # J'expose uniquement les attributs présents dans mon étude conceptuelle
         fields = [
-            'id',          # id_user
-            'username',
+            'code_user',
+            'first_name',
+            'last_name',
             'nom_user',
             'email',
             'role_user',
         ]
-        read_only_fields = ['id', 'nom_user']
+        read_only_fields = ['code_user', 'nom_user', 'role_user']
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -69,7 +69,7 @@ class RegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         # Je demande les informations nécessaires à la création d'un compte
-        fields = ['username', 'first_name', 'last_name', 'email', 'role', 'password', 'password2']
+        fields = ['first_name', 'last_name', 'email', 'role', 'password', 'password2']
 
     def validate(self, attrs):
         # Je vérifie que les deux mots de passe saisis sont identiques

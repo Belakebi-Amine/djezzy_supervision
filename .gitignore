@@ -1,15 +1,17 @@
 # Backend
 backend/venv/
 backend/.env
-backend/__pycache__/
-backend/*.pyc
-backend/staticfiles/
-backend/media/
+.env
+__pycache__/
+*.pyc
+staticfiles/
+media/
 
 # Frontend
 frontend/node_modules/
 frontend/build/
 
-# Général
+*.log
+backend.err
 .DS_Store
 .vscode/

@@ -45,10 +45,8 @@ class ReclamationSerializer(serializers.ModelSerializer):
 
     def get_assigne_a_display(self, obj):
         if obj.assigne_a:
-            if obj.assigne_a.first_name or obj.assigne_a.last_name:
-                return f"{obj.assigne_a.first_name} {obj.assigne_a.last_name}".strip()
-            return obj.assigne_a.username
-        return "En attente"
+            return obj.assigne_a.code_user
+        return "-"
 
     def create(self, validated_data):
         site_id = validated_data.pop('site_id', None)

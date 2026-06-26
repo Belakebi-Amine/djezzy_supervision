@@ -152,6 +152,6 @@ def archive_user_view(request, pk):
         user = CustomUser.objects.get(pk=pk)
         user.is_active = False 
         user.save(update_fields=['is_active'])
-        return Response({'message': f'Utilisateur {user.username} archivé'})
+        return Response({'message': f'Utilisateur {user.code_user} archivé'})
     except CustomUser.DoesNotExist:
         return Response({'error': 'Utilisateur introuvable'}, status=status.HTTP_404_NOT_FOUND)

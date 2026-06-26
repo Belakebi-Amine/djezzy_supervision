@@ -11,7 +11,6 @@ class Reclamation(models.Model):
 
     STATUT_CHOICES = [
         ('ouvert',    'Ouvert'),
-        ('en_cours',  'En cours'),
         ('resolu',    'Résolu'),
         ('ferme',     'Fermé'),
     ]
@@ -107,9 +106,17 @@ class Reclamation(models.Model):
 
         # 2. GÉNÉRATION DU NUMÉRO DE TICKET
         if not self.numero_ticket:
-            prefix = timezone.now().strftime('TK%Y%m%d')
-            last_count = Reclamation.objects.filter(numero_ticket__startswith=prefix).count()
-            self.numero_ticket = f"{prefix}{str(last_count + 1).zfill(4)}"
+            import re
+            existing = Reclamation.objects.filter(numero_ticket__regex=r'^TK\d+$').values_list('numero_ticket', flat=True)
+            max_num = 0
+            for code in existing:
+                try:
+                    num = int(re.sub(r'\D', '', code))
+                    if num > max_num:
+                        max_num = num
+                except ValueError:
+                    continue
+            self.numero_ticket = f'TK{str(max_num + 1).zfill(3)}'
 
         # 3. SUIVI DU MOMENT DE RÉSOLUTION
         if self.statut == 'resolu' and not self.resolu_le:

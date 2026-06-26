@@ -47,7 +47,6 @@ def statistiques(request):
     stats_tickets = Reclamation.objects.filter(created_at__gte=date_limite).aggregate(
         total=Count('id'),
         ouverts=Count('id', filter=Q(statut__iexact='ouvert')),
-        en_cours=Count('id', filter=Q(statut__iexact='en_cours')),
         resolus=Count('id', filter=Q(statut__iexact='resolu')),
         ouverts_critiques=Count('id', filter=Q(statut__iexact='ouvert', priorite__iexact='critique')),
         p_critique=Count('id', filter=Q(priorite__iexact='critique')),
@@ -111,7 +110,6 @@ def statistiques(request):
         'tickets': {
             'total': total_t,
             'ouverts': stats_tickets['ouverts'],
-            'en_cours': stats_tickets['en_cours'],
             'resolus': resolus_t,
             'ouverts_critiques': stats_tickets['ouverts_critiques'],
             'taux_resolution': f"{taux_resolution}%",

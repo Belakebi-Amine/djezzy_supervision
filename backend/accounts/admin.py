@@ -12,14 +12,14 @@ class CustomUserAdmin(UserAdmin):
 
     # Je définis les colonnes visibles dans ma liste d'utilisateurs.
     # 'nom_user' et 'role' sont les noms exacts de mon diagramme de classes.
-    list_display = ['id', 'username', 'nom_user', 'email', 'role', 'is_active']
+    list_display = ['code_user', 'nom_user', 'email', 'role', 'is_active']
     
     # Je rajoute des filtres pour que l'Admin puisse trier par rôle 
     # (ex: voir uniquement les Agents Call Center).
     list_filter = ['role', 'is_active']
     
     # Je définis les champs sur lesquels l'Admin peut faire une recherche.
-    search_fields = ['username', 'email', 'first_name', 'last_name']
+    search_fields = ['code_user', 'email', 'first_name', 'last_name']
     
     # L'ID (id_user) ne doit jamais être modifié manuellement, donc je le mets en lecture seule.
     readonly_fields = ['id']

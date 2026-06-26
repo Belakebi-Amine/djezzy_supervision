@@ -52,6 +52,21 @@ class SiteReseau(models.Model):
 
     # --- MÉTHODES DU DIAGRAMME ---
 
+    def save(self, *args, **kwargs):
+        if not self.codeSite:
+            import re
+            existing = SiteReseau.objects.filter(codeSite__regex=r'^S\d+$').values_list('codeSite', flat=True)
+            max_num = -1
+            for code in existing:
+                try:
+                    num = int(re.sub(r'\D', '', code))
+                    if num > max_num:
+                        max_num = num
+                except ValueError:
+                    continue
+            self.codeSite = f'S{str(max_num + 1).zfill(3)}'
+        super().save(*args, **kwargs)
+
     def ajouterSite(self):
         """
         Je sauvegarde mon nouveau site dans la base.

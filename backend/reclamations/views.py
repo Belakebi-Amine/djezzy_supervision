@@ -6,9 +6,9 @@ from .models import Reclamation
 from .serializers import ReclamationSerializer, CommentaireSerializer
 from accounts.models import Role
 
-STATUTS_VALIDES = {'ouvert', 'en_cours', 'resolu', 'ferme'}
+STATUTS_VALIDES = {'ouvert', 'resolu', 'ferme'}
 
-ALIAS_NON_TRAITE = {'non-traité', 'non-traite', 'non-traites', 'nouveau'}
+ALIAS_NON_TRAITE = {'non-traité', 'non-traite', 'non-traites', 'nouveau', 'en_cours', 'en cours'}
 ALIAS_TRAITE = {'traité', 'traite', 'traites', 'résolu', 'resolu', 'fermé', 'ferme'}
 
 
@@ -23,7 +23,7 @@ def _statuts_depuis_param(statut_filter):
         if token in STATUTS_VALIDES:
             statuts.add(token)
         elif token in ALIAS_NON_TRAITE:
-            statuts.update({'ouvert', 'en_cours'})
+            statuts.update({'ouvert'})
         elif token in ALIAS_TRAITE:
             statuts.update({'resolu', 'ferme'})
     return statuts
@@ -88,7 +88,12 @@ def detail_reclamation(request, pk):
         if serializer.is_valid():
             reclamation = serializer.save()
 
-            # Auto-assign : si un ingénieur passe le statut de 'ferme' à 'ouvert'
+            # Force : un ticket fermé n'a jamais d'assigné
+            if reclamation.statut == 'ferme' and reclamation.assigne_a:
+                reclamation.assigne_a = None
+                reclamation.save()
+
+            # Auto-assign : l'ingénieur qui ouvre le ticket (ferme -> ouvert) devient l'assigné
             if (old_statut == 'ferme' and reclamation.statut == 'ouvert'
                     and request.user and request.user.is_authenticated
                     and (request.user.role or '').upper() == Role.INGENIEUR_RESEAUX
@@ -107,6 +112,12 @@ def ajouter_commentaire(request, pk):
         reclamation = Reclamation.objects.get(pk=pk)
     except Reclamation.DoesNotExist:
         return Response({'error': 'Ticket introuvable'}, status=status.HTTP_404_NOT_FOUND)
+
+    # Seuls les ingénieurs peuvent commenter (les mots-clés suffisent pour le CC)
+    if request.user and request.user.is_authenticated:
+        role = (request.user.role or '').upper()
+        if role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX, Role.SUPERVISEUR]:
+            return Response({'error': 'Seuls les ingénieurs peuvent ajouter des commentaires.'}, status=status.HTTP_403_FORBIDDEN)
 
     serializer = CommentaireSerializer(data=request.data)
     if serializer.is_valid():

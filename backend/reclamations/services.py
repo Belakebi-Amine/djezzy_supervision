@@ -1,4 +1,5 @@
 import os
+from decouple import config
 from google import genai
 
 
@@ -7,10 +8,9 @@ def generer_description_incident_ia(nom_client, telephone_client, mots_cles):
     Transforme les notes rapides prises par l'agent au téléphone
     en un rapport d'incident structuré pour Djezzy, via Gemini.
     """
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = config('GEMINI_API_KEY', default=None)
 
     if not api_key:
-        # Pas de clé configurée : on ne plante pas, on garde les notes brutes.
         return f"[IA non configurée] Notes de l'agent : {mots_cles}"
 
     try:
