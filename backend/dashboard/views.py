@@ -2,90 +2,114 @@ from django.shortcuts import render
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django.db.models import Count, Q, Avg, F
-from django.db.models.functions import TruncDay
+from django.db.models import Count, Q, Avg, F, Value, CharField
+from django.db.models.functions import TruncDay, ExtractWeekDay
 from django.utils import timezone
 from datetime import timedelta
 
-# Importation des modèles depuis tes applications métiers
 from reclamations.models import Reclamation
 from sites_reseau.models import SiteReseau
+from accounts.models import CustomUser, Role
+
+JOURS_SEMAINE = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
+
+def _format_duree(duree):
+    if not duree:
+        return "N/A"
+    total_seconds = int(duree.total_seconds())
+    heures = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    return f"{heures}h {minutes}m"
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 1. VUE TABLEAU DE BORD GÉNÉRAL (ADMIN / CALL CENTER)
+# 1. VUE TABLEAU DE BORD GÉNÉRAL (ADMIN / CALL CENTER / SUPERVISEUR)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 @api_view(['GET'])
-# @permission_classes([IsAuthenticated])
 def statistiques(request):
-    """
-    Vue générale du Dashboard (KPIs globaux, courbe d'évolution et Donut 4 priorités).
-    Optimisée à 100% avec des aggregations conditionnelles.
-    """
     jours_param = request.query_params.get('jours', '30')
     try:
         nb_jours = int(jours_param)
     except ValueError:
         nb_jours = 30
-        
+
     date_limite = timezone.now() - timedelta(days=nb_jours)
 
-    # Passage SQL unique pour les sites
+    # ── Stats Sites ──
     stats_sites = SiteReseau.objects.aggregate(
         total=Count('id'),
         up=Count('id', filter=Q(statut='UP')),
         down=Count('id', filter=Q(statut='DOWN')),
         degrade=Count('id', filter=Q(statut='DEGRADE')),
-        perturbe=Count('id', filter=Q(statut='PERTURBE'))
+        perturbe=Count('id', filter=Q(statut='PERTURBE')),
     )
-
     total_s = stats_sites['total']
     sites_up = stats_sites['up']
     disponibilite = round((sites_up / total_s) * 100, 1) if total_s > 0 else 100.0
 
-    # Passage SQL unique pour les tickets (avec insensibilité à la casse)
+    # ── Stats Tickets (période filtrée) ──
     stats_tickets = Reclamation.objects.filter(created_at__gte=date_limite).aggregate(
         total=Count('id'),
         ouverts=Count('id', filter=Q(statut__iexact='ouvert')),
         resolus=Count('id', filter=Q(statut__iexact='resolu')),
+        fermes=Count('id', filter=Q(statut__iexact='ferme')),
         ouverts_critiques=Count('id', filter=Q(statut__iexact='ouvert', priorite__iexact='critique')),
         p_critique=Count('id', filter=Q(priorite__iexact='critique')),
         p_haute=Count('id', filter=Q(priorite__iexact='haute')),
         p_normale=Count('id', filter=Q(priorite__iexact='normale')),
-        p_basse=Count('id', filter=Q(priorite__iexact='basse'))
+        p_basse=Count('id', filter=Q(priorite__iexact='basse')),
+        type_particulier=Count('id', filter=Q(type_client__iexact='particulier')),
+        type_entreprise=Count('id', filter=Q(type_client__iexact='entreprise')),
     )
-
     total_t = stats_tickets['total']
     resolus_t = stats_tickets['resolus']
     taux_resolution = round((resolus_t / total_t) * 100, 1) if total_t > 0 else 0.0
 
-    # Délai moyen de résolution
+    # ── Délai moyen de résolution ──
     delai_stats = Reclamation.objects.filter(
-        created_at__gte=date_limite, 
-        statut='resolu', 
-        resolu_le__isnull=False
-    ).annotate(
-        duree=F('resolu_le') - F('created_at')
-    ).aggregate(duree_moyenne=Avg('duree'))
+        created_at__gte=date_limite, statut='resolu', resolu_le__isnull=False
+    ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
+    delai_moyen_str = _format_duree(delai_stats['duree__avg'])
 
-    duree_moy = delai_stats['duree_moyenne']
-    delai_moyen_str = "N/A"
-    if duree_moy:
-        total_seconds = int(duree_moy.total_seconds())
-        heures = total_seconds // 3600
-        minutes = (total_seconds % 3600) // 60
-        delai_moyen_str = f"{heures}h {minutes}m"
+    # ── Délai moyen par priorité ──
+    delai_par_prio = {}
+    for prio in ['critique', 'haute', 'normale', 'basse']:
+        d = Reclamation.objects.filter(
+            created_at__gte=date_limite, statut='resolu', resolu_le__isnull=False,
+            priorite__iexact=prio,
+        ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
+        delai_par_prio[prio] = _format_duree(d['duree__avg'])
 
-    # Top 5 sites impactés
+    # ── Tickets par jour de la semaine ──
+    tickets_par_jour = (
+        Reclamation.objects.filter(created_at__gte=date_limite)
+        .annotate(jour_semaine=ExtractWeekDay('created_at'))
+        .values('jour_semaine')
+        .annotate(total=Count('id'))
+        .order_by('jour_semaine')
+    )
+    jour_map = {i: JOURS_SEMAINE[i - 1] for i in range(1, 8)}
+    tickets_jour_semaine = [
+        {'jour': jour_map.get(item['jour_semaine'], '?'), 'total': item['total']}
+        for item in tickets_par_jour
+    ]
+
+    # ── Répartition par type de client ──
+    tickets_par_type = [
+        {'type': 'Particulier', 'total': stats_tickets['type_particulier']},
+        {'type': 'Entreprise', 'total': stats_tickets['type_entreprise']},
+    ]
+
+    # ── Top sites impactés ──
     top_sites_impactes = (
         SiteReseau.objects.annotate(
             num_reclamations=Count('reclamations', filter=Q(reclamations__created_at__gte=date_limite))
-        ) 
-        .order_by('-num_reclamations')[:5]
+        )
+        .order_by('-num_reclamations')[:7]
         .values('id', 'codeSite', 'nom', 'num_reclamations')
     )
 
-    # Évolution temporelle
+    # ── Évolution temporelle ──
     try:
         evolution_tickets = list(
             Reclamation.objects.filter(created_at__gte=date_limite)
@@ -97,6 +121,39 @@ def statistiques(request):
     except Exception:
         evolution_tickets = []
 
+    # Résolutions par jour
+    try:
+        resolutions_par_jour = list(
+            Reclamation.objects.filter(resolu_le__gte=date_limite, resolu_le__isnull=False)
+            .annotate(jour=TruncDay('resolu_le'))
+            .values('jour')
+            .annotate(resolus=Count('id'))
+            .order_by('jour')
+        )
+    except Exception:
+        resolutions_par_jour = []
+
+    # ── Stats par employé (ingénieurs) ──
+    stats_employes = []
+    ingenieurs = CustomUser.objects.filter(role=Role.INGENIEUR_RESEAUX, is_active=True)
+    for ing in ingenieurs:
+        total_assignes = Reclamation.objects.filter(assigne_a=ing, created_at__gte=date_limite).count()
+        resolus = Reclamation.objects.filter(assigne_a=ing, statut='resolu', created_at__gte=date_limite).count()
+        ouverts = Reclamation.objects.filter(assigne_a=ing, statut='ouvert', created_at__gte=date_limite).count()
+        delai_ing = Reclamation.objects.filter(
+            assigne_a=ing, statut='resolu', resolu_le__isnull=False, created_at__gte=date_limite
+        ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
+        stats_employes.append({
+            'code': ing.code_user,
+            'nom': ing.get_full_name().strip() or ing.code_user,
+            'email': ing.email,
+            'total_assignes': total_assignes,
+            'resolus': resolus,
+            'ouverts': ouverts,
+            'taux_resolution': round((resolus / total_assignes) * 100, 1) if total_assignes > 0 else 0,
+            'delai_moyen': _format_duree(delai_ing['duree__avg']),
+        })
+
     return Response({
         'periode_filtree_en_jours': nb_jours,
         'reseau_global': {
@@ -105,39 +162,51 @@ def statistiques(request):
             'sites_down': stats_sites['down'],
             'sites_degrades': stats_sites['degrade'],
             'sites_perturbes': stats_sites['perturbe'],
-            'disponibilite_globale': f"{disponibilite}%"
+            'disponibilite_globale': f"{disponibilite}%",
         },
         'tickets': {
             'total': total_t,
             'ouverts': stats_tickets['ouverts'],
             'resolus': resolus_t,
+            'fermes': stats_tickets['fermes'],
             'ouverts_critiques': stats_tickets['ouverts_critiques'],
             'taux_resolution': f"{taux_resolution}%",
-            'delai_moyen_resolution': delai_moyen_str
+            'delai_moyen_resolution': delai_moyen_str,
         },
         'graphiques': {
             'repartition_priorite_donut': {
                 'critique': stats_tickets['p_critique'],
                 'haute': stats_tickets['p_haute'],
                 'normale': stats_tickets['p_normale'],
-                'basse': stats_tickets['p_basse']
+                'basse': stats_tickets['p_basse'],
             },
             'top_sites_impactes': list(top_sites_impactes),
-            'evolution_tickets': evolution_tickets
-        }
+            'evolution_tickets': evolution_tickets,
+            'resolutions_par_jour': resolutions_par_jour,
+            'tickets_par_jour_semaine': tickets_jour_semaine,
+            'tickets_par_type': tickets_par_type,
+            'delai_moyen_par_priorite': delai_par_prio,
+        },
+        'stats_employes': stats_employes,
+
+        # ── Stats par agent Call Center ──
+        'stats_agents_cc': [{
+            'code': a.code_user,
+            'nom': a.get_full_name().strip() or a.code_user,
+            'email': a.email,
+            'tickets_crees': Reclamation.objects.filter(cree_par=a, created_at__gte=date_limite).count(),
+            'ouverts': Reclamation.objects.filter(cree_par=a, statut='ouvert', created_at__gte=date_limite).count(),
+            'resolus': Reclamation.objects.filter(cree_par=a, statut='resolu', created_at__gte=date_limite).count(),
+            'fermes': Reclamation.objects.filter(cree_par=a, statut='ferme', created_at__gte=date_limite).count(),
+        } for a in CustomUser.objects.filter(role=Role.AGENT_CALL_CENTER, is_active=True).order_by('code_user')],
     })
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 2. VUE SPÉCIFIQUE AU RÔLE RESPONSABLE REPORTING (WILAYAS & PERF)
+# 2. VUE REPORTING ANALYTIQUE (WILAYAS + COMMUNES)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 @api_view(['GET'])
-# @permission_classes([IsAuthenticated])
 def stats_reporting(request):
-    """
-    Vue dédiée 100% au rôle Responsable Reporting.
-    Génère l'analyse détaillée par Wilaya requise par les maquettes d'Amel.
-    """
     jours_param = request.query_params.get('jours', '30')
     try:
         nb_jours = int(jours_param)
@@ -145,67 +214,46 @@ def stats_reporting(request):
         nb_jours = 30
     date_limite = timezone.now() - timedelta(days=nb_jours)
 
-    # KPIs Globaux du haut pour le Reporting
+    # ── KPIs Globaux ──
     stats_globales = Reclamation.objects.filter(created_at__gte=date_limite).aggregate(
         total_tickets=Count('id'),
         resolus=Count('id', filter=Q(statut__iexact='resolu')),
         p_critique=Count('id', filter=Q(priorite__iexact='critique')),
         p_haute=Count('id', filter=Q(priorite__iexact='haute')),
         p_normale=Count('id', filter=Q(priorite__iexact='normale')),
-        p_basse=Count('id', filter=Q(priorite__iexact='basse'))
+        p_basse=Count('id', filter=Q(priorite__iexact='basse')),
     )
-
     total_t = stats_globales['total_tickets']
     resolus_t = stats_globales['resolus']
     taux_resolution = round((resolus_t / total_t) * 100, 1) if total_t > 0 else 0.0
 
     delai_stats = Reclamation.objects.filter(
-        created_at__gte=date_limite, 
-        statut='resolu', 
-        resolu_le__isnull=False
+        created_at__gte=date_limite, statut='resolu', resolu_le__isnull=False
     ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
-
-    duree_moy = delai_stats['duree__avg']
-    delai_moyen_str = "N/A"
-    if duree_moy:
-        total_seconds = int(duree_moy.total_seconds())
-        heures = total_seconds // 3600
-        minutes = (total_seconds % 3600) // 60
-        delai_moyen_str = f"{heures}h {minutes}m"
+    delai_moyen_str = _format_duree(delai_stats['duree__avg'])
 
     total_sites_down = SiteReseau.objects.filter(statut='DOWN').count()
 
-    # CALCUL PAR WILAYA AUTOMATIQUE (Version corrigée sans répétitions)
+    # ── Stats par Wilaya ──
     brutes_wilayas = SiteReseau.objects.values_list('wilaya', flat=True)
     wilayas_distinctes = set(w.strip().upper() for w in brutes_wilayas if w)
-    
+
     tableau_wilayas = []
-    for wilaya_nom in wilayas_distinctes:
+    for wilaya_nom in sorted(wilayas_distinctes):
         sites_wilaya = SiteReseau.objects.filter(wilaya__iexact=wilaya_nom)
         total_sites = sites_wilaya.count()
         sites_down = sites_wilaya.filter(statut='DOWN').count()
         sites_up = sites_wilaya.filter(statut='UP').count()
-
         taux_dispo = round((sites_up / total_sites) * 100, 1) if total_sites > 0 else 100.0
-
         tickets_ouverts_wilaya = Reclamation.objects.filter(
-            created_at__gte=date_limite,
-            site__wilaya__iexact=wilaya_nom,
-            statut__iexact='ouvert'
+            created_at__gte=date_limite, site__wilaya__iexact=wilaya_nom, statut__iexact='ouvert'
         ).count()
 
-        delai_wilaya_stats = Reclamation.objects.filter(
-            created_at__gte=date_limite,
-            site__wilaya__iexact=wilaya_nom,
-            statut='resolu',
-            resolu_le__isnull=False
+        delai_w_stats = Reclamation.objects.filter(
+            created_at__gte=date_limite, site__wilaya__iexact=wilaya_nom,
+            statut='resolu', resolu_le__isnull=False
         ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
-
-        duree_w = delai_wilaya_stats['duree__avg']
-        delai_w_str = "0h 0m"
-        if duree_w:
-            sec_w = int(duree_w.total_seconds())
-            delai_w_str = f"{sec_w // 3600}h {(sec_w % 3600) // 60}m"
+        delai_w_str = _format_duree(delai_w_stats['duree__avg'])
 
         tendance = "Stable"
         if taux_dispo < 95.0:
@@ -221,23 +269,46 @@ def stats_reporting(request):
             'delai_moyen_resolution': delai_w_str,
             'taux_disponibilite': f"{taux_dispo}%",
             'tendance': tendance,
-            'taux_dispo_num': taux_dispo
+            'taux_dispo_num': taux_dispo,
         })
+    tableau_wilayas.sort(key=lambda x: x['taux_dispo_num'])
 
-    # Tri : Wilayas en crise en premier (disponibilité la plus basse)
-    tableau_wilayas = sorted(tableau_wilayas, key=lambda x: x['taux_dispo_num'])
+    # ── Stats par Commune (top 15) ──
+    brutes_communes = SiteReseau.objects.values_list('commune', flat=True)
+    communes_distinctes = set(c.strip().upper() for c in brutes_communes if c)
 
-    # Suivi sur 6 semaines glissantes
+    tableau_communes = []
+    for commune_nom in communes_distinctes:
+        sites_commune = SiteReseau.objects.filter(commune__iexact=commune_nom)
+        total_sites = sites_commune.count()
+        sites_down = sites_commune.filter(statut='DOWN').count()
+        sites_up = sites_commune.filter(statut='UP').count()
+        taux_dispo = round((sites_up / total_sites) * 100, 1) if total_sites > 0 else 100.0
+        tickets_ouverts_c = Reclamation.objects.filter(
+            created_at__gte=date_limite, site__commune__iexact=commune_nom, statut__iexact='ouvert'
+        ).count()
+
+        tableau_communes.append({
+            'commune': commune_nom,
+            'total_sites': total_sites,
+            'sites_down': sites_down,
+            'tickets_ouverts': tickets_ouverts_c,
+            'taux_disponibilite': f"{taux_dispo}%",
+            'taux_dispo_num': taux_dispo,
+        })
+    tableau_communes.sort(key=lambda x: x['taux_dispo_num'])
+
+    # ── Évolution 6 semaines ──
     evolution_6_semaines = []
     now = timezone.now()
     for i in range(5, -1, -1):
-        debut_semaine = now - timedelta(weeks=i+1)
+        debut_semaine = now - timedelta(weeks=i + 1)
         fin_semaine = now - timedelta(weeks=i)
         tickets_semaine = Reclamation.objects.filter(created_at__gte=debut_semaine, created_at__lt=fin_semaine)
         evolution_6_semaines.append({
-            'semaine': f"Semaine {6-i}",
+            'semaine': f"S{6 - i}",
             'ouverts': tickets_semaine.filter(statut__iexact='ouvert').count(),
-            'resolus': tickets_semaine.filter(statut__iexact='resolu').count()
+            'resolus': tickets_semaine.filter(statut__iexact='resolu').count(),
         })
 
     return Response({
@@ -246,45 +317,33 @@ def stats_reporting(request):
             'tickets_ce_mois': total_t,
             'taux_resolution': f"{taux_resolution}%",
             'sites_down_actuels': total_sites_down,
-            'delai_moyen_global': delai_moyen_str
+            'delai_moyen_global': delai_moyen_str,
         },
         'priorites_donut': {
             'critique': stats_globales['p_critique'],
             'haute': stats_globales['p_haute'],
             'normale': stats_globales['p_normale'],
-            'basse': stats_globales['p_basse']
+            'basse': stats_globales['p_basse'],
         },
         'tableau_complet_wilayas': tableau_wilayas,
-        'evolution_6_semaines': evolution_6_semaines
+        'tableau_communes': tableau_communes,
+        'evolution_6_semaines': evolution_6_semaines,
     })
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 3. VUE COMMUNE : ENDPOINT ALLÉGÉ POUR LA CARTOGRAPHIE (MINI ET GRANDE CARTE)
+# 3. VUE CARTOGRAPHIE LÉGÈRE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 @api_view(['GET'])
-# @permission_classes([IsAuthenticated])
 def liste_sites_carto(request):
-    """
-    Endpoint ultra-léger pour la cartographie.
-    Renvoie tous les sites avec leur position exacte (coordX, coordY), leur statut et le nombre de pannes en cours.
-    """
-    # Extraction en utilisant les vrais champs de ton modèle SiteReseau
     sites_queryset = SiteReseau.objects.values(
-        'id', 'codeSite', 'nom', 'wilaya', 'coordX', 'coordY', 'statut'
+        'id', 'codeSite', 'nom', 'wilaya', 'commune', 'coordX', 'coordY', 'statut'
     )
-    
     liste_finales = []
-    
-    # Comptage des tickets ouverts par site calculé proprement
     for site in sites_queryset:
         tickets_comptage = Reclamation.objects.filter(
-            site_id=site['id'], 
-            statut__iexact='ouvert'
+            site_id=site['id'], statut__iexact='ouvert'
         ).count()
-        
-        # Injection du résultat dans le dictionnaire
         site['tickets_ouverts'] = tickets_comptage
         liste_finales.append(site)
-
     return Response(liste_finales)

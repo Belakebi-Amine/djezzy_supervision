@@ -80,3 +80,28 @@ th {
 .scale-in {
   animation: scaleIn 0.2s ease forwards;
 }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.chart-card {
+  transition: transform 0.2s ease, box-shadow 0.25s ease;
+}
+.chart-card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+}
+
+.side-btn {
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.side-btn:hover {
+  background: rgba(255,255,255,0.06);
+  color: #fff;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d0d5dd; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #b0b5bd; }

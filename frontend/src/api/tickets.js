@@ -1,8 +1,17 @@
 // src/api/tickets.js
 const API_URL = "http://127.0.0.1:8000/api";
 
-const getHeaders = () => {
+const isTokenValid = () => {
     const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+    if (!token) return false;
+    try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        return Date.now() < payload.exp * 1000;
+    } catch { return false; }
+};
+
+const getHeaders = () => {
+    const token = isTokenValid() ? localStorage.getItem('access_token') || localStorage.getItem('token') : null;
     return {
         'Content-Type': 'application/json',
         'Authorization': token ? `Bearer ${token}` : ''

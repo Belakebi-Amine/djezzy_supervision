@@ -82,6 +82,8 @@ const IconChevronLeft = (p) => (
 const ALL_STATUSES = ['ferme', 'ouvert', 'resolu'];
 const ALL_LABELS = { ferme: 'Ferme', ouvert: 'Ouvert', resolu: 'Resolu' };
 const SITE_LABELS = { UP: 'Actif', DOWN: 'Inactif' };
+const ST = { UP: '#059669', DOWN: '#DC2626' };
+const ST_BG = { UP: '#DCFCE7', DOWN: '#FEE2E2' };
 
 const getForwardStatuses = (statut) => {
   switch (statut) {
@@ -496,7 +498,7 @@ export default function EngineerDashboard() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <span style={{
                                 width: 10, height: 10, borderRadius: '50%', display: 'inline-block', flexShrink: 0,
-                                backgroundColor: site.statut === 'UP' ? '#059669' : site.statut === 'DOWN' ? '#DC2626' : '#D97706',
+                                backgroundColor: ST[site.statut] || '#64748B',
                                 boxShadow: site.statut === 'UP' ? '0 0 6px rgba(5,150,105,0.6)' : site.statut === 'DOWN' ? '0 0 6px rgba(220,38,38,0.6)' : 'none',
                               }} />
                               {site.codeSite}
@@ -893,8 +895,8 @@ export default function EngineerDashboard() {
                     <span style={styles.modalValue}>
                       <span style={{
                         ...styles.badgeBase,
-                        backgroundColor: selectedSite.statut === 'UP' ? '#DCFCE7' : '#FEE2E2',
-                        color: selectedSite.statut === 'UP' ? '#15803D' : '#DC2626',
+                        backgroundColor: ST_BG[selectedSite.statut] || '#F1F5F9',
+                        color: ST[selectedSite.statut] || '#64748B',
                       }}>
                         {SITE_LABELS[selectedSite.statut]}
                       </span>

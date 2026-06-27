@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getTickets, createTicket, getSites } from '../api/tickets';
+import { getTickets, createTicket, updateTicket, getSites } from '../api/tickets';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
 const COLORS = {
@@ -107,7 +107,7 @@ export default function CallCenter() {
 
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [sites, setSites] = useState([]);
-  const [hoveredUser, setHoveredUser] = useState(null);
+  const [expandedField, setExpandedField] = useState(null);
 
   useEffect(() => {
     getSites().then(setSites).catch(() => setSites([]));
@@ -116,7 +116,7 @@ export default function CallCenter() {
   const fetchTickets = useCallback(async () => {
     setLoading(true);
     try {
-      const statut = currentView === 'non-traites' ? 'ferme,ouvert' : 'resolu';
+      const statut = currentView === 'non-traites' ? 'ouvert,en_cours' : 'resolu,ferme';
       const data = await getTickets(statut);
       setTickets(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -153,6 +153,17 @@ export default function CallCenter() {
       alert('Erreur lors de la creation du ticket.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleArchive = async (ticket) => {
+    if (!window.confirm(`Archiver le ticket ${ticket.numero_ticket} ?`)) return;
+    try {
+      await updateTicket(ticket.id, { statut: 'ferme' });
+      setSelectedTicket(null);
+      fetchTickets();
+    } catch (err) {
+      alert("Erreur lors de l'archivage.");
     }
   };
 
@@ -520,12 +531,26 @@ export default function CallCenter() {
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Cree par</span>
                     {selectedTicket.cree_par ? (
-                      <span style={styles.userChip}
-                        onMouseEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); setHoveredUser({ user: selectedTicket.cree_par, rect: r }); }}
-                        onMouseLeave={() => setHoveredUser(null)}
-                      >
-                        {selectedTicket.cree_par.code_user}
-                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                        <span style={styles.userChip}
+                          onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
+                          onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                          onClick={() => setExpandedField(expandedField === 'cree_par' ? null : 'cree_par')}
+                        >
+                          {selectedTicket.cree_par.code_user}
+                        </span>
+                        <span style={{ fontSize: '10px', color: '#94A3B8', marginTop: '2px', lineHeight: '1.3', textAlign: 'right' }}>
+                          {selectedTicket.cree_par.nom_user || selectedTicket.cree_par.code_user}
+                        </span>
+                        {expandedField === 'cree_par' && (
+                          <div style={{ marginTop: '6px', padding: '8px 10px', backgroundColor: '#F8FAFC', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '11px', lineHeight: '1.7', width: '180px' }}>
+                            <div style={{ color: '#0A1628', fontWeight: 600 }}>{selectedTicket.cree_par.nom_user || selectedTicket.cree_par.code_user}</div>
+                            <div style={{ color: '#64748B' }}>{selectedTicket.cree_par.code_user}</div>
+                            <div style={{ color: '#64748B' }}>{selectedTicket.cree_par.email}</div>
+                            <div style={{ color: '#64748B' }}>{selectedTicket.cree_par.role_user || selectedTicket.cree_par.role}</div>
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <span style={styles.modalValue}>{selectedTicket.cree_par?.code_user || '\u2014'}</span>
                     )}
@@ -533,12 +558,26 @@ export default function CallCenter() {
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Assigne a</span>
                     {selectedTicket.assigne_a ? (
-                      <span style={styles.userChip}
-                        onMouseEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); setHoveredUser({ user: selectedTicket.assigne_a, rect: r }); }}
-                        onMouseLeave={() => setHoveredUser(null)}
-                      >
-                        {selectedTicket.assigne_a_display}
-                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                        <span style={styles.userChip}
+                          onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
+                          onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                          onClick={() => setExpandedField(expandedField === 'assigne_a' ? null : 'assigne_a')}
+                        >
+                          {selectedTicket.assigne_a_display}
+                        </span>
+                        <span style={{ fontSize: '10px', color: '#94A3B8', marginTop: '2px', lineHeight: '1.3', textAlign: 'right' }}>
+                          {selectedTicket.assigne_a?.nom_user || selectedTicket.assigne_a_display}
+                        </span>
+                        {expandedField === 'assigne_a' && (
+                          <div style={{ marginTop: '6px', padding: '8px 10px', backgroundColor: '#F8FAFC', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '11px', lineHeight: '1.7', width: '180px' }}>
+                            <div style={{ color: '#0A1628', fontWeight: 600 }}>{selectedTicket.assigne_a?.nom_user || selectedTicket.assigne_a_display}</div>
+                            <div style={{ color: '#64748B' }}>{selectedTicket.assigne_a?.code_user}</div>
+                            <div style={{ color: '#64748B' }}>{selectedTicket.assigne_a?.email}</div>
+                            <div style={{ color: '#64748B' }}>{selectedTicket.assigne_a?.role_user || selectedTicket.assigne_a?.role}</div>
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <span style={styles.modalValue}>{selectedTicket.assigne_a_display || '\u2014'}</span>
                     )}
@@ -568,25 +607,14 @@ export default function CallCenter() {
                 </div>
               )}
 
-              {selectedTicket.mots_cles_ia && (
-                <div style={styles.modalSection}>
-                  <h3 style={styles.modalSectionTitle}>Mots-cles saisis</h3>
-                  <p style={styles.modalText}>{selectedTicket.mots_cles_ia}</p>
-                </div>
-              )}
-
-              {hoveredUser && (
-                <div style={{ ...styles.userTooltip, top: hoveredUser.rect.bottom + 6, left: hoveredUser.rect.left }}>
-                  <div style={styles.userTooltipArrow} />
-                  <div style={styles.userTooltipName}>{hoveredUser.user.nom_user || hoveredUser.user.code_user}</div>
-                  <div style={styles.userTooltipDetail}>{hoveredUser.user.code_user}</div>
-                  <div style={styles.userTooltipDetail}>{hoveredUser.user.email}</div>
-                  <div style={styles.userTooltipDetail}>{hoveredUser.user.role_user || hoveredUser.user.role}</div>
-                </div>
-              )}
             </div>
 
             <div style={styles.modalFooter}>
+              {getStatutKey(selectedTicket.statut) !== 'FERME' && (
+                <button style={styles.btnDanger} onClick={() => handleArchive(selectedTicket)}>
+                  <IconArchive /> Archiver
+                </button>
+              )}
               <button style={styles.btnCancel} onClick={() => setSelectedTicket(null)}>Fermer</button>
             </div>
           </div>
@@ -644,9 +672,10 @@ const styles = {
   formActions: { display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '30px' },
   btnCancel: { backgroundColor: 'var(--cardBg, #FFFFFF)', border: `1px solid ${COLORS.border}`, padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', color: COLORS.textDark },
   btnSubmit: { display: 'flex', alignItems: 'center', backgroundColor: COLORS.djezzyRed, color: '#FFFFFF', border: 'none', padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' },
+  btnDanger: { display: 'flex', alignItems: 'center', gap: 6, backgroundColor: '#DC2626', color: '#FFFFFF', border: 'none', padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', marginRight: 'auto' },
 
   overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modal: { backgroundColor: 'var(--cardBg, #FFFFFF)', borderRadius: '12px', width: '700px', maxWidth: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' },
+  modal: { backgroundColor: 'var(--cardBg, #FFFFFF)', borderRadius: '12px', width: '850px', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}` },
   modalTitle: { margin: 0, fontSize: '18px', fontWeight: 700, color: COLORS.textDark },
   modalClose: { background: 'none', border: 'none', cursor: 'pointer', color: COLORS.textMuted, padding: '4px' },
@@ -663,7 +692,7 @@ const styles = {
 
   userChip: { fontSize: '13px', color: COLORS.djezzyRed, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px', textDecorationColor: 'rgba(232,64,26,0.3)', position: 'relative' },
 
-  userTooltip: { position: 'fixed', zIndex: 1200, backgroundColor: '#1E293B', color: '#F1F5F9', padding: '10px 14px', borderRadius: '8px', fontSize: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.3)', pointerEvents: 'none', whiteSpace: 'nowrap' },
+  userTooltip: { position: 'fixed', zIndex: 1200, backgroundColor: '#1E293B', color: '#F1F5F9', padding: '10px 14px', borderRadius: '8px', fontSize: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.3)', pointerEvents: 'none', whiteSpace: 'normal', wordBreak: 'break-word' },
   userTooltipArrow: { position: 'absolute', top: '-5px', left: '16px', width: '10px', height: '10px', backgroundColor: '#1E293B', transform: 'rotate(45deg)', borderRadius: '2px' },
   userTooltipName: { fontWeight: 700, fontSize: '13px', marginBottom: '4px' },
   userTooltipDetail: { color: '#94A3B8', fontSize: '11px', lineHeight: '1.6' },

@@ -9,10 +9,19 @@ const API = axios.create({
     }
 });
 
+const isTokenValid = () => {
+    const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+    if (!token) return false;
+    try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        return Date.now() < payload.exp * 1000;
+    } catch { return false; }
+};
+
 // Intercepteur pour injecter automatiquement ton token s'il existe
 API.interceptors.request.use(
     (config) => {
-        const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+        const token = isTokenValid() ? localStorage.getItem('access_token') || localStorage.getItem('token') : null;
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }

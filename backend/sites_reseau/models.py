@@ -8,10 +8,8 @@ class SiteReseau(models.Model):
     """
 
     STATUT_CHOICES = [
-        ('UP',       'Opérationnel'),
-        ('DOWN',     'Hors service'),
-        ('DEGRADE',  'Dégradé'),
-        ('PERTURBE', 'Perturbé'),
+        ('UP',   'Opérationnel'),
+        ('DOWN', 'Hors service'),
     ]
 
     # --- ATTRIBUTS DU DIAGRAMME ---
