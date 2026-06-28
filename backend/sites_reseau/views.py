@@ -1,13 +1,13 @@
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from .models import SiteReseau
 from .serializers import SiteReseauSerializer
 from accounts.models import Role 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def liste_sites(request):
     """
     Je récupère tous les sites pour mon tableau ou ma cartographie.
@@ -64,7 +64,7 @@ def detail_site(request, pk):
         serializer = SiteReseauSerializer(site)
         return Response(serializer.data)
 
-    if request.user.role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX]:
+    if request.user.role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX, Role.SUPERVISEUR]:
         return Response({'error': 'Permission refusée'}, status=status.HTTP_403_FORBIDDEN)
 
     if request.method == 'PUT':
@@ -75,6 +75,8 @@ def detail_site(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     if request.method == 'DELETE':
+        if request.user.role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX]:
+            return Response({'error': 'Seuls les admins et ingénieurs peuvent supprimer'}, status=status.HTTP_403_FORBIDDEN)
         site.delete()
         return Response({'message': 'Site supprimé avec succès'}, status=status.HTTP_204_NO_CONTENT)
 
@@ -87,7 +89,7 @@ def archiver_site(request, pk):
     except SiteReseau.DoesNotExist:
         return Response({'error': 'Site introuvable'}, status=status.HTTP_404_NOT_FOUND)
 
-    if request.user.role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX]:
+    if request.user.role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX, Role.SUPERVISEUR]:
         return Response({'error': 'Permission refusée'}, status=status.HTTP_403_FORBIDDEN)
 
     site.archiverSite()

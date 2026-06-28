@@ -1,20 +1,33 @@
 // src/api/tickets.js
 const API_URL = "http://127.0.0.1:8000/api";
 
-const isTokenValid = () => {
+export const getTokenRole = () => {
     const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-    if (!token) return false;
+    if (!token) return null;
+    const payload = decodePayload(token);
+    return payload?.role || null;
+};
+
+const decodePayload = (token) => {
     try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        return Date.now() < payload.exp * 1000;
-    } catch { return false; }
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        return JSON.parse(atob(base64));
+    } catch { return null; }
 };
 
 const getHeaders = () => {
-    const token = isTokenValid() ? localStorage.getItem('access_token') || localStorage.getItem('token') : null;
+    const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+    const payload = token ? decodePayload(token) : null;
+    const valid = payload && Date.now() < payload.exp * 1000;
+    if (!valid && payload) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+    }
     return {
         'Content-Type': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : ''
+        'Authorization': valid ? `Bearer ${token}` : ''
     };
 };
 
@@ -154,11 +167,47 @@ export const createSite = async (siteData) => {
 };
 
 /**
+ * Récupère la liste de tous les utilisateurs (admin seulement).
+ */
+export const getUsers = async () => {
+    const response = await fetch(`${API_URL}/accounts/users/`, { method: 'GET', headers: getHeaders() });
+    if (!response.ok) throw new Error(`Erreur serveur [${response.status}]`);
+    return await response.json();
+};
+
+/**
+ * Crée un nouvel utilisateur (admin seulement).
+ */
+export const createUser = async (userData) => {
+    const response = await fetch(`${API_URL}/accounts/users/register/`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(userData)
+    });
+    if (!response.ok) throw new Error(`Erreur création utilisateur [${response.status}]`);
+    return await response.json();
+};
+
+/**
  * Archive un site (passe son statut en DOWN).
  */
 export const archiverSite = async (id) => {
     const response = await fetch(`${API_URL}/sites/${id}/archiver/`, {
         method: 'PUT',
+        headers: getHeaders(),
+    });
+    if (!response.ok) {
+        throw new Error(`Erreur serveur [${response.status}]`);
+    }
+    return response.json();
+};
+
+/**
+ * Désactive un utilisateur (admin seulement).
+ */
+export const archiveUser = async (codeUser) => {
+    const response = await fetch(`${API_URL}/accounts/users/${codeUser}/archive/`, {
+        method: 'DELETE',
         headers: getHeaders(),
     });
     if (!response.ok) {

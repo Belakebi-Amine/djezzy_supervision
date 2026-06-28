@@ -7,7 +7,9 @@ import {
   Tooltip,
 } from 'recharts';
 import { getDashboardStats, getDashboardReporting } from '../api/dashboard';
+import { getSites } from '../api/tickets';
 import DetailModal from '../components/DetailModal';
+import MapComponent from '../components/Map';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
 const C = {
@@ -22,6 +24,7 @@ const IconU = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="8" r="3.2" /
 const IconL = (p) => <svg {...iconProps} {...p}><path d="M15 16l4-4-4-4" /><path d="M19 12H8" /><path d="M12 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6" /></svg>;
 const IconI = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>;
 const IconRefresh = (p) => <svg {...iconProps} {...p}><path d="M3 12a9 9 0 0 1 15.5-6.3M21 12a9 9 0 0 1-15.5 6.3" /><path d="M3 4v5h5M21 20v-5h-5" /></svg>;
+const IconMap = (p) => <svg {...iconProps} {...p}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>;
 const LABEL_MAP = { critique: 'Critique', haute: 'Haute', normale: 'Normale', basse: 'Basse' };
 
 const dispoColor = (v) => {
@@ -91,6 +94,7 @@ function InfoPopup({ text }) {
 
 export default function SupervisorDashboard() {
   const navigate = useNavigate();
+  const [currentView, setCurrentView] = useState('dashboard');
   const [period, setPeriod] = useState(30);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -99,6 +103,7 @@ export default function SupervisorDashboard() {
   const [detail, setDetail] = useState(null);
   const [perfRole, setPerfRole] = useState('ingenieurs');
   const [perfUser, setPerfUser] = useState(null);
+  const [sites, setSites] = useState([]);
 
   const refresh = useCallback(async () => {
     try {
@@ -118,6 +123,11 @@ export default function SupervisorDashboard() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { setDetail(null); }, [period]);
+  useEffect(() => {
+    if (currentView === 'cartographie') {
+      getSites().then(setSites).catch(() => setSites([]));
+    }
+  }, [currentView]);
 
   const logout = () => {
     ['token', 'access_token', 'refresh_token'].forEach((k) => localStorage.removeItem(k));
@@ -190,7 +200,8 @@ export default function SupervisorDashboard() {
         <div style={S.brand}><img src={logoDjezzy} alt="" style={S.logo} /><div><div style={S.bn}>Djezzy</div><div style={S.br}>Superviseur</div></div></div>
         <div style={S.menu}>
           <span style={S.sl}>MENU</span>
-          <button className="side-btn" style={{ ...S.mi, ...S.mia }}><IconD style={{ marginRight: 10 }} /> Dashboard</button>
+          <button className="side-btn" style={{ ...S.mi, ...(currentView === 'dashboard' ? S.mia : {}) }} onClick={() => setCurrentView('dashboard')}><IconD style={{ marginRight: 10 }} /> Dashboard</button>
+          <button className="side-btn" style={{ ...S.mi, ...(currentView === 'cartographie' ? S.mia : {}) }} onClick={() => setCurrentView('cartographie')}><IconMap style={{ marginRight: 10 }} /> Cartographie</button>
         </div>
         <div style={{ ...S.menu, marginTop: 40 }}>
           <span style={S.sl}>COMPTE</span>
@@ -201,7 +212,7 @@ export default function SupervisorDashboard() {
 
       <div style={S.main}>
         <header style={S.head}>
-          <h1 style={S.title}>Vue d'ensemble</h1>
+          <h1 style={S.title}>{currentView === 'cartographie' ? 'Cartographie' : "Vue d'ensemble"}</h1>
           <div style={S.right}>
             <div style={S.toggle}>
               {[{ l: '7j', v: 7 }, { l: '30j', v: 30 }, { l: '90j', v: 90 }].map((p) => (
@@ -213,6 +224,19 @@ export default function SupervisorDashboard() {
           </div>
         </header>
 
+        {currentView === 'cartographie' ? (
+          <div style={{ flex: 1, padding: '16px 24px' }}>
+            <div style={{ ...S.chart, height: '100%', minHeight: 500 }}>
+              <div style={{ padding: '10px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <IconMap style={{ width: 16, height: 16 }} />
+                <span style={S.cht}>Cartographie des sites 5G</span>
+              </div>
+              <div style={{ flex: 1, height: 'calc(100vh - 160px)' }}>
+                <MapComponent sites={sites} showCoverage />
+              </div>
+            </div>
+          </div>
+        ) : (
         <div style={S.scroll}>
           {/* ─── ROW 1 : Évolution (pleine largeur) ─── */}
           <div style={S.sb}><span style={S.st}>TENDANCE</span></div>
@@ -487,6 +511,7 @@ export default function SupervisorDashboard() {
 
           <div style={{ height: 30 }} />
         </div>
+      )}
       </div>
     </div>
   );

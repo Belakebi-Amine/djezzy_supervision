@@ -52,6 +52,8 @@ class ReclamationSerializer(serializers.ModelSerializer):
         site_id = validated_data.pop('site_id', None)
         assigne_a_id = validated_data.pop('assigne_a_id', None)
 
+        # Un nouveau ticket est toujours ouvert par défaut
+        validated_data.setdefault('statut', 'ouvert')
         reclamation = Reclamation.objects.create(**validated_data)
 
         if site_id:

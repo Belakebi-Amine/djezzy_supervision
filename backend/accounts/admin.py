@@ -11,7 +11,7 @@ class CustomUserAdmin(UserAdmin):
     """
 
     # Je définis les colonnes visibles dans ma liste d'utilisateurs.
-    # 'nom_user' et 'role' sont les noms exacts de mon diagramme de classes.
+    # code_user est le principal identifiant, plus nom_user (car on utilise code_user)
     list_display = ['code_user', 'nom_user', 'email', 'role', 'is_active']
     
     # Je rajoute des filtres pour que l'Admin puisse trier par rôle 
@@ -43,10 +43,4 @@ class CustomUserAdmin(UserAdmin):
         }),
     )
 
-    @admin.display(description='nom_user')
-    def nom_user(self, obj):
-        """
-        Je crée cette méthode pour afficher le 'nom_user' (prénom + nom) 
-        dans mon tableau de bord Admin, comme prévu dans mon schéma.
-        """
-        return obj.nom_user
+    # nom_user supprimé — on travaille maintenant avec code_user

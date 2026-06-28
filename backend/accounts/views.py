@@ -141,15 +141,15 @@ def liste_ingenieurs(request):
 
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
-def archive_user_view(request, pk):
+def archive_user_view(request, code_user):
     """
-    Action 'archiverUtilisateur(id)' de mon Use Case Admin.
+    Action 'archiverUtilisateur(code_user)' de mon Use Case Admin.
     """
     if request.user.role != Role.ADMIN:
         return Response({'error': "Accès réservé à l'administrateur"}, status=status.HTTP_403_FORBIDDEN)
 
     try:
-        user = CustomUser.objects.get(pk=pk)
+        user = CustomUser.objects.get(code_user=code_user)
         user.is_active = False 
         user.save(update_fields=['is_active'])
         return Response({'message': f'Utilisateur {user.code_user} archivé'})

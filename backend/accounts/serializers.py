@@ -50,8 +50,9 @@ class UserSerializer(serializers.ModelSerializer):
             'nom_user',
             'email',
             'role_user',
+            'is_active',
         ]
-        read_only_fields = ['code_user', 'nom_user', 'role_user']
+        read_only_fields = ['code_user', 'nom_user', 'role_user', 'is_active']
 
 
 class RegisterSerializer(serializers.ModelSerializer):

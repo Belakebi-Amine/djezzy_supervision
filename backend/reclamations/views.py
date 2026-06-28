@@ -80,7 +80,7 @@ def detail_reclamation(request, pk):
     if request.method == 'PUT':
         if request.user and request.user.is_authenticated:
             role = request.user.role.upper() if request.user.role else ''
-            if role not in [Role.ADMIN, Role.AGENT_CALL_CENTER, Role.INGENIEUR_RESEAUX]:
+            if role not in [Role.ADMIN, Role.AGENT_CALL_CENTER, Role.INGENIEUR_RESEAUX, Role.SUPERVISEUR]:
                 return Response({'error': 'Permission refusée'}, status=status.HTTP_403_FORBIDDEN)
 
         old_statut = reclamation.statut

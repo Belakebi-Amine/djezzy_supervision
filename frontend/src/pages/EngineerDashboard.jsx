@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getTickets, updateTicket, getSites, updateSiteStatus, createSite, archiverSite } from '../api/tickets';
+import MapComponent from '../components/Map';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
 const COLORS = {
@@ -61,8 +62,8 @@ const IconLogout = (p) => (
 const IconSite = (p) => (
   <svg {...iconProps} {...p}><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z" /><circle cx="12" cy="9.5" r="2.3" /></svg>
 );
-const IconBell = (p) => (
-  <svg {...iconProps} {...p}><path d="M6 9a6 6 0 0 1 12 0v4l2 3H4l2-3V9Z" /><path d="M10 19h4" /></svg>
+const IconMap = (p) => (
+  <svg {...iconProps} {...p}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
 );
 const IconSearch = (p) => (
   <svg {...iconProps} {...p}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
@@ -121,7 +122,7 @@ export default function EngineerDashboard() {
   const [showSiteFilters, setShowSiteFilters] = useState(false);
   const [hoveredUser, setHoveredUser] = useState(null);
   const [newSiteForm, setNewSiteForm] = useState({
-    nom: '', wilaya: '', commune: '', coordX: '', coordY: '', adresse: '', statut: 'UP',
+    nom: '', wilaya: '', commune: '', coordX: '', coordY: '', adresse: '', statut: 'UP', technologie: '5G',
   });
 
   useEffect(() => {
@@ -229,7 +230,7 @@ export default function EngineerDashboard() {
       };
       await createSite(payload);
       setShowSiteForm(false);
-      setNewSiteForm({ nom: '', wilaya: '', commune: '', coordX: '', coordY: '', adresse: '', statut: 'UP' });
+      setNewSiteForm({ nom: '', wilaya: '', commune: '', coordX: '', coordY: '', adresse: '', statut: 'UP', technologie: '5G' });
       fetchSitesData();
     } catch (err) {
       console.error(err);
@@ -320,8 +321,8 @@ export default function EngineerDashboard() {
           <button style={{ ...styles.menuItem, ...(currentView === 'sites' ? styles.menuItemActive : {}) }} onClick={() => { setCurrentView('sites'); setSelectedTicket(null); }}>
             <IconSite style={{ marginRight: '10px', flexShrink: 0 }} /> Sites Reseau
           </button>
-          <button style={styles.menuItem}>
-            <IconBell style={{ marginRight: '10px', flexShrink: 0 }} /> Alertes
+          <button style={{ ...styles.menuItem, ...(currentView === 'cartographie' ? styles.menuItemActive : {}) }} onClick={() => setCurrentView('cartographie')}>
+            <IconMap style={{ marginRight: '10px', flexShrink: 0 }} /> Cartographie
           </button>
         </div>
 
@@ -352,11 +353,23 @@ export default function EngineerDashboard() {
               </div>
             </div>
           ) : (
-            <h1 style={{ ...styles.pageTitle, color: '#171a21' }}>{currentView === 'sites' ? 'Sites Reseau' : 'Reclamations'}</h1>
+            <h1 style={{ ...styles.pageTitle, color: '#171a21' }}>{currentView === 'sites' ? 'Sites Reseau' : currentView === 'cartographie' ? 'Cartographie' : 'Reclamations'}</h1>
           )}
         </header>
 
-        {currentView === 'sites' ? (
+        {currentView === 'cartographie' ? (
+          <div style={styles.pageContent}>
+            <div style={{ ...styles.tableCard, backgroundColor: COLORS.cardBg }}>
+              <div style={styles.formHeader}>
+                <IconMap style={{ marginRight: '10px' }} />
+                <span style={{ fontWeight: 700, fontSize: '14px' }}>Cartographie des sites 5G</span>
+              </div>
+              <div style={{ height: 'calc(100vh - 200px)', minHeight: 500 }}>
+                <MapComponent sites={sitesList} showCoverage />
+              </div>
+            </div>
+          </div>
+        ) : currentView === 'sites' ? (
           showSiteForm ? (
           <div style={styles.pageContent}>
             <div style={styles.tableCard}>
@@ -395,6 +408,13 @@ export default function EngineerDashboard() {
                     <select name="statut" value={newSiteForm.statut} onChange={handleSiteFormChange} style={styles.select}>
                       <option value="UP">Actif</option>
                       <option value="DOWN">Inactif</option>
+                    </select>
+                  </div>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>TECHNOLOGIE</label>
+                    <select name="technologie" value={newSiteForm.technologie} onChange={handleSiteFormChange} style={styles.select}>
+                      <option value="4G">4G</option>
+                      <option value="5G">5G</option>
                     </select>
                   </div>
                 </div>
@@ -812,15 +832,6 @@ export default function EngineerDashboard() {
                 </div>
               )}
 
-              {hoveredUser && (
-                <div style={{ ...styles.userTooltip, top: hoveredUser.rect.bottom + 6, left: hoveredUser.rect.left }}>
-                  <div style={styles.userTooltipArrow} />
-                  <div style={styles.userTooltipName}>{hoveredUser.user.nom_user || hoveredUser.user.code_user}</div>
-                  <div style={styles.userTooltipDetail}>{hoveredUser.user.code_user}</div>
-                  <div style={styles.userTooltipDetail}>{hoveredUser.user.email}</div>
-                  <div style={styles.userTooltipDetail}>{hoveredUser.user.role_user || hoveredUser.user.role}</div>
-                </div>
-              )}
             </div>
 
             <div style={styles.modalFooter}>
@@ -853,6 +864,15 @@ export default function EngineerDashboard() {
               <button style={styles.btnCancel} onClick={() => setSelectedTicket(null)}>Fermer</button>
             </div>
           </div>
+          {hoveredUser && (
+            <div style={{ ...styles.userTooltip, top: hoveredUser.rect.bottom + 6, left: hoveredUser.rect.left }}>
+              <div style={styles.userTooltipArrow} />
+              <div style={styles.userTooltipName}>{hoveredUser.user.nom_user || hoveredUser.user.code_user}</div>
+              <div style={styles.userTooltipDetail}>{hoveredUser.user.code_user}</div>
+              <div style={styles.userTooltipDetail}>{hoveredUser.user.email}</div>
+              <div style={styles.userTooltipDetail}>{hoveredUser.user.role_user || hoveredUser.user.role}</div>
+            </div>
+          )}
         </div>
       )}
 
@@ -886,6 +906,10 @@ export default function EngineerDashboard() {
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Adresse</span>
                     <span style={styles.modalValue}>{selectedSite.adresse || '-'}</span>
+                  </div>
+                  <div style={styles.modalField}>
+                    <span style={styles.modalLabel}>Technologie</span>
+                    <span style={styles.modalValue}><span style={{ ...styles.badgeBase, backgroundColor: selectedSite.technologie === '4G' ? '#DCFCE7' : '#E0E7FF', color: selectedSite.technologie === '4G' ? '#15803D' : '#4338CA' }}>{selectedSite.technologie || '5G'}</span></span>
                   </div>
                 </div>
                 <div style={styles.modalSection}>

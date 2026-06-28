@@ -55,7 +55,7 @@ DESCRIPTIONS = [
 
 
 class Command(BaseCommand):
-    help = "Seed: 60 ouvert, 20 resolu (10/ing), 20 ferme. 25 par agent CC."
+    help = "Seed: 50 ouvert, 20 resolu, 30 ferme. 4 ingenieurs."
 
     def handle(self, *args, **options):
         now = timezone.now()
@@ -69,12 +69,34 @@ class Command(BaseCommand):
         if not sites:
             self.stdout.write(self.style.ERROR("Aucun site trouve"))
             return
-        if len(ingenieurs) < 2:
-            self.stdout.write(self.style.ERROR("Moins de 2 ingenieurs"))
-            return
 
-        ing_amir = ingenieurs[0]
-        ing_bouchra = ingenieurs[1]
+        # Creer les 2 nouveaux ingenieurs si absents
+        nouveaux_ing = [
+            ("Manel", "Gridi", "manelgridi@gmail.com"),
+            ("Manel", "Belakebi", "manelbelakebi@gmail.com"),
+        ]
+        for first, last, email in nouveaux_ing:
+            existants = User.objects.filter(email=email)
+            if not existants:
+                user = User.objects.create(
+                    first_name=first,
+                    last_name=last,
+                    email=email,
+                    role=Role.INGENIEUR_RESEAUX,
+                    is_active=True,
+                )
+                ingenieurs.append(user)
+                self.stdout.write(f"  Ingenieur cree: {user.code_user} - {first} {last}")
+            else:
+                u = existants.first()
+                if u not in ingenieurs:
+                    ingenieurs.append(u)
+
+        ingenieurs.sort(key=lambda u: u.id)
+
+        if len(ingenieurs) < 4:
+            self.stdout.write(self.style.ERROR(f"Moins de 4 ingenieurs (trouve={len(ingenieurs)})"))
+            return
 
         # Passwords
         common_pwd = "password123"
@@ -148,29 +170,25 @@ class Command(BaseCommand):
             dates = dict(created_at=cree, updated_at=updated, resolu_le=resolu_le)
             return (fields, dates)
 
-        # 20 FERME (assigne_a=None)
-        self.stdout.write("  20 ferme...")
-        for i in range(20):
+        # 30 FERME (assigne_a=None)
+        self.stdout.write("  30 ferme...")
+        for i in range(30):
             cc = random.choice(cc_agents)
             tickets_data.append(make_ticket_data("ferme", cc, ing=None, jours_max=89))
 
-        # 20 RESOLU (10 Amir + 10 Bouchra)
+        # 20 RESOLU (repartis aleatoirement entre les 4 ingenieurs)
         self.stdout.write("  20 resolu...")
-        for i in range(10):
+        for i in range(20):
             cc = random.choice(cc_agents)
-            tickets_data.append(make_ticket_data("resolu", cc, ing=ing_amir, jours_max=89))
-        for i in range(10):
-            cc = random.choice(cc_agents)
-            tickets_data.append(make_ticket_data("resolu", cc, ing=ing_bouchra, jours_max=89))
+            ing = random.choice(ingenieurs)
+            tickets_data.append(make_ticket_data("resolu", cc, ing=ing, jours_max=89))
 
-        # 60 OUVERT (35 Bouchra, 25 Amir)
-        self.stdout.write("  60 ouvert...")
-        for i in range(35):
+        # 50 OUVERT (repartis aleatoirement entre les 4 ingenieurs)
+        self.stdout.write("  50 ouvert...")
+        for i in range(50):
             cc = random.choice(cc_agents)
-            tickets_data.append(make_ticket_data("ouvert", cc, ing=ing_bouchra, jours_max=89))
-        for i in range(25):
-            cc = random.choice(cc_agents)
-            tickets_data.append(make_ticket_data("ouvert", cc, ing=ing_amir, jours_max=89))
+            ing = random.choice(ingenieurs)
+            tickets_data.append(make_ticket_data("ouvert", cc, ing=ing, jours_max=89))
 
         # Sort by created_at for sequential numbering
         tickets_data.sort(key=lambda x: x[1]["created_at"])

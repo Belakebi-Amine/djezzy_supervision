@@ -108,6 +108,7 @@ export default function CallCenter() {
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [sites, setSites] = useState([]);
   const [expandedField, setExpandedField] = useState(null);
+  const [hoveredUser, setHoveredUser] = useState(null);
 
   useEffect(() => {
     getSites().then(setSites).catch(() => setSites([]));
@@ -116,7 +117,7 @@ export default function CallCenter() {
   const fetchTickets = useCallback(async () => {
     setLoading(true);
     try {
-      const statut = currentView === 'non-traites' ? 'ouvert,en_cours' : 'resolu,ferme';
+      const statut = currentView === 'non-traites' ? 'ouvert,en_cours,ferme' : 'resolu';
       const data = await getTickets(statut);
       setTickets(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -533,8 +534,8 @@ export default function CallCenter() {
                     {selectedTicket.cree_par ? (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                         <span style={styles.userChip}
-                          onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
-                          onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                          onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.7'; const r = e.currentTarget.getBoundingClientRect(); setHoveredUser({ user: selectedTicket.cree_par, rect: r }); }}
+                          onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; setHoveredUser(null); }}
                           onClick={() => setExpandedField(expandedField === 'cree_par' ? null : 'cree_par')}
                         >
                           {selectedTicket.cree_par.code_user}
@@ -560,8 +561,8 @@ export default function CallCenter() {
                     {selectedTicket.assigne_a ? (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                         <span style={styles.userChip}
-                          onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
-                          onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                          onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.7'; const r = e.currentTarget.getBoundingClientRect(); setHoveredUser({ user: selectedTicket.assigne_a, rect: r }); }}
+                          onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; setHoveredUser(null); }}
                           onClick={() => setExpandedField(expandedField === 'assigne_a' ? null : 'assigne_a')}
                         >
                           {selectedTicket.assigne_a_display}
@@ -618,6 +619,15 @@ export default function CallCenter() {
               <button style={styles.btnCancel} onClick={() => setSelectedTicket(null)}>Fermer</button>
             </div>
           </div>
+          {hoveredUser && (
+            <div style={{ ...styles.userTooltip, top: hoveredUser.rect.bottom + 6, left: hoveredUser.rect.left }}>
+              <div style={styles.userTooltipArrow} />
+              <div style={styles.userTooltipName}>{hoveredUser.user.nom_user || hoveredUser.user.code_user}</div>
+              <div style={styles.userTooltipDetail}>{hoveredUser.user.code_user}</div>
+              <div style={styles.userTooltipDetail}>{hoveredUser.user.email}</div>
+              <div style={styles.userTooltipDetail}>{hoveredUser.user.role_user || hoveredUser.user.role}</div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -692,7 +702,7 @@ const styles = {
 
   userChip: { fontSize: '13px', color: COLORS.djezzyRed, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px', textDecorationColor: 'rgba(232,64,26,0.3)', position: 'relative' },
 
-  userTooltip: { position: 'fixed', zIndex: 1200, backgroundColor: '#1E293B', color: '#F1F5F9', padding: '10px 14px', borderRadius: '8px', fontSize: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.3)', pointerEvents: 'none', whiteSpace: 'normal', wordBreak: 'break-word' },
+  userTooltip: { position: 'fixed', zIndex: 1200, backgroundColor: '#1E293B', color: '#F1F5F9', padding: '10px 14px', borderRadius: '8px', fontSize: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.3)', pointerEvents: 'none', whiteSpace: 'nowrap' },
   userTooltipArrow: { position: 'absolute', top: '-5px', left: '16px', width: '10px', height: '10px', backgroundColor: '#1E293B', transform: 'rotate(45deg)', borderRadius: '2px' },
   userTooltipName: { fontWeight: 700, fontSize: '13px', marginBottom: '4px' },
   userTooltipDetail: { color: '#94A3B8', fontSize: '11px', lineHeight: '1.6' },

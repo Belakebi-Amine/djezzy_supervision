@@ -1,19 +1,25 @@
 const API_URL = "http://127.0.0.1:8000/api";
 
-const isTokenValid = () => {
-    const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-    if (!token) return false;
+const decodePayload = (token) => {
     try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        return Date.now() < payload.exp * 1000;
-    } catch { return false; }
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        return JSON.parse(atob(base64));
+    } catch { return null; }
 };
 
 const getHeaders = () => {
-    const token = isTokenValid() ? localStorage.getItem('access_token') || localStorage.getItem('token') : null;
+    const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+    const payload = token ? decodePayload(token) : null;
+    const valid = payload && Date.now() < payload.exp * 1000;
+    if (!valid && payload) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+    }
     return {
         'Content-Type': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : ''
+        'Authorization': valid ? `Bearer ${token}` : ''
     };
 };
 

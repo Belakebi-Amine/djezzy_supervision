@@ -4,10 +4,9 @@ import './App.css';
 import Login from './pages/Login';
 import CallCenter from './pages/CallCenter';
 import EngineerDashboard from './pages/EngineerDashboard';
+import SupervisorDashboard from './pages/SupervisorDashboard';
+import AdminDashboard from './pages/AdminDashboard';
 import Profile from './pages/Profile';
-
-const AdminDashboard = () => <div style={{ padding: 40, color: '#fff' }}><h2>Interface Administrateur</h2><p>Gestion des comptes.</p></div>;
-const SupervisorDashboard = () => <div style={{ padding: 40, color: '#fff' }}><h2>Interface Superviseur</h2><p>Reporting et Statistiques / KPIs.</p></div>;
 
 function App() {
   return (

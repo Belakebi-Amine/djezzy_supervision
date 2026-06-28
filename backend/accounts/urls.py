@@ -29,5 +29,5 @@ urlpatterns = [
     # Routes Admin
     path('users/', list_users_view, name='list_users'),
     path('users/register/', register_view, name='register_user'),
-    path('users/<int:pk>/archive/', archive_user_view, name='archive_user'),
+    path('users/<str:code_user>/archive/', archive_user_view, name='archive_user'),
 ]

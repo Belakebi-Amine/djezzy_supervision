@@ -12,6 +12,11 @@ class SiteReseau(models.Model):
         ('DOWN', 'Hors service'),
     ]
 
+    TECHNOLOGIE_CHOICES = [
+        ('4G', '4G'),
+        ('5G', '5G'),
+    ]
+
     # --- ATTRIBUTS DU DIAGRAMME ---
     # codeSite dans mon diagramme
     codeSite = models.CharField(max_length=50, verbose_name="Code du Site")
@@ -33,8 +38,14 @@ class SiteReseau(models.Model):
     # statut : j'ajoute ce champ pour la gestion opérationnelle
     statut = models.CharField(max_length=10, choices=STATUT_CHOICES, default='UP')
 
+    # technologie : 4G ou 5G (pour les perspectives d'avenir)
+    technologie = models.CharField(max_length=2, choices=TECHNOLOGIE_CHOICES, default='5G', verbose_name="Technologie")
+
     # archive : true = site archivé (caché de l'interface mais conservé en BD)
     archive = models.BooleanField(default=False)
+
+    # rayon de couverture en mètres (pour l'affichage carte)
+    rayon_couverture = models.IntegerField(default=800, verbose_name="Rayon de couverture (m)")
 
     # Dates de suivi technique
     derniere_maj = models.DateTimeField(auto_now=True)
