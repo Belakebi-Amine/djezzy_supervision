@@ -4,13 +4,13 @@ import { getTickets, createTicket, updateTicket, getSites } from '../api/tickets
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
 const COLORS = {
-  sidebarBg: '#0A1628',
+  sidebarBg: 'var(--bg-sidebar)',
   sidebarActive: '#E8401A',
-  mainBg: '#F4F5F7',
-  cardBg: '#FFFFFF',
-  textDark: '#0A1628',
-  textMuted: '#64748B',
-  border: '#E2E8F0',
+  mainBg: 'var(--bg-main)',
+  cardBg: 'var(--bg-card)',
+  textDark: 'var(--text-primary)',
+  textMuted: 'var(--text-muted3)',
+  border: 'var(--border-light)',
   djezzyRed: '#E8401A',
   djezzyOrange: '#FF6B3D',
 
@@ -247,20 +247,22 @@ export default function CallCenter() {
       </aside>
 
       <div style={{ ...styles.mainContent, backgroundColor: COLORS.mainBg }}>
-        <header style={{ ...styles.topHeader, backgroundColor: COLORS.cardBg }}>
-          {currentView === 'nouveau-ticket' ? (
-            <div>
-              <div style={styles.backNav} onClick={() => setCurrentView('non-traites')}>
-                <IconChevronLeft />
-                <span style={{ marginLeft: '8px', fontWeight: 600 }}>Nouveau Ticket</span>
+        <header style={{ ...styles.topHeader, backgroundColor: COLORS.cardBg, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ flex: 1 }}>
+            {currentView === 'nouveau-ticket' ? (
+              <div>
+                <div style={styles.backNav} onClick={() => setCurrentView('non-traites')}>
+                  <IconChevronLeft />
+                  <span style={{ marginLeft: '8px', fontWeight: 600 }}>Nouveau Ticket</span>
+                </div>
+                <div style={styles.breadcrumb}>
+                  Reclamations &gt; <span style={{ color: COLORS.djezzyRed }}>Nouveau Ticket</span>
+                </div>
               </div>
-              <div style={styles.breadcrumb}>
-                Reclamations &gt; <span style={{ color: COLORS.djezzyRed }}>Nouveau Ticket</span>
-              </div>
-            </div>
-          ) : (
-            <h1 style={{ ...styles.pageTitle, color: '#0A1628' }}>Reclamations</h1>
-          )}
+            ) : (
+              <h1 style={{ ...styles.pageTitle, color: COLORS.textDark }}>Reclamations</h1>
+            )}
+          </div>
         </header>
 
         {currentView === 'nouveau-ticket' ? (
@@ -442,7 +444,7 @@ export default function CallCenter() {
                         key={ticket.id}
                         style={styles.tr}
                         onClick={() => setSelectedTicket(ticket)}
-                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#F8FAFC'; }}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
                         onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
                       >
                         <td style={{ ...styles.td, borderLeft: `4px solid ${prio.side}`, paddingLeft: '16px', fontWeight: 600, cursor: 'pointer' }}>
@@ -540,15 +542,15 @@ export default function CallCenter() {
                         >
                           {selectedTicket.cree_par.code_user}
                         </span>
-                        <span style={{ fontSize: '10px', color: '#94A3B8', marginTop: '2px', lineHeight: '1.3', textAlign: 'right' }}>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted2)', marginTop: '2px', lineHeight: '1.3', textAlign: 'right' }}>
                           {selectedTicket.cree_par.nom_user || selectedTicket.cree_par.code_user}
                         </span>
                         {expandedField === 'cree_par' && (
-                          <div style={{ marginTop: '6px', padding: '8px 10px', backgroundColor: '#F8FAFC', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '11px', lineHeight: '1.7', width: '180px' }}>
-                            <div style={{ color: '#0A1628', fontWeight: 600 }}>{selectedTicket.cree_par.nom_user || selectedTicket.cree_par.code_user}</div>
-                            <div style={{ color: '#64748B' }}>{selectedTicket.cree_par.code_user}</div>
-                            <div style={{ color: '#64748B' }}>{selectedTicket.cree_par.email}</div>
-                            <div style={{ color: '#64748B' }}>{selectedTicket.cree_par.role_user || selectedTicket.cree_par.role}</div>
+                          <div style={{ marginTop: '6px', padding: '8px 10px', backgroundColor: 'var(--bg-hover)', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '11px', lineHeight: '1.7', width: '180px' }}>
+                            <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{selectedTicket.cree_par.nom_user || selectedTicket.cree_par.code_user}</div>
+                            <div style={{ color: 'var(--text-muted3)' }}>{selectedTicket.cree_par.code_user}</div>
+                            <div style={{ color: 'var(--text-muted3)' }}>{selectedTicket.cree_par.email}</div>
+                            <div style={{ color: 'var(--text-muted3)' }}>{selectedTicket.cree_par.role_user || selectedTicket.cree_par.role}</div>
                           </div>
                         )}
                       </div>
@@ -567,15 +569,15 @@ export default function CallCenter() {
                         >
                           {selectedTicket.assigne_a_display}
                         </span>
-                        <span style={{ fontSize: '10px', color: '#94A3B8', marginTop: '2px', lineHeight: '1.3', textAlign: 'right' }}>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted2)', marginTop: '2px', lineHeight: '1.3', textAlign: 'right' }}>
                           {selectedTicket.assigne_a?.nom_user || selectedTicket.assigne_a_display}
                         </span>
                         {expandedField === 'assigne_a' && (
-                          <div style={{ marginTop: '6px', padding: '8px 10px', backgroundColor: '#F8FAFC', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '11px', lineHeight: '1.7', width: '180px' }}>
-                            <div style={{ color: '#0A1628', fontWeight: 600 }}>{selectedTicket.assigne_a?.nom_user || selectedTicket.assigne_a_display}</div>
-                            <div style={{ color: '#64748B' }}>{selectedTicket.assigne_a?.code_user}</div>
-                            <div style={{ color: '#64748B' }}>{selectedTicket.assigne_a?.email}</div>
-                            <div style={{ color: '#64748B' }}>{selectedTicket.assigne_a?.role_user || selectedTicket.assigne_a?.role}</div>
+                          <div style={{ marginTop: '6px', padding: '8px 10px', backgroundColor: 'var(--bg-hover)', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '11px', lineHeight: '1.7', width: '180px' }}>
+                            <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{selectedTicket.assigne_a?.nom_user || selectedTicket.assigne_a_display}</div>
+                            <div style={{ color: 'var(--text-muted3)' }}>{selectedTicket.assigne_a?.code_user}</div>
+                            <div style={{ color: 'var(--text-muted3)' }}>{selectedTicket.assigne_a?.email}</div>
+                            <div style={{ color: 'var(--text-muted3)' }}>{selectedTicket.assigne_a?.role_user || selectedTicket.assigne_a?.role}</div>
                           </div>
                         )}
                       </div>
@@ -636,35 +638,35 @@ export default function CallCenter() {
 
 const styles = {
   appLayout: { display: 'flex', minHeight: '100vh', backgroundColor: COLORS.mainBg, fontFamily: "'Inter', system-ui, sans-serif", width: '100%' },
-  sidebar: { width: '193px', backgroundColor: COLORS.sidebarBg, color: '#94A3B8', display: 'flex', flexDirection: 'column', padding: '0', flexShrink: 0 },
+  sidebar: { width: '193px', backgroundColor: COLORS.sidebarBg, color: 'var(--text-muted2)', display: 'flex', flexDirection: 'column', padding: '0', flexShrink: 0 },
   brandZone: { height: '82px', display: 'flex', alignItems: 'center', gap: '13px', padding: '0 17px', borderBottom: '1px solid rgba(255,255,255,0.07)' },
   brandLogo: { width: '34px', height: 'auto', objectFit: 'contain' },
   brandName: { color: '#FFFFFF', fontWeight: 700, fontSize: '16px' },
-  brandRole: { marginTop: '6px', fontSize: '10px', color: '#9492a0' },
+  brandRole: { marginTop: '6px', fontSize: '10px', color: 'var(--text-muted3)' },
   menuSection: { display: 'flex', flexDirection: 'column', gap: '5px', padding: '26px 12px 0' },
-  sectionLabel: { margin: '0 5px 10px', fontSize: '6px', fontWeight: 700, color: '#4e4b5c', letterSpacing: '1px' },
-  menuItem: { display: 'flex', alignItems: 'center', background: 'transparent', border: 'none', color: '#92909e', padding: '0 10px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', fontSize: '13px', width: '100%', height: '34px', textDecoration: 'none', outline: 'none' },
+  sectionLabel: { margin: '0 5px 10px', fontSize: '6px', fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: '1px' },
+  menuItem: { display: 'flex', alignItems: 'center', background: 'transparent', border: 'none', color: 'var(--text-muted2)', padding: '0 10px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', fontSize: '13px', width: '100%', height: '34px', textDecoration: 'none', outline: 'none' },
   menuItemActive: { background: 'linear-gradient(90deg, #E8401A, #C0340D)', color: '#FFFFFF', fontWeight: 600, position: 'relative' },
   mainContent: { flex: 1, padding: '30px 40px', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' },
   topHeader: { marginBottom: '20px' },
   pageTitle: { margin: 0, fontSize: '22px', fontWeight: 700, color: COLORS.textDark },
   backNav: { display: 'flex', alignItems: 'center', fontSize: '16px', color: COLORS.textDark, cursor: 'pointer', marginBottom: '4px' },
   breadcrumb: { fontSize: '12px', color: COLORS.textMuted, fontWeight: 500 },
-  tableCard: { backgroundColor: COLORS.cardBg, borderRadius: '8px', border: `1px solid ${COLORS.border}`, display: 'flex', flexDirection: 'column', width: '100%' },
+  tableCard: { backgroundColor: COLORS.cardBg, borderRadius: '8px', border: `1px solid ${COLORS.border}`, borderTop: '3px solid #E8401A', display: 'flex', flexDirection: 'column', width: '100%' },
   toolbar: { padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${COLORS.border}` },
   toolbarLeft: { display: 'flex', alignItems: 'center', gap: '12px' },
   tableTitle: { margin: 0, fontSize: '14px', fontWeight: 700, color: COLORS.textDark },
   toolbarActions: { display: 'flex', alignItems: 'center', gap: '12px' },
-  btnFilter: { display: 'flex', alignItems: 'center', backgroundColor: 'var(--cardBg, #FFFFFF)', border: `1px solid ${COLORS.border}`, padding: '8px 14px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', color: COLORS.textDark, transition: 'all 0.15s ease' },
-  filterArea: { display: 'flex', gap: '10px', padding: '12px 18px', backgroundColor: 'var(--mainBg, #fafbfc)', borderBottom: `1px solid ${COLORS.border}`, flexWrap: 'wrap' },
-  filterSelect: { minWidth: '150px', height: '31px', padding: '0 10px', color: COLORS.textDark, backgroundColor: 'var(--inputBg, #FFFFFF)', border: `1px solid ${COLORS.border}`, borderRadius: '5px', outline: 'none', transition: 'border-color 0.15s ease' },
+  btnFilter: { display: 'flex', alignItems: 'center', backgroundColor: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, padding: '8px 14px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', color: COLORS.textDark, transition: 'all 0.15s ease' },
+  filterArea: { display: 'flex', gap: '10px', padding: '12px 18px', backgroundColor: 'var(--bg-main)', borderBottom: `1px solid ${COLORS.border}`, flexWrap: 'wrap' },
+  filterSelect: { minWidth: '150px', height: '31px', padding: '0 10px', color: COLORS.textDark, backgroundColor: 'var(--bg-input)', border: `1px solid ${COLORS.border}`, borderRadius: '5px', outline: 'none', transition: 'border-color 0.15s ease' },
   searchWrapper: { position: 'relative', display: 'flex', alignItems: 'center' },
   searchIcon: { position: 'absolute', left: '10px', color: COLORS.textMuted },
-  searchInput: { padding: '8px 12px 8px 32px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, backgroundColor: 'var(--inputBg, #F8FAFC)', fontSize: '13px', width: '180px', outline: 'none', color: COLORS.textDark, transition: 'border-color 0.15s ease' },
+  searchInput: { padding: '8px 12px 8px 32px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, backgroundColor: 'var(--bg-input)', fontSize: '13px', width: '180px', outline: 'none', color: COLORS.textDark, transition: 'border-color 0.15s ease' },
   btnNew: { display: 'flex', alignItems: 'center', backgroundColor: COLORS.djezzyRed, color: '#FFFFFF', border: 'none', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s ease' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' },
-  thRow: { backgroundColor: 'var(--mainBg, #F8FAFC)', borderBottom: `1px solid ${COLORS.border}` },
-  th: { padding: '12px 14px', fontWeight: 700, color: '#94A3B8', fontSize: '10px', textTransform: 'uppercase' },
+  thRow: { backgroundColor: 'var(--bg-main)', borderBottom: `1px solid ${COLORS.border}` },
+  th: { padding: '12px 14px', fontWeight: 700, color: 'var(--text-muted2)', fontSize: '10px', textTransform: 'uppercase' },
   tr: { borderBottom: `1px solid ${COLORS.border}`, transition: 'background 0.1s' },
   td: { padding: '14px', color: COLORS.textDark, verticalAlign: 'middle', whiteSpace: 'nowrap' },
   emptyCell: { textAlign: 'center', padding: '30px', color: COLORS.textMuted },
@@ -672,20 +674,20 @@ const styles = {
 
   formHeader: { padding: '16px 20px', borderBottom: `1px solid ${COLORS.border}`, display: 'flex', alignItems: 'center' },
   formBody: { padding: '24px 30px' },
-  formSectionTitle: { fontSize: '11px', fontWeight: 700, color: '#94A3B8', letterSpacing: '0.5px', marginBottom: '16px' },
+  formSectionTitle: { fontSize: '11px', fontWeight: 700, color: 'var(--text-muted2)', letterSpacing: '0.5px', marginBottom: '16px' },
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px', marginBottom: '12px' },
   inputGroup: { display: 'flex', flexDirection: 'column', gap: '6px' },
   label: { fontSize: '11px', fontWeight: 700, color: COLORS.textDark },
-  input: { padding: '10px 14px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', backgroundColor: 'var(--inputBg, #FFFFFF)', outline: 'none' },
-  select: { padding: '10px 14px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', backgroundColor: 'var(--inputBg, #FFFFFF)', outline: 'none', color: COLORS.textDark },
-  textarea: { padding: '10px 14px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', resize: 'none', backgroundColor: 'var(--inputBg, #FFFFFF)', outline: 'none' },
+  input: { padding: '10px 14px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', backgroundColor: 'var(--bg-input)', outline: 'none' },
+  select: { padding: '10px 14px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', backgroundColor: 'var(--bg-input)', outline: 'none', color: COLORS.textDark },
+  textarea: { padding: '10px 14px', borderRadius: '6px', border: `1px solid ${COLORS.border}`, fontSize: '13px', resize: 'none', backgroundColor: 'var(--bg-input)', outline: 'none' },
   formActions: { display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '30px' },
-  btnCancel: { backgroundColor: 'var(--cardBg, #FFFFFF)', border: `1px solid ${COLORS.border}`, padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', color: COLORS.textDark },
+  btnCancel: { backgroundColor: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', color: COLORS.textDark },
   btnSubmit: { display: 'flex', alignItems: 'center', backgroundColor: COLORS.djezzyRed, color: '#FFFFFF', border: 'none', padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' },
   btnDanger: { display: 'flex', alignItems: 'center', gap: 6, backgroundColor: '#DC2626', color: '#FFFFFF', border: 'none', padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', marginRight: 'auto' },
 
   overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modal: { backgroundColor: 'var(--cardBg, #FFFFFF)', borderRadius: '12px', width: '850px', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' },
+  modal: { backgroundColor: 'var(--bg-card)', borderRadius: '12px', width: '850px', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}` },
   modalTitle: { margin: 0, fontSize: '18px', fontWeight: 700, color: COLORS.textDark },
   modalClose: { background: 'none', border: 'none', cursor: 'pointer', color: COLORS.textMuted, padding: '4px' },
@@ -697,7 +699,7 @@ const styles = {
   modalLabel: { fontSize: '12px', color: COLORS.textMuted, fontWeight: 500 },
   modalValue: { fontSize: '13px', color: COLORS.textDark, fontWeight: 600 },
   modalText: { fontSize: '13px', color: COLORS.textDark, lineHeight: '1.6', margin: 0, whiteSpace: 'pre-wrap' },
-  comment: { padding: '12px', backgroundColor: 'var(--inputBg, #F8FAFC)', borderRadius: '8px', marginBottom: '8px' },
+  comment: { padding: '12px', backgroundColor: 'var(--bg-input)', borderRadius: '8px', marginBottom: '8px' },
   modalFooter: { padding: '16px 24px', borderTop: `1px solid ${COLORS.border}`, display: 'flex', justifyContent: 'flex-end' },
 
   userChip: { fontSize: '13px', color: COLORS.djezzyRed, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px', textDecorationColor: 'rgba(232,64,26,0.3)', position: 'relative' },
@@ -705,5 +707,5 @@ const styles = {
   userTooltip: { position: 'fixed', zIndex: 1200, backgroundColor: '#1E293B', color: '#F1F5F9', padding: '10px 14px', borderRadius: '8px', fontSize: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.3)', pointerEvents: 'none', whiteSpace: 'nowrap' },
   userTooltipArrow: { position: 'absolute', top: '-5px', left: '16px', width: '10px', height: '10px', backgroundColor: '#1E293B', transform: 'rotate(45deg)', borderRadius: '2px' },
   userTooltipName: { fontWeight: 700, fontSize: '13px', marginBottom: '4px' },
-  userTooltipDetail: { color: '#94A3B8', fontSize: '11px', lineHeight: '1.6' },
+  userTooltipDetail: { color: 'var(--text-muted2)', fontSize: '11px', lineHeight: '1.6' },
 };

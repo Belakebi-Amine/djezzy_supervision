@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from 'recharts';
-import { getDashboardStats, getDashboardReporting } from '../api/dashboard';
+import DOMPurify from 'dompurify';
+import { getDashboardStats, getDashboardReporting, getRapportsIA, deleteRapportIA } from '../api/dashboard';
 import { getSites, getUsers, createUser, getTickets, createTicket, updateTicket, createSite, updateSiteStatus, archiverSite, archiveUser, getTokenRole } from '../api/tickets';
 import MapComponent from '../components/Map';
 import DetailModal from '../components/DetailModal';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
 const COLORS = {
-  sidebarBg: '#11101f', mainBg: '#f5f6fa', cardBg: '#FFFFFF',
-  textDark: '#1c212b', textMuted: '#818898', border: '#d8dde5', djezzyRed: '#e60023',
+  sidebarBg: 'var(--bg-sidebar)', mainBg: 'var(--bg-main)', cardBg: 'var(--bg-card)',
+  textDark: 'var(--text-primary)', textMuted: 'var(--text-muted)', border: 'var(--border-color)', djezzyRed: '#e60023',
   types: {
     PARTICULIER: { bg: '#E2E8F0', text: '#475569', border: '#CBD5E1' },
     ENTREPRISE: { bg: '#475569', text: '#FFFFFF', border: '#334155' },
@@ -94,8 +95,8 @@ const dispoColor = (v) => {
 const Tip = ({ active, payload, label }) => {
   if (!active || !payload) return null;
   return (
-    <div style={{ background: '#fff', border: '1px solid #d8dde5', borderRadius: 6, padding: '8px 14px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: 12 }}>
-      <p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: '#1c212b' }}>{label}</p>
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 6, padding: '8px 14px', boxShadow: 'var(--shadow-card)', fontSize: 12 }}>
+      <p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>{label}</p>
       {payload.map((e, i) => (
         <p key={i} style={{ margin: '2px 0', color: e.color || '#555' }}>
           {e.name}: {typeof e.value === 'number' ? e.value.toLocaleString() : e.value}
@@ -114,17 +115,17 @@ function InfoPopup({ text }) {
         setState({ open: true, style: { top: r.bottom + 6, left: Math.max(4, r.left + r.width / 2 - 130) } });
       }}
       onMouseLeave={() => setState({ open: false, style: {} })}>
-      <IconInfo style={{ width: 14, height: 14, color: '#94A3B8' }} />
+      <IconInfo style={{ width: 14, height: 14, color: 'var(--text-muted2)' }} />
       {state.open && (
         <div style={{
           position: 'fixed', top: state.style.top, left: state.style.left,
-          background: '#1E293B', color: '#F1F5F9', padding: '8px 12px', borderRadius: 6,
+          background: 'var(--text-primary)', color: 'var(--bg-card)', padding: '8px 12px', borderRadius: 6,
           fontSize: 10, lineHeight: 1.5, zIndex: 99999, maxWidth: 260,
           boxShadow: '0 4px 12px rgba(0,0,0,0.2)', pointerEvents: 'none',
         }}>
           {text}
           <div style={{ position: 'absolute', top: '-5px', left: '50%', marginLeft: -5,
-            border: '5px solid transparent', borderBottomColor: '#1E293B' }} />
+            border: '5px solid transparent', borderBottomColor: 'var(--text-primary)' }} />
         </div>
       )}
     </span>
@@ -159,6 +160,9 @@ export default function AdminDashboard() {
   const [hoveredUser, setHoveredUser] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [allRapports, setAllRapports] = useState([]);
+  const [selectedRapport, setSelectedRapport] = useState(null);
+  const [loadingRapports, setLoadingRapports] = useState(false);
   const addNotification = useCallback((message, type = 'success') => {
     const id = Date.now();
     setNotifications((prev) => [...prev, { id, message, type }]);
@@ -202,12 +206,36 @@ export default function AdminDashboard() {
   const fetchTickets = useCallback(async () => {
     try { const d = await getTickets(); setTickets(Array.isArray(d) ? d : []); } catch { setTickets([]); }
   }, []);
+  const fetchRapports = useCallback(async () => {
+    setLoadingRapports(true);
+    try { const d = await getRapportsIA(); setAllRapports(Array.isArray(d) ? d : []); } catch { setAllRapports([]); }
+    finally { setLoadingRapports(false); }
+  }, []);
 
   useEffect(() => {
     fetchStats(); fetchSites(); fetchUsers(); fetchTickets();
   }, [fetchStats, fetchSites, fetchUsers, fetchTickets]);
 
+  useEffect(() => {
+    if (currentView === 'reports') fetchRapports();
+  }, [currentView, fetchRapports]);
+
   const refreshAll = () => { fetchStats(); fetchSites(); fetchTickets(); };
+
+  const handleViewRapport = useCallback((id) => {
+    const r = allRapports.find((x) => x.id === id);
+    if (r) setSelectedRapport(selectedRapport?.id === id ? null : r);
+  }, [allRapports, selectedRapport]);
+
+  const handleDeleteRapport = useCallback(async (id, e) => {
+    e?.stopPropagation();
+    if (!window.confirm('Supprimer ce rapport ?')) return;
+    try {
+      await deleteRapportIA(id);
+      setAllRapports((prev) => prev.filter((r) => r.id !== id));
+      if (selectedRapport?.id === id) setSelectedRapport(null);
+    } catch (err) { alert(err.message); }
+  }, [selectedRapport]);
 
   // Derived
   const roleCounts = {};
@@ -261,7 +289,7 @@ export default function AdminDashboard() {
   const donut = stats?.graphiques?.repartition_priorite_donut
     ? Object.entries(stats.graphiques.repartition_priorite_donut).map(([k, v]) => ({
         name: LABEL_MAP[k] || k, value: v,
-        color: { critique: '#DC2626', haute: '#F59E0B', normale: '#2563EB', basse: '#10B981' }[k] || '#94A3B8', raw: k,
+        color: { critique: '#DC2626', haute: '#F59E0B', normale: '#2563EB', basse: '#10B981' }[k] || 'var(--text-muted2)', raw: k,
       })) : [];
   const topSites = stats?.graphiques?.top_sites_impactes ?? [];
   const communes = reporting?.tableau_communes ?? [];
@@ -453,7 +481,7 @@ export default function AdminDashboard() {
         </div>
         <div style={{ height: 220 }}><MapComponent sites={sites} /></div>
       </div>
-      <div style={{ marginBottom: 8, marginTop: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: '#64748B', letterSpacing: 0.5 }}>ANALYTIQUE</span></div>
+      <div style={{ marginBottom: 8, marginTop: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}>ANALYTIQUE</span></div>
       <div style={styles.chartsRow}>
         <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
           <div style={styles.ch}><span style={styles.cht}>Évolution des tickets</span><InfoPopup text="Nombre total de tickets créés par jour." /></div>
@@ -512,7 +540,7 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
-      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: '#64748B', letterSpacing: 0.5 }}>RÉSEAU</span></div>
+      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}>RÉSEAU</span></div>
       <div style={styles.chartsRow}>
         <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
           <div style={styles.ch}><span style={styles.cht}>Sites les plus impactés</span><InfoPopup text="Top sites avec le plus de réclamations." /></div>
@@ -621,7 +649,7 @@ export default function AdminDashboard() {
               const forward = STATUS_FLOW[ticket.statut] || [];
               return (
                 <tr key={ticket.id} style={styles.tr}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#F8FAFC'; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}>
                   <td style={{ ...styles.td, borderLeft: `4px solid ${prio.side}`, fontWeight: 600, cursor: 'pointer' }}
                     onClick={() => setSelectedTicket(ticket)}>
@@ -657,7 +685,7 @@ export default function AdminDashboard() {
                             onClick={(e) => { e.stopPropagation(); handleTicketStatus(ticket.id, s, ticket.statut); }}
                             style={{
                               ...styles.statusBtn,
-                              backgroundColor: isCurrent ? sc.bg : (canGo ? '#FFFFFF' : '#FFFFFF'),
+                              backgroundColor: isCurrent ? sc.bg : (canGo ? 'var(--bg-card)' : 'var(--bg-card)'),
                               color: isCurrent ? '#FFFFFF' : (canGo ? sc.text : '#D0D0D0'),
                               borderColor: isCurrent ? sc.bg : (canGo ? sc.text : '#E5E5E5'),
                               cursor: canGo && updatingId !== ticket.id ? 'pointer' : 'not-allowed',
@@ -688,7 +716,7 @@ export default function AdminDashboard() {
     <>
       <div style={styles.statsRow}>
         <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#3B82F6', animationDelay: '0s' }}>
-          <span style={{ ...styles.statNumber, color: '#171a21' }}>{filteredSites.length}</span>
+          <span style={{ ...styles.statNumber, color: 'var(--text-secondary)' }}>{filteredSites.length}</span>
           <span style={styles.statLabel}>Total sites</span>
         </div>
         <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#15803D', animationDelay: '0.05s' }}>
@@ -739,13 +767,13 @@ export default function AdminDashboard() {
               ) : filteredSites.map((site) => (
                 <tr key={site.id} style={{ ...styles.tr, cursor: 'pointer' }}
                   onClick={() => setSelectedSite(site)}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#F8FAFC'; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}>
                   <td style={{ ...styles.td, fontWeight: 600 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{
                         width: 10, height: 10, borderRadius: '50%', display: 'inline-block', flexShrink: 0,
-                        backgroundColor: ST[site.statut] || '#64748B',
+                        backgroundColor: ST[site.statut] || 'var(--text-muted3)',
                         boxShadow: site.statut === 'UP' ? '0 0 6px rgba(5,150,105,0.6)' : site.statut === 'DOWN' ? '0 0 6px rgba(220,38,38,0.6)' : 'none',
                       }} />
                       {site.codeSite}
@@ -766,7 +794,7 @@ export default function AdminDashboard() {
                             onClick={(e) => { e.stopPropagation(); handleToggleSite(site.id, site.statut); }}
                             style={{
                               ...styles.statusBtn,
-                              backgroundColor: isActive ? (s === 'UP' ? '#059669' : '#DC2626') : '#FFFFFF',
+                              backgroundColor: isActive ? (s === 'UP' ? '#059669' : '#DC2626') : 'var(--bg-card)',
                               color: isActive ? '#FFFFFF' : (isTarget ? (s === 'UP' ? '#059669' : '#DC2626') : '#D0D0D0'),
                               borderColor: isActive ? (s === 'UP' ? '#059669' : '#DC2626') : (isTarget ? (s === 'UP' ? '#059669' : '#DC2626') : '#E5E5E5'),
                               cursor: isTarget && togglingSiteId !== site.id ? 'pointer' : 'not-allowed',
@@ -866,11 +894,63 @@ export default function AdminDashboard() {
 
   // ─── REPORTS ───
   const reportsView = () => (
-    <div style={{ ...styles.tableCard, minHeight: 450, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#8b8e98' }}>
-      <IconReport style={{ width: 42, height: 42, marginBottom: 15 }} />
-      <h3 style={{ marginBottom: 8, color: '#343640' }}>Rapports</h3>
-      <p>L'interface des rapports sera affichée ici.</p>
-      <button onClick={refreshAll} style={{ ...styles.textBtn, marginTop: 12, color: COLORS.djezzyRed }}><IconRefresh /> Actualiser les données</button>
+    <div style={styles.tableCard}>
+      <div style={{ ...styles.panelHeader, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={styles.panelTitle}><IconReport style={{ width: 15, height: 15 }} /> Rapports des superviseurs</span>
+        <button onClick={fetchRapports} style={styles.textBtn}><IconRefresh style={{ width: 12, height: 12 }} /> Actualiser</button>
+      </div>
+      {loadingRapports ? (
+        <div style={styles.empty}>Chargement...</div>
+      ) : allRapports.length === 0 ? (
+        <div style={{ ...styles.empty, padding: 40 }}>Aucun rapport disponible.</div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={styles.table}>
+            <thead><tr style={styles.thRow}>
+              <th style={styles.th}>Titre</th>
+              <th style={styles.th}>Auteur</th>
+              <th style={styles.th}>Période</th>
+              <th style={styles.th}>Créé le</th>
+              <th style={styles.th}></th>
+            </tr></thead>
+            <tbody>
+              {allRapports.map((r) => (
+                <tr key={r.id} onClick={() => handleViewRapport(r.id)}
+                  style={{ ...styles.tr, cursor: 'pointer', background: selectedRapport?.id === r.id ? 'var(--bg-hover)' : 'transparent' }}>
+                  <td style={{ ...styles.td, fontWeight: 600, maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.titre}</td>
+                  <td style={styles.td}>{r.cree_par?.nom_user || '—'}</td>
+                  <td style={styles.td}>
+                    {r.date_debut && r.date_fin
+                      ? `${new Date(r.date_debut).toLocaleDateString('fr')} → ${new Date(r.date_fin).toLocaleDateString('fr')}`
+                      : '30 jours'}
+                  </td>
+                  <td style={styles.td}>
+                    {new Date(r.created_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  </td>
+                  <td style={styles.td}>
+                    <button onClick={(e) => handleDeleteRapport(r.id, e)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#DC2626' }} title="Supprimer">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {selectedRapport && (
+        <div style={{ borderTop: '1px solid var(--border-color)', padding: 20, maxHeight: 500, overflowY: 'auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{selectedRapport.titre}</h3>
+            <button onClick={() => setSelectedRapport(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted3)', padding: 4 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+            </button>
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.7 }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedRapport.contenu) }} />
+        </div>
+      )}
     </div>
   );
 
@@ -1106,7 +1186,7 @@ export default function AdminDashboard() {
                     onClick={() => handleTicketStatus(t.id, s, t.statut)}
                     style={{
                       ...styles.statusBtn,
-                      backgroundColor: isCurrent ? sc.bg : (canGo ? '#FFFFFF' : '#FFFFFF'),
+                      backgroundColor: isCurrent ? sc.bg : (canGo ? 'var(--bg-card)' : 'var(--bg-card)'),
                       color: isCurrent ? '#FFFFFF' : (canGo ? sc.text : '#D0D0D0'),
                       borderColor: isCurrent ? sc.bg : (canGo ? sc.text : '#E5E5E5'),
                       cursor: canGo && updatingId !== t.id ? 'pointer' : 'not-allowed',
@@ -1164,7 +1244,7 @@ export default function AdminDashboard() {
                 <div style={styles.modalField}>
                   <span style={styles.modalLabel}>Statut</span>
                   <span style={styles.modalValue}>
-                    <span style={{ ...styles.badgeBase, backgroundColor: ST_BG[s.statut] || '#F1F5F9', color: ST[s.statut] || '#64748B' }}>
+                    <span style={{ ...styles.badgeBase, backgroundColor: ST_BG[s.statut] || 'var(--bg-card)', color: ST[s.statut] || 'var(--text-muted3)' }}>
                       {SITE_LABELS[s.statut]}
                     </span>
                   </span>
@@ -1186,7 +1266,7 @@ export default function AdminDashboard() {
                     onClick={() => handleToggleSite(s.id, s.statut)}
                     style={{
                       ...styles.statusBtn,
-                      backgroundColor: isActive ? (st === 'UP' ? '#059669' : '#DC2626') : '#FFFFFF',
+                      backgroundColor: isActive ? (st === 'UP' ? '#059669' : '#DC2626') : 'var(--bg-card)',
                       color: isActive ? '#FFFFFF' : (isTarget ? (st === 'UP' ? '#059669' : '#DC2626') : '#D0D0D0'),
                       borderColor: isActive ? (st === 'UP' ? '#059669' : '#DC2626') : (isTarget ? (st === 'UP' ? '#059669' : '#DC2626') : '#E5E5E5'),
                       cursor: isTarget && togglingSiteId !== s.id ? 'pointer' : 'not-allowed',
@@ -1251,7 +1331,7 @@ export default function AdminDashboard() {
                 ))}
               </div>
             )}
-            <button onClick={refreshAll} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#f1f4f9', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', color: '#64748B' }} title="Actualiser"><IconRefresh style={{ width: 14, height: 14 }} /></button>
+            <button onClick={refreshAll} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-toolbar)', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-muted3)' }} title="Actualiser"><IconRefresh style={{ width: 14, height: 14 }} /></button>
             <span style={styles.date}>{now()}</span>
           </div>
         </header>
@@ -1276,24 +1356,24 @@ export default function AdminDashboard() {
 
 const styles = {
   appLayout: { display: 'flex', minHeight: '100vh', fontFamily: "'Inter', system-ui, sans-serif", width: '100%' },
-  sidebar: { width: 193, backgroundColor: COLORS.sidebarBg, color: '#94A3B8', display: 'flex', flexDirection: 'column', flexShrink: 0 },
+  sidebar: { width: 193, backgroundColor: COLORS.sidebarBg, color: 'var(--text-sidebar)', display: 'flex', flexDirection: 'column', flexShrink: 0 },
   brand: { height: 82, display: 'flex', alignItems: 'center', gap: 13, padding: '0 17px', borderBottom: '1px solid rgba(255,255,255,0.07)' },
   logo: { width: 34, height: 'auto', objectFit: 'contain' },
   brandName: { color: '#FFFFFF', fontWeight: 700, fontSize: 16 },
-  brandRole: { marginTop: 6, fontSize: 10, color: '#9492a0' },
+  brandRole: { marginTop: 6, fontSize: 10, color: 'var(--text-sidebar)' },
   menu: { display: 'flex', flexDirection: 'column', gap: 5, padding: '26px 12px 0' },
-  sectionLabel: { margin: '0 5px 10px', fontSize: 6, fontWeight: 700, color: '#4e4b5c', letterSpacing: '1px' },
-  navItem: { display: 'flex', alignItems: 'center', gap: 9, background: 'transparent', border: 'none', color: '#92909e', padding: '0 10px', borderRadius: 6, cursor: 'pointer', textAlign: 'left', fontSize: 13, width: '100%', height: 34, textDecoration: 'none', outline: 'none' },
+  sectionLabel: { margin: '0 5px 10px', fontSize: 6, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: '1px' },
+  navItem: { display: 'flex', alignItems: 'center', gap: 9, background: 'transparent', border: 'none', color: 'var(--text-sidebar)', padding: '0 10px', borderRadius: 6, cursor: 'pointer', textAlign: 'left', fontSize: 13, width: '100%', height: 34, textDecoration: 'none', outline: 'none' },
   navItemActive: { background: 'linear-gradient(90deg, #9a0c2d, #710820)', color: '#FFFFFF', fontWeight: 600 },
   mainContent: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' },
-  topHeader: { position: 'sticky', top: 0, height: 51, display: 'flex', alignItems: 'center', padding: '0 27px', background: COLORS.cardBg, borderBottom: '1px solid #dadde3', boxShadow: '0 1px 2px rgba(20,25,35,0.08)', zIndex: 10 },
-  pageTitle: { margin: 0, fontSize: 14, fontWeight: 700, color: '#171a21' },
+  topHeader: { position: 'sticky', top: 0, height: 51, display: 'flex', alignItems: 'center', padding: '0 27px', background: COLORS.cardBg, borderBottom: `1px solid ${COLORS.border}`, boxShadow: 'var(--shadow-sm)', zIndex: 10 },
+  pageTitle: { margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-secondary)' },
   pageContent: { padding: '24px 21px 40px', flex: 1, overflowY: 'auto' },
   statsRow: { display: 'flex', gap: 16, marginBottom: 20 },
-  statCard: { flex: 1, backgroundColor: COLORS.cardBg, borderRadius: 8, padding: '16px 20px', border: '1px solid #d6dae1', borderLeftWidth: 4, display: 'flex', flexDirection: 'column', gap: 4 },
+  statCard: { flex: 1, backgroundColor: COLORS.cardBg, borderRadius: 8, padding: '16px 20px', border: `1px solid ${COLORS.border}`, borderLeftWidth: 4, display: 'flex', flexDirection: 'column', gap: 4 },
   statNumber: { fontSize: 24, fontWeight: 700, color: COLORS.textDark },
   statLabel: { fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: '0.3px' },
-  tableCard: { backgroundColor: COLORS.cardBg, borderRadius: 7, border: `1px solid ${COLORS.border}`, display: 'flex', flexDirection: 'column', width: '100%', boxShadow: '0 1px 4px rgba(0,0,0,0.12)' },
+  tableCard: { backgroundColor: COLORS.cardBg, borderRadius: 7, border: `1px solid ${COLORS.border}`, borderTop: '3px solid #E8401A', display: 'flex', flexDirection: 'column', width: '100%', boxShadow: 'var(--shadow-card)' },
   toolbar: { minHeight: 44, padding: '0 18px', display: 'flex', alignItems: 'center' },
   toolbarLeft: { display: 'flex', alignItems: 'center', gap: 11 },
   tableTitle: { margin: 0, fontSize: 11, fontWeight: 700, color: COLORS.textDark, display: 'flex', alignItems: 'center', gap: 8 },
@@ -1301,11 +1381,11 @@ const styles = {
   btnFilter: { display: 'flex', alignItems: 'center', backgroundColor: COLORS.cardBg, border: `1px solid ${COLORS.border}`, padding: '0 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: COLORS.textDark, height: 28, fontFamily: 'inherit' },
   searchWrapper: { position: 'relative', display: 'flex', alignItems: 'center', width: 188, height: 28 },
   searchIcon: { position: 'absolute', left: 10, color: COLORS.textMuted },
-  searchInput: { width: '100%', height: '100%', padding: '0 10px 0 31px', borderRadius: 6, border: `1px solid ${COLORS.border}`, fontSize: 9, outline: 'none', color: COLORS.textDark, fontFamily: 'inherit' },
-  filterArea: { display: 'flex', gap: 10, padding: '12px 18px', borderBottom: `1px solid ${COLORS.border}`, flexWrap: 'wrap' },
-  filterSelect: { minWidth: 140, height: 31, padding: '0 10px', color: COLORS.textDark, border: `1px solid ${COLORS.border}`, borderRadius: 5, outline: 'none', fontFamily: 'inherit', fontSize: 12 },
+  searchInput: { width: '100%', height: '100%', padding: '0 10px 0 31px', borderRadius: 6, border: `1px solid ${COLORS.border}`, fontSize: 9, outline: 'none', color: COLORS.textDark, fontFamily: 'inherit', backgroundColor: 'var(--bg-input)' },
+  filterArea: { display: 'flex', gap: 10, padding: '12px 18px', borderBottom: `1px solid ${COLORS.border}`, flexWrap: 'wrap', backgroundColor: 'var(--bg-filter)' },
+  filterSelect: { minWidth: 140, height: 31, padding: '0 10px', color: COLORS.textDark, border: `1px solid ${COLORS.border}`, borderRadius: 5, outline: 'none', fontFamily: 'inherit', fontSize: 12, backgroundColor: 'var(--bg-input)' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'left', minWidth: 1000 },
-  thRow: { backgroundColor: '#f3f6f9' },
+  thRow: { backgroundColor: 'var(--bg-th)' },
   th: { height: 30, padding: '0 14px', fontWeight: 500, color: COLORS.textMuted, fontSize: 7, textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: `1px solid ${COLORS.border}` },
   tr: { borderBottom: `1px solid ${COLORS.border}`, transition: 'background 0.1s' },
   td: { height: 44, padding: '0 14px', color: COLORS.textDark, verticalAlign: 'middle', whiteSpace: 'nowrap' },
@@ -1313,23 +1393,23 @@ const styles = {
   badgeBase: { padding: '4px 10px', borderRadius: 4, fontWeight: 700, fontSize: 10, display: 'inline-flex', alignItems: 'center' },
   statusActions: { display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center', flexWrap: 'wrap' },
   statusBtn: { display: 'inline-flex', alignItems: 'center', padding: '3px 8px', borderRadius: 9, border: '1px solid', fontSize: 9, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' },
-  toggle: { display: 'flex', gap: 2, background: '#f1f4f9', borderRadius: 6, padding: 2 },
-  togBtn: { padding: '4px 10px', fontSize: 10, fontWeight: 600, border: 'none', borderRadius: 4, cursor: 'pointer', color: '#64748B', background: 'transparent', fontFamily: 'inherit' },
-  togOn: { background: '#fff', color: '#171a21', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' },
-  date: { fontSize: 10, color: '#94A3B8', fontWeight: 500, padding: '4px 10px', background: '#f1f4f9', borderRadius: 4 },
+  toggle: { display: 'flex', gap: 2, background: 'var(--bg-toolbar)', borderRadius: 6, padding: 2 },
+  togBtn: { padding: '4px 10px', fontSize: 10, fontWeight: 600, border: 'none', borderRadius: 4, cursor: 'pointer', color: 'var(--text-muted3)', background: 'transparent', fontFamily: 'inherit' },
+  togOn: { background: 'var(--bg-card)', color: 'var(--text-secondary)', boxShadow: 'var(--shadow-sm)' },
+  date: { fontSize: 10, color: 'var(--text-muted2)', fontWeight: 500, padding: '4px 10px', background: 'var(--bg-toolbar)', borderRadius: 4 },
   kpiRow: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 16 },
-  kpiCard: { padding: '16px 20px', background: COLORS.cardBg, border: `1px solid ${COLORS.border}`, borderRadius: 8, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' },
-  kpiLabel: { display: 'block', marginBottom: 6, fontSize: 9, color: '#555861' },
+  kpiCard: { padding: '16px 20px', background: COLORS.cardBg, border: `1px solid ${COLORS.border}`, borderTop: '3px solid #E8401A', borderRadius: 8, boxShadow: 'var(--shadow-sm)' },
+  kpiLabel: { display: 'block', marginBottom: 6, fontSize: 9, color: 'var(--text-muted)' },
   kpiValue: { fontSize: 26 },
-  panelHeader: { minHeight: 40, padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #eceef2' },
+  panelHeader: { minHeight: 40, padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${COLORS.border}` },
   panelTitle: { display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, fontWeight: 600 },
   textBtn: { display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 9, fontFamily: 'inherit' },
   chartsRow: { display: 'flex', gap: 16, marginBottom: 24, minHeight: 200 },
-  chartBox: { background: COLORS.cardBg, border: '1px solid #d8dde5', borderRadius: 8, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' },
-  ch: { padding: '10px 16px 4px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'baseline', gap: 8 },
-  cht: { fontSize: 11, fontWeight: 700, color: '#1c212b', textTransform: 'uppercase', letterSpacing: 0.3 },
+  chartBox: { background: COLORS.cardBg, border: `1px solid ${COLORS.border}`, borderTop: '3px solid #E8401A', borderRadius: 8, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: 'var(--shadow-sm)' },
+  ch: { padding: '10px 16px 4px', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'baseline', gap: 8 },
+  cht: { fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: 0.3 },
   cb: { flex: 1, padding: '6px 6px 4px', minHeight: 260 },
-  empty: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94A3B8', fontSize: 11 },
+  empty: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted2)', fontSize: 11 },
   formBody: { padding: '30px' },
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '12px' },
   inputGroup: { display: 'flex', flexDirection: 'column', gap: 6 },
@@ -1341,7 +1421,7 @@ const styles = {
   btnDanger: { display: 'flex', alignItems: 'center', backgroundColor: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA', padding: '10px 24px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' },
   btnNew: { display: 'flex', alignItems: 'center', backgroundColor: COLORS.djezzyRed, color: '#FFFFFF', border: 'none', padding: '8px 16px', borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
   overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modal: { backgroundColor: COLORS.cardBg, borderRadius: 12, width: 700, maxWidth: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' },
+  modal: { backgroundColor: COLORS.cardBg, borderRadius: 12, width: 700, maxWidth: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-modal)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}` },
   modalTitle: { margin: 0, fontSize: 18, fontWeight: 700, color: COLORS.textDark },
   modalClose: { background: 'none', border: 'none', cursor: 'pointer', color: COLORS.textMuted, padding: 4 },
@@ -1353,11 +1433,11 @@ const styles = {
   modalLabel: { fontSize: 12, color: COLORS.textMuted, fontWeight: 500 },
   modalValue: { fontSize: 13, color: COLORS.textDark, fontWeight: 600 },
   modalText: { fontSize: 13, color: COLORS.textDark, lineHeight: 1.6, margin: 0, whiteSpace: 'pre-wrap' },
-  comment: { padding: 12, backgroundColor: '#F8FAFC', borderRadius: 8, marginBottom: 8 },
+  comment: { padding: 12, backgroundColor: 'var(--bg-input)', borderRadius: 8, marginBottom: 8 },
   modalFooter: { padding: '16px 24px', borderTop: `1px solid ${COLORS.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   userChip: { fontSize: 13, color: COLORS.djezzyRed, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px', textDecorationColor: 'rgba(230,0,35,0.3)', position: 'relative' },
-  userTooltip: { position: 'fixed', zIndex: 1200, backgroundColor: '#1E293B', color: '#F1F5F9', padding: '10px 14px', borderRadius: 8, fontSize: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.3)', pointerEvents: 'none', whiteSpace: 'nowrap' },
-  userTooltipArrow: { position: 'absolute', top: '-5px', left: '16px', width: 10, height: 10, backgroundColor: '#1E293B', transform: 'rotate(45deg)', borderRadius: 2 },
+  userTooltip: { position: 'fixed', zIndex: 1200, backgroundColor: 'var(--text-primary)', color: 'var(--bg-card)', padding: '10px 14px', borderRadius: 8, fontSize: 12, boxShadow: 'var(--shadow-modal)', pointerEvents: 'none', whiteSpace: 'nowrap' },
+  userTooltipArrow: { position: 'absolute', top: '-5px', left: '16px', width: 10, height: 10, backgroundColor: 'var(--text-primary)', transform: 'rotate(45deg)', borderRadius: 2 },
   userTooltipName: { fontWeight: 700, fontSize: 13, marginBottom: 4 },
-  userTooltipDetail: { color: '#94A3B8', fontSize: 11, lineHeight: 1.6 },
+  userTooltipDetail: { color: 'var(--text-muted2)', fontSize: 11, lineHeight: 1.6 },
 };

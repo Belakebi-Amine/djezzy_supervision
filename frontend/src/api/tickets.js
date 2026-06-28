@@ -16,18 +16,43 @@ const decodePayload = (token) => {
     } catch { return null; }
 };
 
-const getHeaders = () => {
-    const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-    const payload = token ? decodePayload(token) : null;
-    const valid = payload && Date.now() < payload.exp * 1000;
-    if (!valid && payload) {
+const refreshToken = async () => {
+    const refresh = localStorage.getItem('refresh_token');
+    if (!refresh) return null;
+    try {
+        const response = await fetch(`${API_URL}/token/refresh/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh })
+        });
+        if (!response.ok) throw new Error('Refresh failed');
+        const data = await response.json();
+        localStorage.setItem('access_token', data.access);
+        localStorage.setItem('token', data.access);
+        if (data.refresh) localStorage.setItem('refresh_token', data.refresh);
+        return data.access;
+    } catch {
         localStorage.removeItem('token');
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
+        return null;
     }
+};
+
+const getHeaders = async () => {
+    let token = localStorage.getItem('access_token') || localStorage.getItem('token');
+    const payload = token ? decodePayload(token) : null;
+    const valid = payload && Date.now() < payload.exp * 1000;
+
+    if (!valid && token && payload) {
+        const newToken = await refreshToken();
+        if (newToken) token = newToken;
+        else token = null;
+    }
+
     return {
         'Content-Type': 'application/json',
-        'Authorization': valid ? `Bearer ${token}` : ''
+        'Authorization': token ? `Bearer ${token}` : ''
     };
 };
 
@@ -41,7 +66,7 @@ export const getTickets = async (statut = '') => {
         url += `?statut=${encodeURIComponent(statut)}`;
     }
 
-    const response = await fetch(url, { method: 'GET', headers: getHeaders() });
+    const response = await fetch(url, { method: 'GET', headers: await getHeaders() });
     if (!response.ok) {
         throw new Error(`Erreur serveur [${response.status}]`);
     }
@@ -55,7 +80,7 @@ export const getTickets = async (statut = '') => {
 export const createTicket = async (ticketData) => {
     const response = await fetch(`${API_URL}/reclamations/creer/`, {
         method: 'POST',
-        headers: getHeaders(),
+        headers: await getHeaders(),
         body: JSON.stringify(ticketData)
     });
     if (!response.ok) {
@@ -75,9 +100,10 @@ export const createTicket = async (ticketData) => {
 export const updateTicket = async (id, ticketData) => {
     const response = await fetch(`${API_URL}/reclamations/${id}/`, {
         method: 'PUT',
-        headers: getHeaders(),
+        headers: await getHeaders(),
         body: JSON.stringify(ticketData)
     });
+    checkAuthAndRedirect(response.status);
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         console.error('Détails rejet API Django:', errorData);
@@ -91,7 +117,7 @@ export const updateTicket = async (id, ticketData) => {
  */
 export const getMe = async () => {
     try {
-        const response = await fetch(`${API_URL}/accounts/me/`, { method: 'GET', headers: getHeaders() });
+        const response = await fetch(`${API_URL}/accounts/me/`, { method: 'GET', headers: await getHeaders() });
         if (!response.ok) return { username: 'Agent Call Center' };
         return response.json();
     } catch {
@@ -103,7 +129,7 @@ export const getMe = async () => {
  * Récupère les ingénieurs réseau pour l'assignation.
  */
 export const getEngineers = async () => {
-    const response = await fetch(`${API_URL}/accounts/ingenieurs/`, { method: 'GET', headers: getHeaders() });
+    const response = await fetch(`${API_URL}/accounts/ingenieurs/`, { method: 'GET', headers: await getHeaders() });
     if (!response.ok) {
         throw new Error(`Erreur serveur [${response.status}]`);
     }
@@ -114,7 +140,7 @@ export const getEngineers = async () => {
  * Récupère les agents Call Center.
  */
 export const getAgentsCC = async () => {
-    const response = await fetch(`${API_URL}/accounts/agents-cc/`, { method: 'GET', headers: getHeaders() });
+    const response = await fetch(`${API_URL}/accounts/agents-cc/`, { method: 'GET', headers: await getHeaders() });
     if (!response.ok) {
         throw new Error(`Erreur serveur [${response.status}]`);
     }
@@ -126,7 +152,7 @@ export const getAgentsCC = async () => {
  * NOTE: vérifie que sites_reseau/urls.py expose bien un endpoint de liste à cette racine.
  */
 export const getSites = async () => {
-    const response = await fetch(`${API_URL}/sites/`, { method: 'GET', headers: getHeaders() });
+    const response = await fetch(`${API_URL}/sites/`, { method: 'GET', headers: await getHeaders() });
     if (!response.ok) {
         throw new Error(`Erreur serveur [${response.status}]`);
     }
@@ -136,12 +162,20 @@ export const getSites = async () => {
 /**
  * Met à jour le statut d'un site (UP/DOWN).
  */
+const checkAuthAndRedirect = (status) => {
+    if (status === 401) {
+        ['token', 'access_token', 'refresh_token'].forEach(k => localStorage.removeItem(k));
+        window.location.href = '/login';
+    }
+};
+
 export const updateSiteStatus = async (id, data) => {
     const response = await fetch(`${API_URL}/sites/${id}/`, {
         method: 'PUT',
-        headers: getHeaders(),
+        headers: await getHeaders(),
         body: JSON.stringify(data)
     });
+    checkAuthAndRedirect(response.status);
     if (!response.ok) {
         throw new Error(`Erreur serveur [${response.status}]`);
     }
@@ -154,7 +188,7 @@ export const updateSiteStatus = async (id, data) => {
 export const createSite = async (siteData) => {
     const response = await fetch(`${API_URL}/sites/creer/`, {
         method: 'POST',
-        headers: getHeaders(),
+        headers: await getHeaders(),
         body: JSON.stringify(siteData)
     });
     if (!response.ok) {
@@ -170,7 +204,7 @@ export const createSite = async (siteData) => {
  * Récupère la liste de tous les utilisateurs (admin seulement).
  */
 export const getUsers = async () => {
-    const response = await fetch(`${API_URL}/accounts/users/`, { method: 'GET', headers: getHeaders() });
+    const response = await fetch(`${API_URL}/accounts/users/`, { method: 'GET', headers: await getHeaders() });
     if (!response.ok) throw new Error(`Erreur serveur [${response.status}]`);
     return await response.json();
 };
@@ -181,7 +215,7 @@ export const getUsers = async () => {
 export const createUser = async (userData) => {
     const response = await fetch(`${API_URL}/accounts/users/register/`, {
         method: 'POST',
-        headers: getHeaders(),
+        headers: await getHeaders(),
         body: JSON.stringify(userData)
     });
     if (!response.ok) throw new Error(`Erreur création utilisateur [${response.status}]`);
@@ -194,8 +228,9 @@ export const createUser = async (userData) => {
 export const archiverSite = async (id) => {
     const response = await fetch(`${API_URL}/sites/${id}/archiver/`, {
         method: 'PUT',
-        headers: getHeaders(),
+        headers: await getHeaders(),
     });
+    checkAuthAndRedirect(response.status);
     if (!response.ok) {
         throw new Error(`Erreur serveur [${response.status}]`);
     }
@@ -208,7 +243,7 @@ export const archiverSite = async (id) => {
 export const archiveUser = async (codeUser) => {
     const response = await fetch(`${API_URL}/accounts/users/${codeUser}/archive/`, {
         method: 'DELETE',
-        headers: getHeaders(),
+        headers: await getHeaders(),
     });
     if (!response.ok) {
         throw new Error(`Erreur serveur [${response.status}]`);

@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
+import './styles/themes.css';
 import Login from './pages/Login';
 import CallCenter from './pages/CallCenter';
 import EngineerDashboard from './pages/EngineerDashboard';

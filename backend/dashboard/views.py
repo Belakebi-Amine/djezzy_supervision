@@ -7,9 +7,11 @@ from django.db.models.functions import TruncDay, ExtractWeekDay
 from django.utils import timezone
 from datetime import timedelta
 
+from rest_framework import status
 from reclamations.models import Reclamation
 from sites_reseau.models import SiteReseau
 from accounts.models import CustomUser, Role
+from .models import RapportIA
 
 JOURS_SEMAINE = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
 
@@ -347,3 +349,87 @@ def liste_sites_carto(request):
         site['tickets_ouverts'] = tickets_comptage
         liste_finales.append(site)
     return Response(liste_finales)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 4. VUES RAPPORT IA (Superviseur)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def generer_rapport_ia(request):
+    """Génère un rapport via Gemini avec les données actuelles du réseau."""
+    from .rapport_services import generer_rapport_ia as gemini_generate
+
+    prompt = request.data.get('prompt', '').strip()
+    if not prompt:
+        return Response({'error': 'Le prompt est requis.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    date_debut = request.data.get('date_debut')
+    date_fin = request.data.get('date_fin')
+
+    from datetime import datetime
+    if date_debut:
+        date_debut = datetime.strptime(date_debut, '%Y-%m-%d').date()
+    if date_fin:
+        date_fin = datetime.strptime(date_fin, '%Y-%m-%d').date()
+
+    try:
+        contenu = gemini_generate(prompt, date_debut, date_fin)
+        return Response({'contenu': contenu, 'prompt': prompt})
+    except Exception as e:
+        return Response(
+            {'error': f'Erreur de génération : {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def liste_rapports_ia(request):
+    """GET : liste des rapports sauvegardés. POST : sauvegarde un rapport."""
+    from .serializers import RapportIASerializer
+
+    if request.method == 'GET':
+        if request.user.role == 'ADMIN':
+            rapports = RapportIA.objects.all()
+        else:
+            rapports = RapportIA.objects.filter(cree_par=request.user)
+        serializer = RapportIASerializer(rapports, many=True)
+        return Response(serializer.data)
+
+    if request.method == 'POST':
+        serializer = RapportIASerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(cree_par=request.user)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def detail_rapport_ia(request, pk):
+    """GET/PUT/DELETE d'un rapport spécifique."""
+    from .serializers import RapportIASerializer
+
+    try:
+        if request.user.role == 'ADMIN':
+            rapport = RapportIA.objects.get(pk=pk)
+        else:
+            rapport = RapportIA.objects.get(pk=pk, cree_par=request.user)
+    except RapportIA.DoesNotExist:
+        return Response({'error': 'Rapport introuvable'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        serializer = RapportIASerializer(rapport)
+        return Response(serializer.data)
+
+    if request.method == 'PUT':
+        serializer = RapportIASerializer(rapport, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    if request.method == 'DELETE':
+        rapport.delete()
+        return Response({'message': 'Rapport supprimé'}, status=status.HTTP_204_NO_CONTENT)

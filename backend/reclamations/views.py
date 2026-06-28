@@ -93,10 +93,9 @@ def detail_reclamation(request, pk):
                 reclamation.assigne_a = None
                 reclamation.save()
 
-            # Auto-assign : l'ingénieur qui ouvre le ticket (ferme -> ouvert) devient l'assigné
+            # Auto-assign : l'utilisateur qui rouvre le ticket devient l'assigné
             if (old_statut == 'ferme' and reclamation.statut == 'ouvert'
                     and request.user and request.user.is_authenticated
-                    and (request.user.role or '').upper() == Role.INGENIEUR_RESEAUX
                     and not reclamation.assigne_a):
                 reclamation.assigne_a = request.user
                 reclamation.save()

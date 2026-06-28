@@ -4,14 +4,15 @@ import { getTickets, updateTicket, getSites, updateSiteStatus, createSite, archi
 import MapComponent from '../components/Map';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
+
 const COLORS = {
-  sidebarBg: '#11101f',
+  sidebarBg: 'var(--bg-sidebar)',
   sidebarActive: '#850a27',
-  mainBg: '#f5f6fa',
-  cardBg: '#FFFFFF',
-  textDark: '#1c212b',
-  textMuted: '#818898',
-  border: '#d8dde5',
+  mainBg: 'var(--bg-main)',
+  cardBg: 'var(--bg-card)',
+  textDark: 'var(--text-primary)',
+  textMuted: 'var(--text-muted)',
+  border: 'var(--border-color)',
   djezzyRed: '#e60023',
 
   types: {
@@ -353,7 +354,7 @@ export default function EngineerDashboard() {
               </div>
             </div>
           ) : (
-            <h1 style={{ ...styles.pageTitle, color: '#171a21' }}>{currentView === 'sites' ? 'Sites Reseau' : currentView === 'cartographie' ? 'Cartographie' : 'Reclamations'}</h1>
+            <h1 style={styles.pageTitle}>{currentView === 'sites' ? 'Sites Reseau' : currentView === 'cartographie' ? 'Cartographie' : 'Reclamations'}</h1>
           )}
         </header>
 
@@ -995,27 +996,27 @@ export default function EngineerDashboard() {
 
 const styles = {
   appLayout: { display: 'flex', minHeight: '100vh', fontFamily: "'Inter', system-ui, sans-serif", width: '100%' },
-  sidebar: { width: '193px', backgroundColor: COLORS.sidebarBg, color: '#94A3B8', display: 'flex', flexDirection: 'column', padding: '0', flexShrink: 0 },
+  sidebar: { width: '193px', backgroundColor: COLORS.sidebarBg, color: 'var(--text-sidebar)', display: 'flex', flexDirection: 'column', padding: '0', flexShrink: 0 },
   brandZone: { height: '82px', display: 'flex', alignItems: 'center', gap: '13px', padding: '0 17px', borderBottom: '1px solid rgba(255,255,255,0.07)' },
   brandLogo: { width: '34px', height: 'auto', objectFit: 'contain' },
   brandName: { color: '#FFFFFF', fontWeight: 700, fontSize: '16px' },
-  brandRole: { marginTop: '6px', fontSize: '10px', color: '#9492a0' },
+  brandRole: { marginTop: '6px', fontSize: '10px', color: 'var(--text-sidebar)' },
   menuSection: { display: 'flex', flexDirection: 'column', gap: '5px', padding: '26px 12px 0' },
-  sectionLabel: { margin: '0 5px 10px', fontSize: '6px', fontWeight: 700, color: '#4e4b5c', letterSpacing: '1px' },
-  menuItem: { display: 'flex', alignItems: 'center', background: 'transparent', border: 'none', color: '#92909e', padding: '0 10px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', fontSize: '13px', width: '100%', height: '34px', textDecoration: 'none', outline: 'none' },
+  sectionLabel: { margin: '0 5px 10px', fontSize: '6px', fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: '1px' },
+  menuItem: { display: 'flex', alignItems: 'center', background: 'transparent', border: 'none', color: 'var(--text-sidebar)', padding: '0 10px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', fontSize: '13px', width: '100%', height: '34px', textDecoration: 'none', outline: 'none' },
   menuItemActive: { background: 'linear-gradient(90deg, #9a0c2d, #710820)', color: '#FFFFFF', fontWeight: 600, position: 'relative' },
   mainContent: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', boxSizing: 'border-box' },
-  topHeader: { position: 'sticky', top: 0, height: '51px', display: 'flex', alignItems: 'center', padding: '0 27px', borderBottom: '1px solid #dadde3', boxShadow: '0 1px 2px rgba(20,25,35,0.08)', zIndex: 10 },
-  pageTitle: { margin: 0, fontSize: '14px', fontWeight: 700, color: '#171a21' },
+  topHeader: { position: 'sticky', top: 0, height: '51px', display: 'flex', alignItems: 'center', padding: '0 27px', borderBottom: `1px solid ${COLORS.border}`, boxShadow: 'var(--shadow-sm)', zIndex: 10 },
+  pageTitle: { margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-secondary)' },
   pageTitleDark: { margin: 0, fontSize: '14px', fontWeight: 700, color: '#e2e8f0' },
   pageContent: { padding: '24px 21px 40px', flex: 1 },
   statsRow: { display: 'flex', gap: '16px', marginBottom: '20px' },
-  statCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: '8px', padding: '16px 20px', borderLeft: '4px solid', border: '1px solid #d6dae1', borderLeftWidth: '4px', display: 'flex', flexDirection: 'column', gap: '4px' },
+  statCard: { flex: 1, backgroundColor: 'var(--bg-card)', borderRadius: '8px', padding: '16px 20px', borderLeft: '4px solid', border: `1px solid ${COLORS.border}`, borderLeftWidth: '4px', display: 'flex', flexDirection: 'column', gap: '4px' },
   statNumber: { fontSize: '24px', fontWeight: 700, color: COLORS.textDark },
   statLabel: { fontSize: '11px', fontWeight: 600, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: '0.3px' },
   backNav: { display: 'flex', alignItems: 'center', fontSize: '16px', color: COLORS.textDark, cursor: 'pointer', marginBottom: '4px' },
   breadcrumb: { fontSize: '12px', color: COLORS.textMuted, fontWeight: 500 },
-  tableCard: { backgroundColor: COLORS.cardBg, borderRadius: '7px', border: `1px solid ${COLORS.border}`, display: 'flex', flexDirection: 'column', width: '100%', boxShadow: '0 1px 4px rgba(0,0,0,0.12)' },
+  tableCard: { backgroundColor: COLORS.cardBg, borderRadius: '7px', border: `1px solid ${COLORS.border}`, borderTop: '3px solid #E8401A', display: 'flex', flexDirection: 'column', width: '100%', boxShadow: '0 1px 4px rgba(0,0,0,0.12)' },
   formHeader: { padding: '16px 20px', borderBottom: `1px solid ${COLORS.border}`, display: 'flex', alignItems: 'center' },
   formBody: { padding: '24px 30px' },
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px', marginBottom: '12px' },

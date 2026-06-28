@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const API = axios.create({
-    baseURL: 'http://127.0.0.1:8000/api', // Assure-toi que c'est bien l'URL de ton API Django
+    baseURL: 'http://127.0.0.1:8000/api',
     timeout: 10000,
     headers: {
         'Content-Type': 'application/json',
@@ -9,19 +9,41 @@ const API = axios.create({
     }
 });
 
-const isTokenValid = () => {
-    const token = localStorage.getItem('access_token') || localStorage.getItem('token');
-    if (!token) return false;
+const decodePayload = (token) => {
     try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        return Date.now() < payload.exp * 1000;
-    } catch { return false; }
+        return JSON.parse(atob(token.split('.')[1]));
+    } catch { return null; }
 };
 
-// Intercepteur pour injecter automatiquement ton token s'il existe
+const refreshToken = async () => {
+    const refresh = localStorage.getItem('refresh_token');
+    if (!refresh) return null;
+    try {
+        const response = await axios.post('http://127.0.0.1:8000/api/token/refresh/', { refresh });
+        const data = response.data;
+        localStorage.setItem('access_token', data.access);
+        localStorage.setItem('token', data.access);
+        if (data.refresh) localStorage.setItem('refresh_token', data.refresh);
+        return data.access;
+    } catch {
+        localStorage.removeItem('token');
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        return null;
+    }
+};
+
+// Intercepteur pour injecter et rafraîchir automatiquement le token
 API.interceptors.request.use(
-    (config) => {
-        const token = isTokenValid() ? localStorage.getItem('access_token') || localStorage.getItem('token') : null;
+    async (config) => {
+        let token = localStorage.getItem('access_token') || localStorage.getItem('token');
+        const payload = token ? decodePayload(token) : null;
+        const valid = payload && Date.now() < payload.exp * 1000;
+
+        if (!valid && token && payload) {
+            token = await refreshToken();
+        }
+
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
