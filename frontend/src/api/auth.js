@@ -1,9 +1,15 @@
+// api/auth.js
+// ─────────────────────────────────────────────────────────────
+// Authentication API functions. Handles login (JWT token request)
+// and fetching the current user's profile from the backend.
+// ─────────────────────────────────────────────────────────────
 import API from './axios';
 
 /**
- * Appelle l'endpoint de connexion du backend Django pour générer les tokens JWT
- * @param {string} username 
- * @param {string} password 
+ * Sends login credentials to the backend and returns JWT tokens.
+ * @param {string} username - User's email (used as username)
+ * @param {string} password - User's password
+ * @returns {Object} { access, refresh, user }
  */
 export const loginUser = async (username, password) => {
     try {
@@ -11,8 +17,6 @@ export const loginUser = async (username, password) => {
             username: username,
             password: password
         });
-        
-        // Retourne les données contenant { access, refresh, user }
         return response.data;
     } catch (error) {
         throw error.response ? error.response.data : new Error("Erreur de connexion au serveur");
@@ -20,7 +24,8 @@ export const loginUser = async (username, password) => {
 };
 
 /**
- * Récupère le profil complet de l'utilisateur connecté depuis le backend
+ * Fetches the authenticated user's profile data.
+ * Used on initial load to verify the token is still valid.
  */
 export const getMe = async () => {
     try {

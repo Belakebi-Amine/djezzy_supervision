@@ -1,50 +1,84 @@
+/**
+ * AdminDashboard.jsx
+ *
+ * Main dashboard component for the admin panel of the Djezzy supervision platform.
+ * Provides a full-featured NOC (Network Operations Center) interface including:
+ *   - Real-time KPIs and charts for network/ticket monitoring
+ *   - Ticket (reclamation) management with status workflows
+ *   - 5G site management (CRUD, status toggling, archiving)
+ *   - User management (create, edit, activate/deactivate, delete)
+ *   - Interactive map view of network sites
+ *   - Supervisor reports viewer
+ *   - Team performance analytics
+ *
+ * Only accessible to users with the ADMIN role; non-admins are redirected
+ * to the engineer dashboard on mount.
+ */
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from 'recharts';
+import { LineChart, Line, BarChart, Bar, Cell, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from 'recharts';
 import DOMPurify from 'dompurify';
-import { getDashboardStats, getDashboardReporting, getRapportsIA, deleteRapportIA } from '../api/dashboard';
-import { getSites, getUsers, createUser, getTickets, createTicket, updateTicket, createSite, updateSiteStatus, archiverSite, archiveUser, getTokenRole } from '../api/tickets';
+import { useCountUp, useRipple, spawnParticles } from '../hooks/useAnimations';
+import {
+  getDashboardStats, getDashboardReporting,
+  getRapportsIA, deleteRapportIA,
+} from '../api/dashboard';
+import { getSites, getUsers, createUser, getTickets, createTicket, updateTicket, createSite, updateSiteStatus, archiverSite, archiveUser, updateUser, restoreUser, deleteUser, getTokenRole } from '../api/tickets';
 import MapComponent from '../components/Map';
 import DetailModal from '../components/DetailModal';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
+// ─── Theme colors and style constants ───
 const COLORS = {
   sidebarBg: 'var(--bg-sidebar)', mainBg: 'var(--bg-main)', cardBg: 'var(--bg-card)',
   textDark: 'var(--text-primary)', textMuted: 'var(--text-muted)', border: 'var(--border-color)', djezzyRed: '#e60023',
+  accent: '#E8401A', accentDark: '#9A2A3C',
+  // Client type badge styles
   types: {
     PARTICULIER: { bg: '#E2E8F0', text: '#475569', border: '#CBD5E1' },
     ENTREPRISE: { bg: '#475569', text: '#FFFFFF', border: '#334155' },
   },
+  // Priority level badge styles (Basse -> Critique)
   priorities: {
     BASSE: { bg: '#E0F2FE', text: '#0284C7', side: '#0284C7' },
     NORMALE: { bg: '#DCFCE7', text: '#15803D', side: '#15803D' },
     HAUTE: { bg: '#FEF3C7', text: '#D97706', side: '#D97706' },
     CRITIQUE: { bg: '#FEE2E2', text: '#DC2626', side: '#DC2626' },
   },
+  // Ticket status badge styles
   status: {
     OUVERT: { bg: '#BAE6FD', text: '#0369A1', dot: '#0284C7' },
     RESOLU: { bg: '#A7F3D0', text: '#047857', dot: '#15803D' },
     FERME: { bg: '#FECACA', text: '#B91C1C', dot: '#DC2626' },
   },
 };
+// Bar chart color palette
 const PALETTE = ['#E8401A', '#2563EB', '#10B981', '#F59E0B', '#8B5CF6'];
+
+// French label maps for priority and role enums
 const LABEL_MAP = { critique: 'Critique', haute: 'Haute', normale: 'Normale', basse: 'Basse' };
 const ROLE_LABELS = {
   ADMIN: 'ADMINISTRATEUR', INGENIEUR_RESEAUX: 'ING RÉSEAU',
   AGENT_CALL_CENTER: 'AGENT CC', SUPERVISEUR: 'SUPERVISEUR',
 };
+// Role badge color themes
 const ROLE_STYLES = {
   ADMIN: { color: '#de2a3b', background: '#ffdfe2' },
   INGENIEUR_RESEAUX: { color: '#8b5e2f', background: '#efdac6' },
   AGENT_CALL_CENTER: { color: '#355ead', background: '#dce6ff' },
   SUPERVISEUR: { color: '#7440a5', background: '#eadcff' },
 };
+// Ticket status flow: defines which status transitions are allowed
 const ALL_STATUSES = ['ferme', 'ouvert', 'resolu'];
 const STATUS_FLOW = { ferme: ['ouvert'], ouvert: ['resolu'], resolu: [] };
+
+// Site status display labels and colors
 const SITE_LABELS = { UP: 'Actif', DOWN: 'Inactif' };
 const ST = { UP: '#059669', DOWN: '#DC2626' };
 const ST_BG = { UP: '#DCFCE7', DOWN: '#FEE2E2' };
 
+// ─── Date formatting helpers (French locale) ───
 const MOIS_FR = ['JAN', 'FEV', 'MAR', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOU', 'SEP', 'OCT', 'NOV', 'DEC'];
 const formatDateFr = (iso) => {
   if (!iso) return '-';
@@ -58,11 +92,14 @@ const formatDateTimeFr = (iso) => {
   if (Number.isNaN(d.getTime())) return '-';
   return `${d.getDate()} ${MOIS_FR[d.getMonth()]} ${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
+// Returns today's date as DD/MM/YYYY
 const now = () => {
   const d = new Date();
   return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
 };
 
+// ─── Inline SVG icon components ───
+// Common props applied to all icons for consistent sizing and stroke style
 const iconProps = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' };
 const IconDashboard = (p) => <svg {...iconProps} {...p}><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg>;
 const IconMap = (p) => <svg {...iconProps} {...p}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>;
@@ -76,14 +113,17 @@ const IconSearch = (p) => <svg {...iconProps} {...p}><circle cx="11" cy="11" r="
 const IconPlus = (p) => <svg {...iconProps} {...p}><path d="M12 5v14M5 12h14" /></svg>;
 const IconRefresh = (p) => <svg {...iconProps} {...p}><path d="M3 12a9 9 0 0 1 15.5-6.3M21 12a9 9 0 0 1-15.5 6.3" /><path d="M3 4v5h5M21 20v-5h-5" /></svg>;
 const IconFilter = (p) => <svg {...iconProps} {...p}><path d="M4 5h16l-6 7v6l-4 1v-7L4 5Z" /></svg>;
-const IconChevronLeft = (p) => <svg {...iconProps} {...p}><path d="M15 18l-6-6 6-6" /></svg>;
 const IconCheck = (p) => <svg {...iconProps} {...p}><path d="M4 12l5 5 11-11" /></svg>;
 const IconInfo = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>;
 const IconUser = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="8" r="3.2" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /></svg>;
 const IconArchive = (p) => <svg {...iconProps} {...p}><path d="M21 4H3M8 2v2M16 2v2M4 7l1 12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2l1-12M10 11v6M14 11v6" /></svg>;
+const IconTrash = (p) => <svg {...iconProps} {...p}><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
+const IconEdit = (p) => <svg {...iconProps} {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>;
 
+// ─── Utility: normalize status string for color lookup ───
 const getStatutKey = (statut) => statut?.replace('_', ' ').toUpperCase();
 
+// Returns a color based on availability percentage thresholds
 const dispoColor = (v) => {
   if (v >= 100) return '#059669';
   if (v >= 75) return '#65A30D';
@@ -92,6 +132,7 @@ const dispoColor = (v) => {
   return '#DC2626';
 };
 
+// ─── Recharts custom tooltip component ───
 const Tip = ({ active, payload, label }) => {
   if (!active || !payload) return null;
   return (
@@ -106,6 +147,10 @@ const Tip = ({ active, payload, label }) => {
   );
 };
 
+/**
+ * InfoPopup - Hover-triggered tooltip that displays help text.
+ * Positioned relative to the hovered element using fixed positioning.
+ */
 function InfoPopup({ text }) {
   const [state, setState] = useState({ open: false, style: {} });
   return (
@@ -132,42 +177,85 @@ function InfoPopup({ text }) {
   );
 }
 
+// Animated KPI card with count-up and ripple on click
+function AnimatedKpi({ label, value, sub, color, accent }) {
+  // Extract numeric value from string (e.g. "95%" -> 95)
+  const numVal = parseFloat(String(value).replace(/[^0-9.]/g, ''));
+  const animated = useCountUp(Number.isNaN(numVal) ? 0 : numVal, 900);
+  // Keep the suffix character (e.g. "%")
+  const suffix = String(value).replace(/[0-9.]/g, '');
+  const { containerRef, spawnRipple } = useRipple();
+  return (
+    <div ref={containerRef} onClick={spawnRipple}
+      className="interactive-card stagger-child"
+      style={{ padding: '14px 16px', background: COLORS.cardBg, border: `1px solid ${COLORS.border}`, borderRadius: 8, boxShadow: 'var(--shadow-sm)', position: 'relative', overflow: 'hidden' }}>
+      <span style={{ display: 'block', marginBottom: 4, fontSize: 8, fontWeight: 700, color: 'var(--text-muted3)', textTransform: 'uppercase', letterSpacing: 0.3 }}>{label}</span>
+      <strong className="counter-value" style={{ fontSize: 22, color, lineHeight: 1.2, display: 'block' }}>{Number.isNaN(numVal) ? value : `${Math.round(animated)}${suffix}`}</strong>
+      <span style={{ fontSize: 9, color: 'var(--text-muted2)', marginTop: 2, display: 'block' }}>{sub}</span>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const navigate = useNavigate();
 
+  // ─── Role-based access guard: only admins can access this page ───
   const tokenRole = getTokenRole();
   const isAdmin = tokenRole === 'ADMIN';
   useEffect(() => {
     if (!isAdmin) navigate('/engineer-dashboard', { replace: true });
   }, [isAdmin, navigate]);
 
+  // ─── Navigation & view state ───
   const [currentView, setCurrentView] = useState('dashboard');
-  const [period, setPeriod] = useState(30);
+  const [period, setPeriod] = useState(30); // reporting period in days
+
+  // ─── Core data state ───
   const [stats, setStats] = useState(null);
   const [reporting, setReporting] = useState(null);
   const [sites, setSites] = useState([]);
   const [users, setUsers] = useState([]);
   const [tickets, setTickets] = useState([]);
-  const [detail, setDetail] = useState(null);
+  const [detail, setDetail] = useState(null); // detail modal for chart drill-down
+
+  // ─── Search and filter state ───
   const [searchTerm, setSearchTerm] = useState('');
+
+  // ─── Loading/optimistic update indicators ───
   const [updatingId, setUpdatingId] = useState(null);
   const [togglingSiteId, setTogglingSiteId] = useState(null);
+
+  // ─── Modal visibility states ───
   const [showUserForm, setShowUserForm] = useState(false);
+  const [showEditUserForm, setShowEditUserForm] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [userRoleFilter, setUserRoleFilter] = useState('');
   const [showTicketForm, setShowTicketForm] = useState(false);
   const [showSiteForm, setShowSiteForm] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [selectedSite, setSelectedSite] = useState(null);
-  const [hoveredUser, setHoveredUser] = useState(null);
+  const [hoveredUser, setHoveredUser] = useState(null); // user tooltip in ticket detail
   const [submitting, setSubmitting] = useState(false);
+
+  // ─── Toast notification system ───
+  // Notifications auto-dismiss after 3.5 seconds
   const [notifications, setNotifications] = useState([]);
-  const [allRapports, setAllRapports] = useState([]);
-  const [selectedRapport, setSelectedRapport] = useState(null);
-  const [loadingRapports, setLoadingRapports] = useState(false);
   const addNotification = useCallback((message, type = 'success') => {
     const id = Date.now();
     setNotifications((prev) => [...prev, { id, message, type }]);
     setTimeout(() => setNotifications((prev) => prev.filter((n) => n.id !== id)), 3500);
   }, []);
+  // Rapport IA state
+  const [allRapports, setAllRapports] = useState([]);
+  const [selectedRapport, setSelectedRapport] = useState(null);
+  const [loadingRapports, setLoadingRapports] = useState(false);
+
+  // Performance state
+  // ─── Performance view: toggles between engineers and call center agents ───
+  const [perfRole, setPerfRole] = useState('ingenieurs');
+  const [perfUser, setPerfUser] = useState(null);
+
+  // ─── Filter visibility and filter values ───
   const [showFilters, setShowFilters] = useState(false);
   const [showSiteFilters, setShowSiteFilters] = useState(false);
   const [filterStatut, setFilterStatut] = useState('');
@@ -179,6 +267,7 @@ export default function AdminDashboard() {
   const [siteFilterCommune, setSiteFilterCommune] = useState('');
   const [siteFilterStatut, setSiteFilterStatut] = useState('');
 
+  // ─── Form data for creating new entities ───
   const [formData, setFormData] = useState({
     first_name: '', last_name: '', email: '', role: 'AGENT_CALL_CENTER', password: '', password2: '',
   });
@@ -190,6 +279,8 @@ export default function AdminDashboard() {
     nom: '', wilaya: '', commune: '', coordX: '', coordY: '', adresse: '', statut: 'UP', technologie: '5G',
   });
 
+  // ─── Data fetching functions ───
+  // Fetches dashboard stats and reporting data in parallel based on selected period
   const fetchStats = useCallback(async () => {
     try {
       const [a, b] = await Promise.all([getDashboardStats(period), getDashboardReporting(period)]);
@@ -212,21 +303,26 @@ export default function AdminDashboard() {
     finally { setLoadingRapports(false); }
   }, []);
 
+  // ─── Initial data load on mount and when period changes ───
   useEffect(() => {
     fetchStats(); fetchSites(); fetchUsers(); fetchTickets();
   }, [fetchStats, fetchSites, fetchUsers, fetchTickets]);
 
+  // Load supervisor reports only when the reports view is active
   useEffect(() => {
     if (currentView === 'reports') fetchRapports();
   }, [currentView, fetchRapports]);
 
+  // Convenience: refresh stats + sites + tickets together
   const refreshAll = () => { fetchStats(); fetchSites(); fetchTickets(); };
 
+  // Toggle report detail view (click same report to collapse)
   const handleViewRapport = useCallback((id) => {
     const r = allRapports.find((x) => x.id === id);
     if (r) setSelectedRapport(selectedRapport?.id === id ? null : r);
   }, [allRapports, selectedRapport]);
 
+  // Delete an IA report with confirmation dialog
   const handleDeleteRapport = useCallback(async (id, e) => {
     e?.stopPropagation();
     if (!window.confirm('Supprimer ce rapport ?')) return;
@@ -237,20 +333,22 @@ export default function AdminDashboard() {
     } catch (err) { alert(err.message); }
   }, [selectedRapport]);
 
-  // Derived
+  // ─── Derived / computed data ───
+  // Count users per role for the dashboard breakdown
   const roleCounts = {};
   users.forEach((u) => { const r = ROLE_LABELS[u.role_user] || u.role_user || 'INCONNU'; roleCounts[r] = (roleCounts[r] || 0) + 1; });
-  const siteUp = sites.filter((s) => s.statut === 'UP').length;
-  const siteDown = sites.filter((s) => s.statut === 'DOWN').length;
   const ticketsOuvert = tickets.filter((t) => t.statut === 'ouvert').length;
   const ticketsResolu = tickets.filter((t) => t.statut === 'resolu').length;
-  const ticketsFerme = tickets.filter((t) => t.statut === 'ferme').length;
 
+  // ─── Filtered users: search by name/email/code + optional role filter ───
   const filteredUsers = users.filter((u) => {
     const t = searchTerm.toLowerCase();
-    return (u.nom_user || '').toLowerCase().includes(t) || (u.email || '').toLowerCase().includes(t) || (u.code_user || '').toLowerCase().includes(t);
+    const matchSearch = (u.nom_user || '').toLowerCase().includes(t) || (u.email || '').toLowerCase().includes(t) || (u.code_user || '').toLowerCase().includes(t);
+    const matchRole = !userRoleFilter || u.role_user === userRoleFilter;
+    return matchSearch && matchRole;
   });
 
+  // ─── Filtered tickets: multi-criteria filtering (search, status, priority, type, date, site) ───
   const filteredTickets = tickets.filter((t) => {
     const term = searchTerm.toLowerCase();
     if (term && !t.nom_client?.toLowerCase().includes(term) && !t.numero_ticket?.toLowerCase().includes(term) &&
@@ -266,6 +364,7 @@ export default function AdminDashboard() {
     return true;
   });
 
+  // ─── Filtered sites: search by wilaya/commune + status filter, sorted by code number ───
   const filteredSites = sites.filter((s) => {
     if (siteFilterWilaya && !s.wilaya?.toLowerCase().includes(siteFilterWilaya.toLowerCase())) return false;
     if (siteFilterCommune && !s.commune?.toLowerCase().includes(siteFilterCommune.toLowerCase())) return false;
@@ -277,29 +376,59 @@ export default function AdminDashboard() {
     return na - nb;
   });
 
-  // Chart data
+  // ─── Chart data preparation ───
+  // Evolution of tickets over time - format dates for display
   const evo = (stats?.graphiques?.evolution_tickets ?? []).map((d) => {
     const dd = new Date(d.jour);
     return { ...d, _raw: d.jour, jour: isNaN(dd.getTime()) ? d.jour : dd.toLocaleDateString('fr', { day: '2-digit', month: 'short' }) };
   });
   const reso = stats?.graphiques?.resolutions_par_jour ?? [];
+  // Build a lookup map for daily resolution counts
   const evoResoMap = {};
   reso.forEach((r) => { const k = r.jour.slice(0, 10); evoResoMap[k] = (evoResoMap[k] || 0) + r.resolus; });
+  // Merge created vs resolved into one dataset for comparison chart
   const creesVsResolus = evo.map((d) => ({ ...d, crees: d.total, resolus: evoResoMap[d._raw.slice(0, 10)] || 0 }));
-  const donut = stats?.graphiques?.repartition_priorite_donut
-    ? Object.entries(stats.graphiques.repartition_priorite_donut).map(([k, v]) => ({
-        name: LABEL_MAP[k] || k, value: v,
-        color: { critique: '#DC2626', haute: '#F59E0B', normale: '#2563EB', basse: '#10B981' }[k] || 'var(--text-muted2)', raw: k,
-      })) : [];
   const topSites = stats?.graphiques?.top_sites_impactes ?? [];
   const communes = reporting?.tableau_communes ?? [];
+  const wilayas = reporting?.tableau_complet_wilayas ?? [];
+  const jourSemaine = stats?.graphiques?.tickets_par_jour_semaine ?? [];
+  const delaiParPrio = stats?.graphiques?.delai_moyen_par_priorite ?? {};
 
-  // Handlers
+  // ─── Key Performance Indicators (technical KPIs) ───
+  const dispoGlobale = stats?.reseau_global?.disponibilite_globale ?? '100%';
+  const tauxResolution = stats?.tickets?.taux_resolution ?? '0%';
+  const delaiMoyen = stats?.tickets?.delai_moyen_resolution ?? 'N/A';
+  const ouvertsCritiques = stats?.tickets?.ouverts_critiques ?? 0;
+
+  // ─── Performance data: parse average delay from "Xh Ym" format to decimal hours ───
+  const employes = (stats?.stats_employes ?? []).map((e) => {
+    const m = (e.delai_moyen || '').match(/(\d+)h\s*(\d+)m/);
+    return { ...e, label: `${e.nom} (${e.code})`, delai_h: m ? parseInt(m[1]) + parseInt(m[2]) / 60 : 0 };
+  });
+  const agentsCC = (stats?.stats_agents_cc ?? []).map((a) => ({ ...a, label: `${a.nom} (${a.code})` }));
+  const perfUsers = perfRole === 'ingenieurs' ? employes : agentsCC;
+  const selectedPerfUser = perfUsers.find((u) => u.code === perfUser) || null;
+
+  // ─── Delay per priority chart: convert "Xh Ym" strings to decimal hours for bar chart ───
+  const delaiPrioData = Object.entries(delaiParPrio).map(([k, v]) => {
+    const match = (v || '').match(/(\d+)h\s*(\d+)m/);
+    const hours = match ? parseInt(match[1]) + parseInt(match[2]) / 60 : 0;
+    return {
+      name: LABEL_MAP[k] || k,
+      heures: Math.round(hours * 10) / 10,
+      color: { critique: '#DC2626', haute: '#F59E0B', normale: '#2563EB', basse: '#10B981' }[k] || '#999',
+    };
+  }).filter(d => d.heures > 0);
+
+  // ─── Event Handlers ───
+
+  // Clear auth tokens and redirect to login
   const handleLogout = () => {
     ['token', 'access_token', 'refresh_token'].forEach((k) => localStorage.removeItem(k));
     navigate('/login');
   };
 
+  // Create a new user account with password confirmation check
   const handleCreateUser = async (e) => {
     e.preventDefault();
     if (formData.password !== formData.password2) { addNotification('Les mots de passe ne correspondent pas.', 'error'); return; }
@@ -316,6 +445,7 @@ export default function AdminDashboard() {
     } catch { addNotification('Erreur lors de la création.', 'error'); } finally { setSubmitting(false); }
   };
 
+  // Create a new ticket (reclamation)
   const handleCreateTicket = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -328,6 +458,7 @@ export default function AdminDashboard() {
     } catch { addNotification('Erreur création ticket.', 'error'); } finally { setSubmitting(false); }
   };
 
+  // Create a new network site
   const handleCreateSite = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -340,6 +471,8 @@ export default function AdminDashboard() {
     } catch { addNotification('Erreur création site.', 'error'); } finally { setSubmitting(false); }
   };
 
+  // Transition ticket status following the defined STATUS_FLOW
+  // e.g. ferme -> ouvert, ouvert -> resolu
   const handleTicketStatus = useCallback(async (id, newStatut, oldStatut) => {
     const msgs = {
       'ferme->ouvert': 'Confirmer l ouverture de ce ticket ?',
@@ -356,6 +489,7 @@ export default function AdminDashboard() {
     finally { setUpdatingId(null); }
   }, [addNotification]);
 
+  // Archive a ticket by setting its status to "ferme"
   const handleArchiveTicket = useCallback(async (ticket) => {
     if (!window.confirm(`Archiver le ticket ${ticket.numero_ticket} ? (statut → ferme)`)) return;
     setUpdatingId(ticket.id);
@@ -368,6 +502,7 @@ export default function AdminDashboard() {
     finally { setUpdatingId(null); }
   }, [addNotification]);
 
+  // Toggle a site between UP (active) and DOWN (inactive)
   const handleToggleSite = useCallback(async (id, currentStatut) => {
     const newStatut = currentStatut === 'UP' ? 'DOWN' : 'UP';
     if (!window.confirm(`Confirmer le passage en ${newStatut === 'UP' ? 'actif' : 'inactif'} ?`)) return;
@@ -380,6 +515,7 @@ export default function AdminDashboard() {
     finally { setTogglingSiteId(null); }
   }, [addNotification]);
 
+  // Archive (soft-delete) a network site
   const handleArchiveSite = useCallback(async (id) => {
     if (!window.confirm('Archiver ce site ?')) return;
     setTogglingSiteId(id);
@@ -393,34 +529,85 @@ export default function AdminDashboard() {
     finally { setTogglingSiteId(null); }
   }, [addNotification]);
 
+  // Deactivate a user account (soft-delete via archive)
   const handleArchiveUser = useCallback(async (user) => {
     if (!window.confirm(`Désactiver l'utilisateur ${user.code_user} ?`)) return;
     setUpdatingId(user.id);
     try {
         await archiveUser(user.code_user);
-      setUsers((prev) => prev.filter((u) => u.id !== user.id));
+      setUsers((prev) => prev.map((u) => u.code_user === user.code_user ? { ...u, is_active: false } : u));
       addNotification(`Utilisateur ${user.code_user} désactivé`, 'success');
     } catch { addNotification("Erreur lors de la désactivation.", 'error'); }
     finally { setUpdatingId(null); }
   }, [addNotification]);
 
+  // Reactivate a previously deactivated user
+  const handleRestoreUser = useCallback(async (user) => {
+    setUpdatingId(user.id);
+    try {
+      await restoreUser(user.code_user);
+      setUsers((prev) => prev.map((u) => u.code_user === user.code_user ? { ...u, is_active: true } : u));
+      addNotification(`Utilisateur ${user.code_user} restauré`, 'success');
+    } catch { addNotification("Erreur lors de la restauration.", 'error'); }
+    finally { setUpdatingId(null); }
+  }, [addNotification]);
+
+  // Permanently delete a user account (irreversible)
+  const handleDeleteUser = useCallback(async (user) => {
+    if (!window.confirm(`Supprimer définitivement ${user.code_user} ? Cette action est irréversible.`)) return;
+    setUpdatingId(user.id);
+    try {
+      await deleteUser(user.code_user);
+      setUsers((prev) => prev.filter((u) => u.code_user !== user.code_user));
+      addNotification(`Utilisateur ${user.code_user} supprimé`, 'success');
+    } catch { addNotification("Erreur lors de la suppression.", 'error'); }
+    finally { setUpdatingId(null); }
+  }, [addNotification]);
+
+  // ─── Edit user form state ───
+  const [editForm, setEditForm] = useState({ first_name: '', last_name: '', email: '', role: '' });
+
+  // Populate edit form with existing user data and open modal
+  const openEditUser = (u) => {
+    setEditingUser(u);
+    setEditForm({ first_name: u.first_name || '', last_name: u.last_name || '', email: u.email || '', role: u.role_user || 'AGENT_CALL_CENTER' });
+    setShowEditUserForm(true);
+  };
+
+  // Submit updated user data to the API
+  const handleUpdateUser = async (e) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    setSubmitting(true);
+    try {
+      await updateUser(editingUser.code_user, editForm);
+      setUsers((prev) => prev.map((u) => u.code_user === editingUser.code_user ? { ...u, ...editForm, role_user: editForm.role } : u));
+      setShowEditUserForm(false);
+      setEditingUser(null);
+      addNotification(`Utilisateur ${editingUser.code_user} mis à jour`, 'success');
+    } catch { addNotification("Erreur lors de la mise à jour.", 'error'); }
+    finally { setSubmitting(false); }
+  };
+
+  // ─── Helper: render a role badge with appropriate colors ───
   const getRoleBadge = (role) => {
     const s = ROLE_STYLES[role] || ROLE_STYLES.AGENT_CALL_CENTER;
     return <span style={{ ...styles.badgeBase, ...s }}>{ROLE_LABELS[role] || role || 'INCONNU'}</span>;
   };
 
+  // ─── Helper: resolve ticket site display name ───
   const siteDisplay = (t) => {
     if (typeof t.site === 'object') return t.site?.nom || t.site?.codeSite || '-';
     const found = sites.find((s) => s.id === t.site);
     return found?.nom || found?.codeSite || '-';
   };
 
-  // Sidebar
+  // ─── Sidebar navigation ───
   const sidebar = () => (
     <aside style={styles.sidebar}>
       <div style={styles.brand}>
         <img src={logoDjezzy} alt="" style={styles.logo} />
-        <div><div style={styles.brandName}>Djezzy</div><div style={styles.brandRole}>Administrateur</div></div>
+        <div><div style={styles.brandName}>Djezzy Hub</div><div style={styles.brandRole}>Administrateur</div></div>
       </div>
       <div style={styles.menu}>
         <span style={styles.sectionLabel}>PRINCIPAL</span>
@@ -430,9 +617,18 @@ export default function AdminDashboard() {
           { key: 'tickets', label: 'Réclamations', icon: IconTicket },
           { key: 'sites', label: 'Sites Réseau', icon: IconSite },
           { key: 'users', label: 'Utilisateurs', icon: IconUsers },
-          { key: 'reports', label: 'Rapports', icon: IconReport },
         ].map(({ key, label, icon: Icon }) => (
-          <button key={key} onClick={() => setCurrentView(key)}
+          <button key={key} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView(key); }}
+            style={{ ...styles.navItem, ...(currentView === key ? styles.navItemActive : {}) }}>
+            <Icon /> {label}
+          </button>
+        ))}
+        <span style={{ ...styles.sectionLabel, marginTop: 16 }}>ANALYTICS</span>
+        {[
+          { key: 'performance', label: 'Performance', icon: IconUsers },
+          { key: 'reports', label: 'Rapports (SV)', icon: IconReport },
+        ].map(({ key, label, icon: Icon }) => (
+          <button key={key} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView(key); }}
             style={{ ...styles.navItem, ...(currentView === key ? styles.navItemActive : {}) }}>
             <Icon /> {label}
           </button>
@@ -446,42 +642,20 @@ export default function AdminDashboard() {
     </aside>
   );
 
-  // ─── DASHBOARD ───
+  // ─── DASHBOARD (Technical NOC View) ───
   const dashboardView = () => (
     <>
-      <div style={styles.kpiRow}>
-        {[
-          { label: 'Total Sites', value: sites.length, color: COLORS.textDark },
-          { label: 'Sites UP', value: siteUp, color: '#10B981' },
-          { label: 'Sites DOWN', value: siteDown, color: '#EF4444' },
-          { label: 'Utilisateurs', value: users.length, color: COLORS.djezzyRed },
-        ].map((k) => (
-          <div key={k.label} style={styles.kpiCard}>
-            <span style={styles.kpiLabel}>{k.label}</span>
-            <strong style={{ ...styles.kpiValue, color: k.color }}>{k.value}</strong>
-          </div>
-        ))}
+      {/* ── ROW 0 : KPIs Techniques enrichis ── */}
+      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: COLORS.accent, marginRight: 6, verticalAlign: 'middle' }} />KPIs RÉSEAU</span></div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
+        <AnimatedKpi label="Disponibilité" value={dispoGlobale} sub="réseau global" color={parseFloat(dispoGlobale) >= 95 ? '#10B981' : parseFloat(dispoGlobale) >= 80 ? '#F59E0B' : '#EF4444'} />
+        <AnimatedKpi label="Taux Résolution" value={tauxResolution} sub={`${ticketsResolu} résolus`} color={parseFloat(tauxResolution) >= 80 ? '#10B981' : parseFloat(tauxResolution) >= 50 ? '#F59E0B' : '#EF4444'} />
+        <AnimatedKpi label="Tickets Ouverts" value={ticketsOuvert} sub={ouvertsCritiques > 0 ? `${ouvertsCritiques} critiques !` : 'aucun critique'} color={ouvertsCritiques > 0 ? '#DC2626' : COLORS.accent} />
+        <AnimatedKpi label="Délai Moyen" value={delaiMoyen} sub="résolution" color="#8B5CF6" />
       </div>
-      <div style={styles.kpiRow}>
-        {[
-          { label: 'Ouvert', value: ticketsOuvert, color: '#1D4ED8' },
-          { label: 'Résolu', value: ticketsResolu, color: '#047857' },
-          { label: 'Fermé', value: ticketsFerme, color: '#B91C1C' },
-        ].map((k) => (
-          <div key={k.label} style={styles.kpiCard}>
-            <span style={styles.kpiLabel}>{k.label}</span>
-            <strong style={{ ...styles.kpiValue, color: k.color }}>{k.value}</strong>
-          </div>
-        ))}
-      </div>
-      <div style={{ ...styles.tableCard, marginBottom: 16 }}>
-        <div style={styles.panelHeader}>
-          <span style={styles.panelTitle}><IconMap /> Cartographie</span>
-          <button onClick={() => setCurrentView('map')} style={{ ...styles.textBtn, color: COLORS.djezzyRed }}>Ouvrir la carte <IconChevronLeft /></button>
-        </div>
-        <div style={{ height: 220 }}><MapComponent sites={sites} /></div>
-      </div>
-      <div style={{ marginBottom: 8, marginTop: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}>ANALYTIQUE</span></div>
+
+      {/* ── ROW 1 : Tendance ── */}
+      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#3B82F6', marginRight: 6, verticalAlign: 'middle' }} />TENDANCE</span></div>
       <div style={styles.chartsRow}>
         <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
           <div style={styles.ch}><span style={styles.cht}>Évolution des tickets</span><InfoPopup text="Nombre total de tickets créés par jour." /></div>
@@ -494,36 +668,17 @@ export default function AdminDashboard() {
                   <XAxis dataKey="jour" tick={{ fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} interval="preserveStartEnd" />
                   <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} width={25} />
                   <RechartsTooltip content={<Tip />} />
-                  <Line type="monotone" dataKey="total" stroke="#E8401A" strokeWidth={2.5} dot={{ r: 2 }} activeDot={{ r: 6 }} name="Tickets" />
+                  <Line type="monotone" dataKey="total" stroke={COLORS.accent} strokeWidth={2.5} dot={{ r: 2 }} activeDot={{ r: 6 }} name="Tickets" />
                 </LineChart>
               </ResponsiveContainer>}
           </div>
         </div>
+      </div>
+
+      {/* ── ROW 2 : Analytique avancée ── */}
+      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#8B5CF6', marginRight: 6, verticalAlign: 'middle' }} />ANALYTIQUE</span></div>
+      <div style={styles.chartsRow}>
         <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
-          <div style={styles.ch}><span style={styles.cht}>Par priorité</span><InfoPopup text="Répartition des tickets par priorité." /></div>
-          <div style={{ ...styles.cb, minHeight: 180 }}>
-            {donut.length === 0 ? <div style={styles.empty}>Aucune donnée</div>
-            : <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={donut} cx="50%" cy="50%" innerRadius={32} outerRadius={60} paddingAngle={4} dataKey="value"
-                    style={{ cursor: 'pointer' }}
-                    onClick={(e) => e?.name && setDetail({ type: 'priorite', data: e })}>
-                    {donut.map((e) => <Cell key={e.name} fill={e.color} style={{ cursor: 'pointer' }} />)}
-                  </Pie>
-                  <RechartsTooltip content={<Tip />} />
-                </PieChart>
-              </ResponsiveContainer>}
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 12, padding: '2px 0 8px', flexWrap: 'wrap' }}>
-            {donut.map((e) => (
-              <div key={e.name} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, color: '#475569', cursor: 'pointer' }}
-                onClick={() => setDetail({ type: 'priorite', data: e })}>
-                <span style={{ width: 7, height: 7, borderRadius: 2, background: e.color }} />{e.name}: <strong>{e.value}</strong>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1.2 }}>
           <div style={styles.ch}><span style={styles.cht}>Créés vs Résolus</span><InfoPopup text="Évolution quotidienne des tickets créés et résolus." /></div>
           <div style={styles.cb}>
             {creesVsResolus.length === 0 ? <div style={styles.empty}>Aucune donnée</div>
@@ -533,14 +688,39 @@ export default function AdminDashboard() {
                   <XAxis dataKey="jour" tick={{ fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} interval="preserveStartEnd" />
                   <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} width={25} />
                   <RechartsTooltip content={<Tip />} />
-                  <Line type="monotone" dataKey="crees" stroke="#2563EB" strokeWidth={2} dot={{ r: 1.5 }} activeDot={{ r: 5 }} name="Créés" />
+                  <Line type="monotone" dataKey="crees" stroke={COLORS.accent} strokeWidth={2} dot={{ r: 1.5 }} activeDot={{ r: 5 }} name="Créés" />
                   <Line type="monotone" dataKey="resolus" stroke="#10B981" strokeWidth={2} dot={{ r: 1.5 }} activeDot={{ r: 5 }} name="Résolus" />
                 </LineChart>
               </ResponsiveContainer>}
           </div>
         </div>
+        <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
+          <div style={styles.ch}><span style={styles.cht}>Délai / Priorité</span><InfoPopup text="Délai moyen de résolution par niveau de priorité (en heures)." /></div>
+          <div style={styles.cb}>
+            {delaiPrioData.length === 0 ? <div style={styles.empty}>Aucune donnée</div>
+            : <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={delaiPrioData} margin={{ top: 5, right: 10, left: -5, bottom: 5 }} barSize={28}>
+                  <CartesianGrid stroke="#f5f5f5" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} />
+                  <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} width={25} tickFormatter={(v) => `${v}h`} />
+                  <RechartsTooltip content={({ active, payload }) => {
+                    if (!active || !payload?.length) return null;
+                    return <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 6, padding: '8px 14px', fontSize: 12 }}>
+                      <p style={{ margin: 0, fontWeight: 700 }}>{payload[0].payload.name}</p>
+                      <p style={{ margin: '2px 0', color: payload[0].payload.color }}>{payload[0].value}h moyen</p>
+                    </div>;
+                  }} />
+                  <Bar dataKey="heures" radius={[4, 4, 0, 0]} name="Délai (h)">
+                    {delaiPrioData.map((e) => <Cell key={e.name} fill={e.color} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>}
+          </div>
+        </div>
       </div>
-      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}>RÉSEAU</span></div>
+
+      {/* ── ROW 3 : Réseau ── */}
+      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#10B981', marginRight: 6, verticalAlign: 'middle' }} />RÉSEAU</span></div>
       <div style={styles.chartsRow}>
         <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
           <div style={styles.ch}><span style={styles.cht}>Sites les plus impactés</span><InfoPopup text="Top sites avec le plus de réclamations." /></div>
@@ -585,10 +765,81 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
+
+      {/* ── ROW 4 : Patterns temporels ── */}
+      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#F59E0B', marginRight: 6, verticalAlign: 'middle' }} />TEMPORALITÉ</span></div>
+      <div style={styles.chartsRow}>
+        <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
+          <div style={styles.ch}><span style={styles.cht}>Tickets par jour de semaine</span><InfoPopup text="Volume de tickets créé par jour de la semaine. Utile pour identifier les pics d'activité." /></div>
+          <div style={styles.cb}>
+            {jourSemaine.length === 0 ? <div style={styles.empty}>Aucune donnée</div>
+            : <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={jourSemaine} margin={{ top: 5, right: 10, left: -5, bottom: 5 }} barSize={36}>
+                  <CartesianGrid stroke="#f5f5f5" vertical={false} />
+                  <XAxis dataKey="jour" tick={{ fontSize: 10 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} />
+                  <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} width={25} />
+                  <RechartsTooltip content={<Tip />} />
+                  <Bar dataKey="total" radius={[4, 4, 0, 0]} name="Tickets" fill={COLORS.accent} />
+                </BarChart>
+              </ResponsiveContainer>}
+          </div>
+        </div>
+      </div>
+
+      {/* ── ROW 5 : Tableau suivi Wilayas ── */}
+      {wilayas.length > 0 && (
+        <>
+          <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#EC4899', marginRight: 6, verticalAlign: 'middle' }} />SUIVI PAR WILAYA</span></div>
+          <div className="fade-in" style={{ ...styles.tableCard, marginBottom: 24 }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ ...styles.table, minWidth: 900 }}>
+                <thead>
+                  <tr style={styles.thRow}>
+                    <th style={styles.th}>WILAYA</th>
+                    <th style={styles.th}>SITES</th>
+                    <th style={styles.th}>DOWN</th>
+                    <th style={styles.th}>TICKETS OUVERTS</th>
+                    <th style={styles.th}>DISPONIBILITÉ</th>
+                    <th style={styles.th}>DÉLAI MOYEN</th>
+                    <th style={styles.th}>TENDANCE</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {wilayas.map((w) => (
+                    <tr key={w.wilaya} style={styles.tr}
+                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}>
+                      <td style={{ ...styles.td, fontWeight: 600 }}>{w.wilaya}</td>
+                      <td style={styles.td}>{w.total_sites}</td>
+                      <td style={{ ...styles.td, color: w.sites_down > 0 ? '#DC2626' : '#10B981', fontWeight: 600 }}>{w.sites_down}</td>
+                      <td style={{ ...styles.td, color: w.tickets_ouverts > 0 ? '#D97706' : 'inherit', fontWeight: w.tickets_ouverts > 0 ? 600 : 400 }}>{w.tickets_ouverts}</td>
+                      <td style={styles.td}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ flex: 1, height: 6, background: '#E5E7EB', borderRadius: 3, overflow: 'hidden', maxWidth: 80 }}>
+                            <div style={{ height: '100%', width: `${w.taux_dispo_num}%`, background: dispoColor(w.taux_dispo_num), borderRadius: 3, transition: 'width 0.3s' }} />
+                          </div>
+                          <span style={{ fontSize: 10, fontWeight: 600, color: dispoColor(w.taux_dispo_num) }}>{w.taux_disponibilite}</span>
+                        </div>
+                      </td>
+                      <td style={styles.td}>{w.delai_moyen_resolution}</td>
+                      <td style={styles.td}>
+                        <span style={{ ...styles.badgeBase, backgroundColor: w.tendance === 'En hausse' ? '#DCFCE7' : w.tendance === 'En baisse' ? '#FEE2E2' : '#F1F5F9', color: w.tendance === 'En hausse' ? '#15803D' : w.tendance === 'En baisse' ? '#DC2626' : '#64748B' }}>
+                          {w.tendance === 'En hausse' ? '↑' : w.tendance === 'En baisse' ? '↓' : '→'} {w.tendance}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 
-  // ─── TICKETS ───
+  // ─── TICKETS VIEW ───
+  // Displays the ticket management table with toolbar, filters, and status actions
   const ticketsView = () => (
     <div style={styles.tableCard}>
       <div style={{ ...styles.toolbar, borderBottom: `1px solid ${COLORS.border}` }}>
@@ -603,6 +854,7 @@ export default function AdminDashboard() {
           <button onClick={() => setShowTicketForm(true)} style={styles.btnNew}><IconPlus /> Nouveau Ticket</button>
         </div>
       </div>
+      {/* Collapsible filter bar with date, status, site, priority, and type filters */}
       {showFilters && (
         <div style={styles.filterArea}>
           <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} style={styles.filterSelect} />
@@ -646,6 +898,7 @@ export default function AdminDashboard() {
               const typ = COLORS.types[ticket.type_client?.toUpperCase()] || COLORS.types.PARTICULIER;
               const statutKey = getStatutKey(ticket.statut);
               const stat = COLORS.status[statutKey] || COLORS.status.FERME;
+              // Get allowed next statuses based on current status
               const forward = STATUS_FLOW[ticket.statut] || [];
               return (
                 <tr key={ticket.id} style={styles.tr}
@@ -675,6 +928,7 @@ export default function AdminDashboard() {
                   <td style={{ ...styles.td, color: COLORS.textMuted }}>{formatDateFr(ticket.created_at)}</td>
                   <td style={{ ...styles.td, textAlign: 'center' }}>
                     <div style={styles.statusActions}>
+                      {/* Render status transition buttons based on the STATUS_FLOW */}
                       {ALL_STATUSES.map((s) => {
                         const sk = getStatutKey(s);
                         const sc = COLORS.status[sk] || COLORS.status.OUVERT;
@@ -711,19 +965,21 @@ export default function AdminDashboard() {
     </div>
   );
 
-  // ─── SITES ───
+  // ─── SITES VIEW ───
+  // Displays network site management with summary cards, filters, and toggle/archive actions
   const sitesView = () => (
     <>
+      {/* Summary stats: total, active, and inactive site counts */}
       <div style={styles.statsRow}>
-        <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#3B82F6', animationDelay: '0s' }}>
+        <div className="fade-in stat-card" style={{ ...styles.statCard, animationDelay: '0s' }}>
           <span style={{ ...styles.statNumber, color: 'var(--text-secondary)' }}>{filteredSites.length}</span>
           <span style={styles.statLabel}>Total sites</span>
         </div>
-        <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#15803D', animationDelay: '0.05s' }}>
+        <div className="fade-in stat-card" style={{ ...styles.statCard, animationDelay: '0.05s' }}>
           <span style={{ ...styles.statNumber, color: '#15803D' }}>{filteredSites.filter((s) => s.statut === 'UP').length}</span>
           <span style={styles.statLabel}>Actif</span>
         </div>
-        <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#DC2626', animationDelay: '0.1s' }}>
+        <div className="fade-in stat-card" style={{ ...styles.statCard, animationDelay: '0.1s' }}>
           <span style={{ ...styles.statNumber, color: '#DC2626' }}>{filteredSites.filter((s) => s.statut === 'DOWN').length}</span>
           <span style={styles.statLabel}>Inactif</span>
         </div>
@@ -737,6 +993,7 @@ export default function AdminDashboard() {
             <button onClick={() => { setShowSiteForm(true); setSelectedSite(null); }} style={styles.btnNew}><IconPlus /> Nouveau Site</button>
           </div>
         </div>
+        {/* Site filters: wilaya, commune, and status */}
         {showSiteFilters && (
           <div style={styles.filterArea}>
             <input type="text" placeholder="Wilaya..." value={siteFilterWilaya} onChange={(e) => setSiteFilterWilaya(e.target.value)} style={styles.filterSelect} />
@@ -771,6 +1028,7 @@ export default function AdminDashboard() {
                   onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}>
                   <td style={{ ...styles.td, fontWeight: 600 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {/* Status indicator dot with glow effect for active/inactive */}
                       <span style={{
                         width: 10, height: 10, borderRadius: '50%', display: 'inline-block', flexShrink: 0,
                         backgroundColor: ST[site.statut] || 'var(--text-muted3)',
@@ -786,6 +1044,7 @@ export default function AdminDashboard() {
                   <td style={styles.td}>{site.coordY || '-'}</td>
                   <td style={{ ...styles.td, textAlign: 'center' }}>
                     <div style={styles.statusActions}>
+                      {/* UP/DOWN toggle buttons - only the opposite status is clickable */}
                       {['UP', 'DOWN'].map((s) => {
                         const isActive = site.statut === s;
                         const isTarget = site.statut !== s;
@@ -820,12 +1079,20 @@ export default function AdminDashboard() {
     </>
   );
 
-  // ─── USERS ───
+  // ─── USERS VIEW ───
+  // User management table with role filtering, search, and CRUD actions per row
   const usersView = () => (
     <div style={styles.tableCard}>
       <div style={{ ...styles.toolbar, borderBottom: `1px solid ${COLORS.border}` }}>
-        <div style={styles.toolbarLeft}><h2 style={styles.tableTitle}><IconUsers /> Utilisateurs</h2></div>
+        <div style={styles.toolbarLeft}><h2 style={styles.tableTitle}><IconUsers /> Utilisateurs</h2>
+          <span style={{ fontSize: 10, color: 'var(--text-muted3)' }}>({filteredUsers.length})</span>
+        </div>
         <div style={styles.toolbarActions}>
+          <select value={userRoleFilter} onChange={(e) => setUserRoleFilter(e.target.value)}
+            style={{ ...styles.filterSelect, height: 28, fontSize: 10, minWidth: 130 }}>
+            <option value="">Tous les rôles</option>
+            {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
           <div style={styles.searchWrapper}>
             <IconSearch style={styles.searchIcon} />
             <input type="text" placeholder="Rechercher..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={styles.searchInput} />
@@ -843,14 +1110,16 @@ export default function AdminDashboard() {
               <th style={styles.th}>EMAIL</th>
               <th style={styles.th}>RÔLE</th>
               <th style={styles.th}>STATUT</th>
-              <th style={{ ...styles.th, textAlign: 'center' }}>ACTION</th>
+              <th style={{ ...styles.th, textAlign: 'center' }}>ACTIONS</th>
             </tr>
           </thead>
           <tbody>
             {filteredUsers.length === 0 ? (
               <tr><td colSpan="7" style={styles.emptyCell}>Aucun utilisateur trouvé.</td></tr>
             ) : filteredUsers.map((u) => (
-              <tr key={u.code_user} style={styles.tr}>
+              <tr key={u.code_user} style={styles.tr}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = ''}>
                 <td style={{ ...styles.td, fontWeight: 600 }}>{u.code_user}</td>
                 <td style={styles.td}>{u.first_name || '-'}</td>
                 <td style={styles.td}>{u.last_name || '-'}</td>
@@ -864,12 +1133,32 @@ export default function AdminDashboard() {
                   )}
                 </td>
                 <td style={{ ...styles.td, textAlign: 'center' }}>
-                  {u.is_active !== false && (
-                    <button onClick={() => handleArchiveUser(u)}
-                      style={{ ...styles.statusBtn, backgroundColor: '#FEE2E2', color: '#DC2626', borderColor: '#FECACA', cursor: 'pointer' }}>
-                      <IconArchive style={{ width: 10, height: 10 }} />
+                  <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                    <button onClick={() => openEditUser(u)}
+                      style={{ ...styles.statusBtn, backgroundColor: '#DBEAFE', color: '#2563EB', borderColor: '#BFDBFE', cursor: 'pointer' }}
+                      title="Modifier">
+                      <IconEdit style={{ width: 10, height: 10 }} />
                     </button>
-                  )}
+                    {/* Show restore button for inactive users, archive button for active ones */}
+                    {u.is_active !== false ? (
+                      <button onClick={() => handleArchiveUser(u)}
+                        style={{ ...styles.statusBtn, backgroundColor: '#FEF3C7', color: '#D97706', borderColor: '#FDE68A', cursor: 'pointer' }}
+                        title="Désactiver">
+                        <IconArchive style={{ width: 10, height: 10 }} />
+                      </button>
+                    ) : (
+                      <button onClick={() => handleRestoreUser(u)}
+                        style={{ ...styles.statusBtn, backgroundColor: '#D1FAE5', color: '#059669', borderColor: '#A7F3D0', cursor: 'pointer' }}
+                        title="Restaurer">
+                        <IconCheck style={{ width: 10, height: 10 }} />
+                      </button>
+                    )}
+                    <button onClick={() => handleDeleteUser(u)}
+                      style={{ ...styles.statusBtn, backgroundColor: '#FEE2E2', color: '#DC2626', borderColor: '#FECACA', cursor: 'pointer' }}
+                      title="Supprimer">
+                      <IconTrash style={{ width: 10, height: 10 }} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -879,7 +1168,8 @@ export default function AdminDashboard() {
     </div>
   );
 
-  // ─── MAP ───
+  // ─── MAP VIEW ───
+  // Renders the interactive map component showing all network sites with coverage
   const mapView = () => (
     <div style={styles.tableCard}>
       <div style={styles.panelHeader}>
@@ -892,7 +1182,8 @@ export default function AdminDashboard() {
     </div>
   );
 
-  // ─── REPORTS ───
+  // ─── REPORTS VIEW ───
+  // Lists all supervisor-submitted reports in a table with view/delete actions
   const reportsView = () => (
     <div style={styles.tableCard}>
       <div style={{ ...styles.panelHeader, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -916,7 +1207,9 @@ export default function AdminDashboard() {
             <tbody>
               {allRapports.map((r) => (
                 <tr key={r.id} onClick={() => handleViewRapport(r.id)}
-                  style={{ ...styles.tr, cursor: 'pointer', background: selectedRapport?.id === r.id ? 'var(--bg-hover)' : 'transparent' }}>
+                  style={{ ...styles.tr, cursor: 'pointer' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}>
                   <td style={{ ...styles.td, fontWeight: 600, maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.titre}</td>
                   <td style={styles.td}>{r.cree_par?.nom_user || '—'}</td>
                   <td style={styles.td}>
@@ -939,22 +1232,145 @@ export default function AdminDashboard() {
           </table>
         </div>
       )}
-      {selectedRapport && (
-        <div style={{ borderTop: '1px solid var(--border-color)', padding: 20, maxHeight: 500, overflowY: 'auto' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{selectedRapport.titre}</h3>
-            <button onClick={() => setSelectedRapport(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted3)', padding: 4 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+    </div>
+  );
+
+  // ─── RAPPORT READING MODAL ───
+  // Full-screen-ish modal to display a sanitized HTML report
+  const rapportReadModal = () => {
+    if (!selectedRapport) return null;
+    const r = selectedRapport;
+    return (
+      <div className="fade-in" style={styles.overlay} onClick={() => setSelectedRapport(null)}>
+        <div className="scale-in" style={{ ...styles.modal, width: 780, maxHeight: '88vh' }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', borderBottom: `1px solid ${COLORS.border}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+              <span style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(232,64,26,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <IconReport style={{ width: 16, height: 16, color: '#E8401A' }} />
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: COLORS.textDark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.titre}</h2>
+                <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>
+                  {r.cree_par?.nom_user || '—'} · {new Date(r.created_at).toLocaleDateString('fr', { day: '2-digit', month: 'long', year: 'numeric' })}
+                  {r.date_debut && r.date_fin ? ` · ${new Date(r.date_debut).toLocaleDateString('fr')} → ${new Date(r.date_fin).toLocaleDateString('fr')}` : ''}
+                </div>
+              </div>
+            </div>
+            <button onClick={() => setSelectedRapport(null)}
+              style={{ width: 28, height: 28, borderRadius: 6, border: `1px solid ${COLORS.border}`, background: 'var(--bg-card)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted3)', flexShrink: 0, marginLeft: 12 }}
+              title="Fermer">
+              <IconX />
             </button>
           </div>
-          <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.7 }}
-            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedRapport.contenu) }} />
+          {/* Render HTML content sanitized with DOMPurify to prevent XSS */}
+          <div style={{ padding: '20px 28px', overflowY: 'auto', flex: 1, fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.8 }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(r.contenu) }} />
+        </div>
+      </div>
+    );
+  };
+
+  // ─── PERFORMANCE VIEW ───
+  // Displays per-employee stats: toggle between engineers and call center agents,
+  // then select an individual to see their KPIs and a bar chart
+  const performanceView = () => (
+    <div style={styles.tableCard}>
+      <div style={{ padding: '14px 18px', borderBottom: `1px solid ${COLORS.border}`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <h2 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: COLORS.textDark, display: 'flex', alignItems: 'center', gap: 8 }}><IconUsers /> Performances Équipe</h2>
+        {/* Role toggle: engineers vs call center agents */}
+        <div style={{ display: 'flex', gap: 4, background: 'var(--bg-toolbar)', borderRadius: 6, padding: 2, marginLeft: 8 }}>
+          <button onClick={() => { setPerfRole('ingenieurs'); setPerfUser(null); }}
+            style={{ padding: '4px 12px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', background: perfRole === 'ingenieurs' ? 'var(--bg-card)' : 'transparent', color: perfRole === 'ingenieurs' ? 'var(--text-primary)' : 'var(--text-muted3)', boxShadow: perfRole === 'ingenieurs' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Ingénieurs</button>
+          <button onClick={() => { setPerfRole('agents_cc'); setPerfUser(null); }}
+            style={{ padding: '4px 12px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', background: perfRole === 'agents_cc' ? 'var(--bg-card)' : 'transparent', color: perfRole === 'agents_cc' ? 'var(--text-primary)' : 'var(--text-muted3)', boxShadow: perfRole === 'agents_cc' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Call Center</button>
+        </div>
+        <select value={perfUser || ''} onChange={(e) => setPerfUser(e.target.value || null)}
+          style={{ marginLeft: 'auto', padding: '5px 12px', fontSize: 11, borderRadius: 4, border: `1px solid ${COLORS.border}`, fontFamily: 'inherit', maxWidth: 240, cursor: 'pointer', backgroundColor: 'var(--bg-input)' }}>
+          <option value="">Choisir un utilisateur...</option>
+          {perfUsers.map((u) => <option key={u.code} value={u.code}>{u.nom} ({u.code})</option>)}
+        </select>
+      </div>
+      {!selectedPerfUser ? (
+        <div style={{ padding: 50, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 13 }}>
+          Sélectionnez un utilisateur pour voir ses statistiques de performance
+        </div>
+      ) : (
+        <div className="fade-in" style={{ padding: 20 }}>
+          {/* KPI cards for the selected user - different metrics for engineers vs agents */}
+          <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+            {perfRole === 'ingenieurs' ? (
+              <>
+                <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-hover)', borderRadius: 8, border: `1px solid ${COLORS.border}`, textAlign: 'center' }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' }}>{selectedPerfUser.total_assignes}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Assignés</div>
+                </div>
+                <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-hover)', borderRadius: 8, border: `1px solid ${COLORS.border}`, textAlign: 'center' }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: '#10B981' }}>{selectedPerfUser.resolus}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Résolus</div>
+                </div>
+                <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-hover)', borderRadius: 8, border: `1px solid ${COLORS.border}`, textAlign: 'center' }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: selectedPerfUser.taux_resolution >= 80 ? '#10B981' : selectedPerfUser.taux_resolution >= 50 ? '#F59E0B' : '#EF4444' }}>{selectedPerfUser.taux_resolution}%</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Taux résolution</div>
+                </div>
+                <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-hover)', borderRadius: 8, border: `1px solid ${COLORS.border}`, textAlign: 'center' }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' }}>{selectedPerfUser.delai_h ? `${selectedPerfUser.delai_h.toFixed(1)}h` : selectedPerfUser.delai_moyen}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Délai moyen</div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-hover)', borderRadius: 8, border: `1px solid ${COLORS.border}`, textAlign: 'center' }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: '#E8401A' }}>{selectedPerfUser.tickets_crees}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Créés</div>
+                </div>
+                <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-hover)', borderRadius: 8, border: `1px solid ${COLORS.border}`, textAlign: 'center' }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: '#F59E0B' }}>{selectedPerfUser.ouverts}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Ouverts</div>
+                </div>
+                <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-hover)', borderRadius: 8, border: `1px solid ${COLORS.border}`, textAlign: 'center' }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: '#10B981' }}>{selectedPerfUser.resolus}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Résolus</div>
+                </div>
+                <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-hover)', borderRadius: 8, border: `1px solid ${COLORS.border}`, textAlign: 'center' }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-muted3)' }}>{selectedPerfUser.fermes}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Fermés</div>
+                </div>
+              </>
+            )}
+          </div>
+          {/* Performance bar chart for selected user */}
+          <div style={{ width: '100%', height: 260 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              {perfRole === 'ingenieurs' ? (
+                <BarChart data={[selectedPerfUser]} margin={{ top: 5, right: 10, left: -5, bottom: 5 }} barSize={50}>
+                  <CartesianGrid stroke="#f5f5f5" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} />
+                  <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} width={25} />
+                  <RechartsTooltip content={<Tip />} />
+                  <Bar dataKey="total_assignes" radius={[4, 4, 0, 0]} fill="#2563EB" name="Assignés" />
+                  <Bar dataKey="resolus" radius={[4, 4, 0, 0]} fill="#10B981" name="Résolus" />
+                </BarChart>
+              ) : (
+                <BarChart data={[selectedPerfUser]} margin={{ top: 5, right: 10, left: -5, bottom: 5 }} barSize={50}>
+                  <CartesianGrid stroke="#f5f5f5" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} />
+                  <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} width={25} />
+                  <RechartsTooltip content={<Tip />} />
+                  <Bar dataKey="tickets_crees" radius={[4, 4, 0, 0]} fill="#E8401A" name="Créés" />
+                  <Bar dataKey="ouverts" radius={[4, 4, 0, 0]} fill="#F59E0B" name="Ouverts" />
+                  <Bar dataKey="resolus" radius={[4, 4, 0, 0]} fill="#10B981" name="Résolus" />
+                  <Bar dataKey="fermes" radius={[4, 4, 0, 0]} fill="var(--text-muted3)" name="Fermés" />
+                </BarChart>
+              )}
+            </ResponsiveContainer>
+          </div>
         </div>
       )}
     </div>
   );
 
   // ─── USER FORM MODAL ───
+  // Modal for creating a new user with personal info and password fields
   const userFormModal = () => (
     <div style={styles.overlay} onClick={() => setShowUserForm(false)}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
@@ -991,7 +1407,40 @@ export default function AdminDashboard() {
     </div>
   );
 
+  // ─── EDIT USER MODAL ───
+  // Modal for editing an existing user's info (name, email, role)
+  const editUserModal = () => (
+    <div style={styles.overlay} onClick={() => { setShowEditUserForm(false); setEditingUser(null); }}>
+      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.modalHeader}>
+          <h2 style={styles.modalTitle}>Modifier {editingUser?.code_user}</h2>
+          <button onClick={() => { setShowEditUserForm(false); setEditingUser(null); }} style={styles.modalClose}><IconX /></button>
+        </div>
+        <form onSubmit={handleUpdateUser} style={styles.formBody}>
+          <div style={styles.formGrid}>
+            <div style={styles.inputGroup}><label style={styles.label}>PRÉNOM</label><input type="text" value={editForm.first_name} onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })} style={styles.input} required /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>NOM</label><input type="text" value={editForm.last_name} onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })} style={styles.input} required /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>EMAIL</label><input type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} style={styles.input} required /></div>
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>RÔLE</label>
+              <select value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })} style={styles.input}>
+                {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={styles.formActions}>
+            <button type="button" onClick={() => { setShowEditUserForm(false); setEditingUser(null); }} style={styles.btnCancel}>Annuler</button>
+            <button type="submit" disabled={submitting} style={styles.btnSubmit}>
+              <IconCheck /> {submitting ? 'Enregistrement...' : 'Enregistrer'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+
   // ─── TICKET FORM MODAL ───
+  // Modal for creating a new ticket (reclamation) with client info and priority
   const ticketFormModal = () => (
     <div style={styles.overlay} onClick={() => setShowTicketForm(false)}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
@@ -1044,6 +1493,7 @@ export default function AdminDashboard() {
   );
 
   // ─── SITE FORM MODAL ───
+  // Modal for creating a new network site with location and tech info
   const siteFormModal = () => (
     <div style={styles.overlay} onClick={() => setShowSiteForm(false)}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
@@ -1086,6 +1536,7 @@ export default function AdminDashboard() {
   );
 
   // ─── TICKET DETAIL MODAL ───
+  // Shows full ticket info including client details, status, comments, and status transition buttons
   const ticketDetailModal = () => {
     if (!selectedTicket) return null;
     const t = selectedTicket;
@@ -1176,6 +1627,7 @@ export default function AdminDashboard() {
           </div>
           <div style={styles.modalFooter}>
             <div style={styles.statusActions}>
+              {/* Status transition buttons for the ticket */}
               {ALL_STATUSES.map((s) => {
                 const sk = getStatutKey(s);
                 const sc = COLORS.status[sk] || COLORS.status.OUVERT;
@@ -1204,6 +1656,7 @@ export default function AdminDashboard() {
             <button style={styles.btnCancel} onClick={() => setSelectedTicket(null)}>Fermer</button>
           </div>
         </div>
+        {/* Floating user tooltip - shows on hover over user chips */}
         {hoveredUser && (
           <div style={{ ...styles.userTooltip, top: hoveredUser.rect.bottom + 6, left: hoveredUser.rect.left }}>
             <div style={styles.userTooltipArrow} />
@@ -1218,6 +1671,7 @@ export default function AdminDashboard() {
   };
 
   // ─── SITE DETAIL MODAL ───
+  // Full site info with status toggle and archive actions
   const siteDetailModal = () => {
     if (!selectedSite) return null;
     const s = selectedSite;
@@ -1258,6 +1712,7 @@ export default function AdminDashboard() {
           </div>
           <div style={styles.modalFooter}>
             <div style={styles.statusActions}>
+              {/* UP/DOWN toggle buttons */}
               {['UP', 'DOWN'].map((st) => {
                 const isActive = s.statut === st;
                 const isTarget = s.statut !== st;
@@ -1290,6 +1745,8 @@ export default function AdminDashboard() {
     );
   };
 
+  // ─── Toast notification component ───
+  // Fixed bottom-right stack of auto-dismissing notifications
   const NotificationToast = () => (
     <div style={{
       position: 'fixed', bottom: 24, right: 24, zIndex: 99999,
@@ -1311,11 +1768,14 @@ export default function AdminDashboard() {
     </div>
   );
 
+  // Map of view keys to their header titles
   const VIEW_TITLE = {
     dashboard: 'Dashboard', map: 'Cartographie', tickets: 'Réclamations',
-    sites: 'Sites Réseau', users: 'Utilisateurs', reports: 'Rapports',
+    sites: 'Sites Réseau', users: 'Utilisateurs', reports: 'Rapports (SV)',
+    performance: 'Performance Équipe',
   };
 
+  // ─── MAIN RENDER ───
   return (
     <div style={styles.appLayout}>
       {detail && <DetailModal type={detail.type} data={detail.data} stats={stats} reporting={reporting} onClose={() => { setDetail(null); refreshAll(); }} />}
@@ -1324,6 +1784,7 @@ export default function AdminDashboard() {
         <header style={styles.topHeader}>
           <h1 style={styles.pageTitle}>{VIEW_TITLE[currentView]}</h1>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* Period toggle (only visible on dashboard view) */}
             {currentView === 'dashboard' && (
               <div style={styles.toggle}>
                 {[{ l: '7j', v: 7 }, { l: '30j', v: 30 }, { l: '90j', v: 90 }].map((p) => (
@@ -1336,27 +1797,34 @@ export default function AdminDashboard() {
           </div>
         </header>
         <div style={styles.pageContent}>
+          {/* Render the active view based on currentView state */}
           {currentView === 'dashboard' && dashboardView()}
           {currentView === 'map' && mapView()}
           {currentView === 'tickets' && ticketsView()}
           {currentView === 'sites' && sitesView()}
           {currentView === 'users' && usersView()}
           {currentView === 'reports' && reportsView()}
+          {currentView === 'performance' && performanceView()}
         </div>
       </main>
+      {/* ─── Modals (rendered conditionally) ─── */}
       {showUserForm && userFormModal()}
+      {showEditUserForm && editUserModal()}
       {showTicketForm && ticketFormModal()}
       {showSiteForm && siteFormModal()}
       {selectedTicket && ticketDetailModal()}
       {selectedSite && siteDetailModal()}
+      {selectedRapport && rapportReadModal()}
       <NotificationToast />
     </div>
   );
 }
 
+// ─── Inline styles object ───
+// All component styles are defined here using CSS-in-JS with theme variables
 const styles = {
   appLayout: { display: 'flex', minHeight: '100vh', fontFamily: "'Inter', system-ui, sans-serif", width: '100%' },
-  sidebar: { width: 193, backgroundColor: COLORS.sidebarBg, color: 'var(--text-sidebar)', display: 'flex', flexDirection: 'column', flexShrink: 0 },
+  sidebar: { width: 193, backgroundColor: COLORS.sidebarBg, color: 'var(--text-sidebar)', display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden' },
   brand: { height: 82, display: 'flex', alignItems: 'center', gap: 13, padding: '0 17px', borderBottom: '1px solid rgba(255,255,255,0.07)' },
   logo: { width: 34, height: 'auto', objectFit: 'contain' },
   brandName: { color: '#FFFFFF', fontWeight: 700, fontSize: 16 },
@@ -1370,10 +1838,10 @@ const styles = {
   pageTitle: { margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-secondary)' },
   pageContent: { padding: '24px 21px 40px', flex: 1, overflowY: 'auto' },
   statsRow: { display: 'flex', gap: 16, marginBottom: 20 },
-  statCard: { flex: 1, backgroundColor: COLORS.cardBg, borderRadius: 8, padding: '16px 20px', border: `1px solid ${COLORS.border}`, borderLeftWidth: 4, display: 'flex', flexDirection: 'column', gap: 4 },
+  statCard: { flex: 1, backgroundColor: COLORS.cardBg, borderRadius: 8, padding: '16px 20px', border: `1px solid ${COLORS.border}`, display: 'flex', flexDirection: 'column', gap: 4 },
   statNumber: { fontSize: 24, fontWeight: 700, color: COLORS.textDark },
   statLabel: { fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: '0.3px' },
-  tableCard: { backgroundColor: COLORS.cardBg, borderRadius: 7, border: `1px solid ${COLORS.border}`, borderTop: '3px solid #E8401A', display: 'flex', flexDirection: 'column', width: '100%', boxShadow: 'var(--shadow-card)' },
+  tableCard: { backgroundColor: COLORS.cardBg, borderRadius: 7, border: `1px solid ${COLORS.border}`, display: 'flex', flexDirection: 'column', width: '100%', boxShadow: 'var(--shadow-card)' },
   toolbar: { minHeight: 44, padding: '0 18px', display: 'flex', alignItems: 'center' },
   toolbarLeft: { display: 'flex', alignItems: 'center', gap: 11 },
   tableTitle: { margin: 0, fontSize: 11, fontWeight: 700, color: COLORS.textDark, display: 'flex', alignItems: 'center', gap: 8 },
@@ -1398,14 +1866,14 @@ const styles = {
   togOn: { background: 'var(--bg-card)', color: 'var(--text-secondary)', boxShadow: 'var(--shadow-sm)' },
   date: { fontSize: 10, color: 'var(--text-muted2)', fontWeight: 500, padding: '4px 10px', background: 'var(--bg-toolbar)', borderRadius: 4 },
   kpiRow: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 16 },
-  kpiCard: { padding: '16px 20px', background: COLORS.cardBg, border: `1px solid ${COLORS.border}`, borderTop: '3px solid #E8401A', borderRadius: 8, boxShadow: 'var(--shadow-sm)' },
+  kpiCard: { padding: '16px 20px', background: COLORS.cardBg, border: `1px solid ${COLORS.border}`, borderRadius: 8, boxShadow: 'var(--shadow-sm)' },
   kpiLabel: { display: 'block', marginBottom: 6, fontSize: 9, color: 'var(--text-muted)' },
   kpiValue: { fontSize: 26 },
   panelHeader: { minHeight: 40, padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${COLORS.border}` },
   panelTitle: { display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, fontWeight: 600 },
   textBtn: { display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 9, fontFamily: 'inherit' },
   chartsRow: { display: 'flex', gap: 16, marginBottom: 24, minHeight: 200 },
-  chartBox: { background: COLORS.cardBg, border: `1px solid ${COLORS.border}`, borderTop: '3px solid #E8401A', borderRadius: 8, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: 'var(--shadow-sm)' },
+  chartBox: { background: COLORS.cardBg, border: `1px solid ${COLORS.border}`, borderRadius: 8, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: 'var(--shadow-sm)' },
   ch: { padding: '10px 16px 4px', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'baseline', gap: 8 },
   cht: { fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: 0.3 },
   cb: { flex: 1, padding: '6px 6px 4px', minHeight: 260 },

@@ -1,8 +1,20 @@
+/*
+ * CallCenter.jsx
+ * Main page for the Call Center agents at Djezzy.
+ * This component handles viewing, creating, filtering, and archiving
+ * customer complaint tickets (reclamations). It provides two main views:
+ *   - Active tickets (non-traitees) and resolved tickets (traitees)
+ *   - A form to create new tickets
+ * It also displays a modal with full ticket details when a row is clicked.
+ */
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { spawnParticles } from '../hooks/useAnimations';
 import { getTickets, createTicket, updateTicket, getSites } from '../api/tickets';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
+/* Color palette and badge styles used across the UI */
 const COLORS = {
   sidebarBg: 'var(--bg-sidebar)',
   sidebarActive: '#E8401A',
@@ -14,16 +26,19 @@ const COLORS = {
   djezzyRed: '#E8401A',
   djezzyOrange: '#FF6B3D',
 
+  /* Badge colors for client types */
   types: {
     PARTICULIER: { bg: '#E2E8F0', text: '#475569', border: '#CBD5E1' },
     ENTREPRISE: { bg: '#475569', text: '#FFFFFF', border: '#334155' },
   },
+  /* Badge colors for priority levels */
   priorities: {
     BASSE: { bg: '#E0F2FE', text: '#0284C7', side: '#0284C7' },
     NORMALE: { bg: '#DCFCE7', text: '#15803D', side: '#15803D' },
     HAUTE: { bg: '#FEF3C7', text: '#D97706', side: '#D97706' },
     CRITIQUE: { bg: '#FEE2E2', text: '#DC2626', side: '#DC2626' },
   },
+  /* Badge colors for ticket statuses */
   status: {
     OUVERT: { bg: '#E0F2FE', text: '#0284C7', dot: '#0284C7' },
     'EN COURS': { bg: '#FEF3C7', text: '#D97706', dot: '#D97706' },
@@ -32,8 +47,10 @@ const COLORS = {
   },
 };
 
+/* French month abbreviations for date formatting */
 const MOIS_FR = ['JAN', 'FEV', 'MAR', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOU', 'SEP', 'OCT', 'NOV', 'DEC'];
 
+/* Format an ISO date string to a short French date like "15 JUIN" */
 const formatDateFr = (isoString) => {
   if (!isoString) return '\u2014';
   const d = new Date(isoString);
@@ -41,6 +58,7 @@ const formatDateFr = (isoString) => {
   return `${d.getDate()} ${MOIS_FR[d.getMonth()]}`;
 };
 
+/* Format an ISO date string to a longer French date with time, e.g. "15 JUIN 2025 14:30" */
 const formatDateTimeFr = (isoString) => {
   if (!isoString) return '\u2014';
   const d = new Date(isoString);
@@ -48,8 +66,10 @@ const formatDateTimeFr = (isoString) => {
   return `${d.getDate()} ${MOIS_FR[d.getMonth()]} ${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
+/* Default props shared by all inline SVG icons */
 const iconProps = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' };
 
+/* Small SVG icon components used in the sidebar, buttons, and modal */
 const IconTicket = (p) => (
   <svg {...iconProps} {...p}><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 6v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-6V7Z" /><path d="M10 6v2M10 16v2" /></svg>
 );
@@ -84,6 +104,7 @@ const IconX = (p) => (
   <svg {...iconProps} {...p}><path d="M18 6L6 18M6 6l12 12" /></svg>
 );
 
+/* Default empty state for the new-ticket form */
 const INITIAL_FORM = {
   nom_client: '', telephone: '', email: '',
   type_client: 'particulier',
@@ -93,6 +114,9 @@ const INITIAL_FORM = {
 
 export default function CallCenter() {
   const navigate = useNavigate();
+
+  /* --- View / UI state --- */
+  // currentView controls which panel is shown: 'non-traites', 'traites', or 'nouveau-ticket'
   const [currentView, setCurrentView] = useState('non-traites');
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -100,23 +124,34 @@ export default function CallCenter() {
   const [submitting, setSubmitting] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
+
+  /* --- Filter state --- */
   const [filterDate, setFilterDate] = useState('');
   const [filterSiteId, setFilterSiteId] = useState('');
   const [filterPriority, setFilterPriority] = useState('');
   const [filterType, setFilterType] = useState('');
 
+  /* --- New ticket form state --- */
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [sites, setSites] = useState([]);
+
+  /* --- Modal / tooltip helpers --- */
+  // expandedField tracks which user info card (cree_par / assigne_a) is expanded in the modal
   const [expandedField, setExpandedField] = useState(null);
+  // hoveredUser stores the user object + screen position for the floating tooltip
   const [hoveredUser, setHoveredUser] = useState(null);
 
+  /* Load the list of network sites once on mount (used in the form and filters) */
   useEffect(() => {
     getSites().then(setSites).catch(() => setSites([]));
   }, []);
 
+  /* Fetch tickets from the API based on the current view tab */
   const fetchTickets = useCallback(async () => {
     setLoading(true);
     try {
+      // Map view name to backend status filter:
+      // 'non-traites' -> open/in-progress/closed; 'traites' -> resolved
       const statut = currentView === 'non-traites' ? 'ouvert,en_cours,ferme' : 'resolu';
       const data = await getTickets(statut);
       setTickets(Array.isArray(data) ? data : []);
@@ -128,12 +163,14 @@ export default function CallCenter() {
     }
   }, [currentView]);
 
+  /* Re-fetch tickets whenever the user switches between the two list views */
   useEffect(() => {
     if (currentView !== 'nouveau-ticket') {
       fetchTickets();
     }
   }, [currentView, fetchTickets]);
 
+  /* Submit the new ticket form to the API */
   const handleCreateTicket = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -147,6 +184,7 @@ export default function CallCenter() {
         priorite: formData.priorite,
         mots_cles_ia: formData.mots_cles_ia,
       });
+      // Reset form and go back to the active tickets list
       setFormData(INITIAL_FORM);
       setCurrentView('non-traites');
     } catch (err) {
@@ -157,17 +195,19 @@ export default function CallCenter() {
     }
   };
 
+  /* Archive a ticket by changing its status to 'ferme' after user confirmation */
   const handleArchive = async (ticket) => {
     if (!window.confirm(`Archiver le ticket ${ticket.numero_ticket} ?`)) return;
     try {
       await updateTicket(ticket.id, { statut: 'ferme' });
       setSelectedTicket(null);
-      fetchTickets();
+      fetchTickets(); // Refresh the list to reflect the change
     } catch (err) {
       alert("Erreur lors de l'archivage.");
     }
   };
 
+  /* Clear auth tokens and redirect to login */
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('access_token');
@@ -175,10 +215,12 @@ export default function CallCenter() {
     navigate('/login');
   };
 
+  /* Generic handler for all form input changes */
   const handleInputChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  /* Apply all active filters + search term to the tickets list */
   const filteredTickets = tickets.filter((t) => {
     const term = searchTerm.toLowerCase();
     const matchSearch =
@@ -205,36 +247,41 @@ export default function CallCenter() {
     return true;
   });
 
+  // Normalize the backend statut value to uppercase with spaces for display and lookup
   const getStatutKey = (statut) => statut?.replace('_', ' ').toUpperCase();
 
   return (
     <div style={styles.appLayout}>
+      {/* ========== LEFT SIDEBAR ========== */}
       <aside style={styles.sidebar}>
+        {/* Brand / logo area */}
         <div style={styles.brandZone}>
           <img src={logoDjezzy} alt="Djezzy" style={styles.brandLogo} />
           <div>
-            <div style={styles.brandName}>Djezzy</div>
+            <div style={styles.brandName}>Djezzy Hub</div>
             <div style={styles.brandRole}>Agent Call Center</div>
           </div>
         </div>
 
+        {/* Main navigation menu */}
         <div style={styles.menuSection}>
           <span style={styles.sectionLabel}>PRINCIPAL</span>
           <button
-            onClick={() => setCurrentView('non-traites')}
+            onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('non-traites'); }}
             style={{ ...styles.menuItem, ...(currentView === 'non-traites' ? styles.menuItemActive : {}) }}
           >
             <IconTicket style={{ marginRight: '10px', flexShrink: 0 }} /> Tickets Non-Traites
           </button>
           <button
-            onClick={() => setCurrentView('traites')}
+            onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('traites'); }}
             style={{ ...styles.menuItem, ...(currentView === 'traites' ? styles.menuItemActive : {}) }}
           >
             <IconArchive style={{ marginRight: '10px', flexShrink: 0 }} /> Tickets Traites
           </button>
         </div>
 
-        <div style={{ ...styles.menuSection, marginTop: '40px' }}>
+        {/* Personal / account section pushed to the bottom */}
+        <div style={{ ...styles.menuSection, marginTop: 'auto' }}>
           <span style={styles.sectionLabel}>PERSONNEL</span>
           <button style={styles.menuItem} onClick={() => navigate('/profile')}>
             <IconUser style={{ marginRight: '10px', flexShrink: 0 }} /> Profile
@@ -246,7 +293,9 @@ export default function CallCenter() {
 
       </aside>
 
+      {/* ========== MAIN CONTENT AREA ========== */}
       <div style={{ ...styles.mainContent, backgroundColor: COLORS.mainBg }}>
+        {/* Top header with page title or back navigation */}
         <header style={{ ...styles.topHeader, backgroundColor: COLORS.cardBg, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ flex: 1 }}>
             {currentView === 'nouveau-ticket' ? (
@@ -266,6 +315,7 @@ export default function CallCenter() {
         </header>
 
         {currentView === 'nouveau-ticket' ? (
+          /* ========== NEW TICKET FORM ========== */
           <div style={styles.tableCard}>
             <div style={styles.formHeader}>
               <IconPin style={{ color: COLORS.djezzyRed, marginRight: '10px' }} />
@@ -273,6 +323,7 @@ export default function CallCenter() {
             </div>
 
             <form onSubmit={handleCreateTicket} style={styles.formBody}>
+              {/* Client information section */}
               <div style={styles.formSectionTitle}>INFORMATIONS CLIENT</div>
 
               <div style={styles.formGrid}>
@@ -297,6 +348,7 @@ export default function CallCenter() {
                 </div>
               </div>
 
+              {/* Complaint / reclamation details section */}
               <div style={{ ...styles.formSectionTitle, marginTop: '24px' }}>RECLAMATION</div>
 
               <div style={styles.formGrid}>
@@ -318,6 +370,7 @@ export default function CallCenter() {
                     <option value="critique">CRITIQUE</option>
                   </select>
                 </div>
+                {/* Keywords textarea spans the full grid width */}
                 <div style={{ ...styles.inputGroup, gridColumn: '1 / -1' }}>
                   <label style={styles.label}>MOTS CLES (notes rapides)</label>
                   <textarea
@@ -334,6 +387,7 @@ export default function CallCenter() {
                 </div>
               </div>
 
+              {/* Form action buttons */}
               <div style={styles.formActions}>
                 <button type="button" onClick={() => setCurrentView('non-traites')} style={styles.btnCancel}>Annuler</button>
                 <button type="submit" disabled={submitting} style={styles.btnSubmit}>
@@ -343,7 +397,9 @@ export default function CallCenter() {
             </form>
           </div>
         ) : (
+          /* ========== TICKETS TABLE VIEW ========== */
           <div style={styles.tableCard}>
+            {/* Toolbar: title, refresh, filters, search, and new ticket button */}
             <div style={styles.toolbar}>
               <div style={styles.toolbarLeft}>
                 <h2 style={styles.tableTitle}>
@@ -358,6 +414,7 @@ export default function CallCenter() {
                 <button onClick={() => setShowFilters(!showFilters)} style={styles.btnFilter}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ marginRight: '6px' }}><path d="M4 5h16l-6 7v6l-4 1v-7L4 5Z" /></svg> Filtrer
                 </button>
+                {/* Search input with magnifying glass icon */}
                 <div style={styles.searchWrapper}>
                   <IconSearch style={styles.searchIcon} />
                   <input
@@ -374,6 +431,7 @@ export default function CallCenter() {
               </div>
             </div>
 
+            {/* Collapsible filter bar with date, site, priority, and type dropdowns */}
             {showFilters && (
               <div style={styles.filterArea}>
                 <input
@@ -415,6 +473,7 @@ export default function CallCenter() {
               </div>
             )}
 
+            {/* Tickets data table */}
             <div style={{ overflowX: 'auto' }}>
               <table style={styles.table}>
                 <thead>
@@ -434,6 +493,7 @@ export default function CallCenter() {
                   ) : filteredTickets.length === 0 ? (
                     <tr><td colSpan="7" style={styles.emptyCell}>Aucune reclamation trouvee.</td></tr>
                   ) : filteredTickets.map((ticket) => {
+                    // Resolve color config for priority, status, and client type badges
                     const prio = COLORS.priorities[ticket.priorite?.toUpperCase()] || COLORS.priorities.NORMALE;
                     const statutKey = getStatutKey(ticket.statut);
                     const stat = COLORS.status[statutKey] || COLORS.status.FERME;
@@ -447,6 +507,7 @@ export default function CallCenter() {
                         onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
                         onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
                       >
+                        {/* Ticket number with a colored left border indicating priority */}
                         <td style={{ ...styles.td, borderLeft: `4px solid ${prio.side}`, paddingLeft: '16px', fontWeight: 600, cursor: 'pointer' }}>
                           {ticket.numero_ticket}
                         </td>
@@ -479,9 +540,11 @@ export default function CallCenter() {
         )}
       </div>
 
+      {/* ========== TICKET DETAIL MODAL ========== */}
       {selectedTicket && (
         <div className="fade-in" style={styles.overlay} onClick={() => setSelectedTicket(null)}>
           <div className="scale-in" style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            {/* Modal header with ticket number and close button */}
             <div style={styles.modalHeader}>
               <h2 style={styles.modalTitle}>Ticket {selectedTicket.numero_ticket}</h2>
               <button style={styles.modalClose} onClick={() => setSelectedTicket(null)}><IconX /></button>
@@ -489,6 +552,7 @@ export default function CallCenter() {
 
             <div style={styles.modalBody}>
               <div style={styles.modalGrid}>
+                {/* Left column: client information */}
                 <div style={styles.modalSection}>
                   <h3 style={styles.modalSectionTitle}>Client</h3>
                   <div style={styles.modalField}>
@@ -509,6 +573,7 @@ export default function CallCenter() {
                   </div>
                 </div>
 
+                {/* Right column: ticket metadata */}
                 <div style={styles.modalSection}>
                   <h3 style={styles.modalSectionTitle}>Ticket</h3>
                   <div style={styles.modalField}>
@@ -531,6 +596,8 @@ export default function CallCenter() {
                     <span style={styles.modalLabel}>Site concerne</span>
                     <span style={styles.modalValue}>{selectedTicket.site_display || '\u2014'}</span>
                   </div>
+
+                  {/* Created-by user chip — clickable to expand details inline */}
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Cree par</span>
                     {selectedTicket.cree_par ? (
@@ -545,6 +612,7 @@ export default function CallCenter() {
                         <span style={{ fontSize: '10px', color: 'var(--text-muted2)', marginTop: '2px', lineHeight: '1.3', textAlign: 'right' }}>
                           {selectedTicket.cree_par.nom_user || selectedTicket.cree_par.code_user}
                         </span>
+                        {/* Expanded user detail card toggled on click */}
                         {expandedField === 'cree_par' && (
                           <div style={{ marginTop: '6px', padding: '8px 10px', backgroundColor: 'var(--bg-hover)', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '11px', lineHeight: '1.7', width: '180px' }}>
                             <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{selectedTicket.cree_par.nom_user || selectedTicket.cree_par.code_user}</div>
@@ -558,6 +626,8 @@ export default function CallCenter() {
                       <span style={styles.modalValue}>{selectedTicket.cree_par?.code_user || '\u2014'}</span>
                     )}
                   </div>
+
+                  {/* Assigned-to user chip — same expand/hover behavior */}
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Assigne a</span>
                     {selectedTicket.assigne_a ? (
@@ -585,10 +655,12 @@ export default function CallCenter() {
                       <span style={styles.modalValue}>{selectedTicket.assigne_a_display || '\u2014'}</span>
                     )}
                   </div>
+
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Date creation</span>
                     <span style={styles.modalValue}>{formatDateTimeFr(selectedTicket.created_at)}</span>
                   </div>
+                  {/* Only show resolution date if the ticket has been resolved */}
                   {selectedTicket.resolu_le && (
                     <div style={styles.modalField}>
                       <span style={styles.modalLabel}>Resolu le</span>
@@ -598,11 +670,13 @@ export default function CallCenter() {
                 </div>
               </div>
 
+              {/* Keywords entered by the call center agent */}
               <div style={styles.modalSection}>
                 <h3 style={styles.modalSectionTitle}>Mots-cles saisis</h3>
                 <p style={styles.modalText}>{selectedTicket.mots_cles_ia || 'Aucun mot-cle saisi.'}</p>
               </div>
 
+              {/* AI-generated description (populated by the backend) */}
               {selectedTicket.description && (
                 <div style={styles.modalSection}>
                   <h3 style={styles.modalSectionTitle}>Description generee par IA</h3>
@@ -612,7 +686,9 @@ export default function CallCenter() {
 
             </div>
 
+            {/* Modal footer with archive and close buttons */}
             <div style={styles.modalFooter}>
+              {/* Hide archive button if the ticket is already closed */}
               {getStatutKey(selectedTicket.statut) !== 'FERME' && (
                 <button style={styles.btnDanger} onClick={() => handleArchive(selectedTicket)}>
                   <IconArchive /> Archiver
@@ -621,6 +697,8 @@ export default function CallCenter() {
               <button style={styles.btnCancel} onClick={() => setSelectedTicket(null)}>Fermer</button>
             </div>
           </div>
+
+          {/* Floating tooltip showing full user info on hover (positioned below the chip) */}
           {hoveredUser && (
             <div style={{ ...styles.userTooltip, top: hoveredUser.rect.bottom + 6, left: hoveredUser.rect.left }}>
               <div style={styles.userTooltipArrow} />
@@ -636,9 +714,14 @@ export default function CallCenter() {
   );
 }
 
+/* ============================================================
+ * Inline styles object
+ * All visual styling is kept here rather than in a separate CSS
+ * file for simplicity in this single-page component.
+ * ============================================================ */
 const styles = {
   appLayout: { display: 'flex', minHeight: '100vh', backgroundColor: COLORS.mainBg, fontFamily: "'Inter', system-ui, sans-serif", width: '100%' },
-  sidebar: { width: '193px', backgroundColor: COLORS.sidebarBg, color: 'var(--text-muted2)', display: 'flex', flexDirection: 'column', padding: '0', flexShrink: 0 },
+  sidebar: { width: '193px', backgroundColor: COLORS.sidebarBg, color: 'var(--text-muted2)', display: 'flex', flexDirection: 'column', padding: '0', flexShrink: 0, overflow: 'hidden' },
   brandZone: { height: '82px', display: 'flex', alignItems: 'center', gap: '13px', padding: '0 17px', borderBottom: '1px solid rgba(255,255,255,0.07)' },
   brandLogo: { width: '34px', height: 'auto', objectFit: 'contain' },
   brandName: { color: '#FFFFFF', fontWeight: 700, fontSize: '16px' },
@@ -646,13 +729,13 @@ const styles = {
   menuSection: { display: 'flex', flexDirection: 'column', gap: '5px', padding: '26px 12px 0' },
   sectionLabel: { margin: '0 5px 10px', fontSize: '6px', fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: '1px' },
   menuItem: { display: 'flex', alignItems: 'center', background: 'transparent', border: 'none', color: 'var(--text-muted2)', padding: '0 10px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', fontSize: '13px', width: '100%', height: '34px', textDecoration: 'none', outline: 'none' },
-  menuItemActive: { background: 'linear-gradient(90deg, #E8401A, #C0340D)', color: '#FFFFFF', fontWeight: 600, position: 'relative' },
+  menuItemActive: { background: 'linear-gradient(90deg, #9a0c2d, #710820)', color: '#FFFFFF', fontWeight: 600, position: 'relative' },
   mainContent: { flex: 1, padding: '30px 40px', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' },
   topHeader: { marginBottom: '20px' },
   pageTitle: { margin: 0, fontSize: '22px', fontWeight: 700, color: COLORS.textDark },
   backNav: { display: 'flex', alignItems: 'center', fontSize: '16px', color: COLORS.textDark, cursor: 'pointer', marginBottom: '4px' },
   breadcrumb: { fontSize: '12px', color: COLORS.textMuted, fontWeight: 500 },
-  tableCard: { backgroundColor: COLORS.cardBg, borderRadius: '8px', border: `1px solid ${COLORS.border}`, borderTop: '3px solid #E8401A', display: 'flex', flexDirection: 'column', width: '100%' },
+  tableCard: { backgroundColor: COLORS.cardBg, borderRadius: '8px', border: `1px solid ${COLORS.border}`, display: 'flex', flexDirection: 'column', width: '100%' },
   toolbar: { padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${COLORS.border}` },
   toolbarLeft: { display: 'flex', alignItems: 'center', gap: '12px' },
   tableTitle: { margin: 0, fontSize: '14px', fontWeight: 700, color: COLORS.textDark },

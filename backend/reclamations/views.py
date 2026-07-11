@@ -1,3 +1,9 @@
+# reclamations/views.py
+# ─────────────────────────────────────────────────────────────
+# API views for complaint ticket management. Handles listing,
+# creation, updates, and comments on reclamation tickets.
+# Supports flexible status filtering with aliases for the frontend.
+# ─────────────────────────────────────────────────────────────
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -6,16 +12,19 @@ from .models import Reclamation
 from .serializers import ReclamationSerializer, CommentaireSerializer
 from accounts.models import Role
 
+# Valid status values that match the database choices
 STATUTS_VALIDES = {'ouvert', 'resolu', 'ferme'}
 
+# Friendly aliases so the frontend can filter by concept, not exact value
 ALIAS_NON_TRAITE = {'non-traité', 'non-traite', 'non-traites', 'nouveau', 'en_cours', 'en cours'}
 ALIAS_TRAITE = {'traité', 'traite', 'traites', 'résolu', 'resolu', 'fermé', 'ferme'}
 
 
 def _statuts_depuis_param(statut_filter):
     """
-    Accepte aussi bien '?statut=ouvert,en_cours' (ce que React envoie)
-    que des alias pratiques comme '?statut=non-traites'.
+    Parses status filter string from query params.
+    Handles both exact values ('ouvert,resolu') and aliases
+    ('non-traites' -> 'ouvert', 'traites' -> 'resolu,ferme').
     """
     tokens = [t.strip().lower() for t in statut_filter.split(',') if t.strip()]
     statuts = set()
@@ -32,6 +41,10 @@ def _statuts_depuis_param(statut_filter):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def liste_reclamations(request):
+    """
+    Lists all reclamation tickets with optional status filtering.
+    Uses select_related for efficient SQL joins on site/author data.
+    """
     statut_filter = request.query_params.get('statut')
     reclamations = Reclamation.objects.select_related('site', 'cree_par', 'assigne_a').all()
 
@@ -40,7 +53,6 @@ def liste_reclamations(request):
         if statuts:
             reclamations = reclamations.filter(statut__in=statuts)
         else:
-            # Valeur inconnue : on filtre quand même de façon littérale, par sécurité.
             reclamations = reclamations.filter(statut__iexact=statut_filter.strip().lower())
 
     serializer = ReclamationSerializer(reclamations, many=True)
@@ -50,6 +62,10 @@ def liste_reclamations(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def creer_reclamation(request):
+    """
+    Creates a new complaint ticket. Only admin and call center agents
+    can create tickets. The AI description is auto-generated on save.
+    """
     if request.user and request.user.is_authenticated:
         role = request.user.role.upper() if request.user.role else ''
         if role not in [Role.ADMIN, Role.AGENT_CALL_CENTER]:
@@ -68,6 +84,11 @@ def creer_reclamation(request):
 @api_view(['GET', 'PUT'])
 @permission_classes([AllowAny])
 def detail_reclamation(request, pk):
+    """
+    GET: Returns full ticket details including comments and site info.
+    PUT: Updates ticket (status, assignment, priority, etc.).
+    Includes auto-assign logic when a closed ticket is reopened.
+    """
     try:
         reclamation = Reclamation.objects.get(pk=pk)
     except Reclamation.DoesNotExist:
@@ -78,6 +99,7 @@ def detail_reclamation(request, pk):
         return Response(serializer.data)
 
     if request.method == 'PUT':
+        # Permission check for update
         if request.user and request.user.is_authenticated:
             role = request.user.role.upper() if request.user.role else ''
             if role not in [Role.ADMIN, Role.AGENT_CALL_CENTER, Role.INGENIEUR_RESEAUX, Role.SUPERVISEUR]:
@@ -88,12 +110,12 @@ def detail_reclamation(request, pk):
         if serializer.is_valid():
             reclamation = serializer.save()
 
-            # Force : un ticket fermé n'a jamais d'assigné
+            # When a ticket is closed, clear any assignment
             if reclamation.statut == 'ferme' and reclamation.assigne_a:
                 reclamation.assigne_a = None
                 reclamation.save()
 
-            # Auto-assign : l'utilisateur qui rouvre le ticket devient l'assigné
+            # Auto-assign: the user who reopens becomes the assignee
             if (old_statut == 'ferme' and reclamation.statut == 'ouvert'
                     and request.user and request.user.is_authenticated
                     and not reclamation.assigne_a):
@@ -107,12 +129,15 @@ def detail_reclamation(request, pk):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def ajouter_commentaire(request, pk):
+    """
+    Adds a comment to a ticket. Only engineers and admins can comment
+    (call center agents use keywords instead for AI description).
+    """
     try:
         reclamation = Reclamation.objects.get(pk=pk)
     except Reclamation.DoesNotExist:
         return Response({'error': 'Ticket introuvable'}, status=status.HTTP_404_NOT_FOUND)
 
-    # Seuls les ingénieurs peuvent commenter (les mots-clés suffisent pour le CC)
     if request.user and request.user.is_authenticated:
         role = (request.user.role or '').upper()
         if role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX, Role.SUPERVISEUR]:

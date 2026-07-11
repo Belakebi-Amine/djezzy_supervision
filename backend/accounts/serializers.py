@@ -1,44 +1,49 @@
+# accounts/serializers.py
+# ─────────────────────────────────────────────────────────────
+# DRF serializers for the accounts app. Handles JSON serialization
+# of user data, JWT token customization, and input validation
+# for registration, password changes, and profile updates.
+# ─────────────────────────────────────────────────────────────
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import CustomUser
 
+
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     """
-    Personnalisation du token JWT pour y inclure les informations de rôle
-    directement exploitables par le Front-end React.
+    Extends the default JWT serializer to include user role and code
+    in the token payload. The frontend reads the role from the token
+    to route users to the correct dashboard without extra API calls.
     """
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
-
-        # On ajoute les attributs nécessaires au payload du token
+        # Add custom claims to the JWT payload
         token['code_user'] = user.code_user
-        token['role'] = getattr(user, 'role', 'aucun')  # Récupère la valeur du rôle ou 'aucun' par défaut
-        
+        token['role'] = getattr(user, 'role', 'aucun')
         return token
 
     def validate(self, attrs):
-        # On récupère les tokens standard (access et refresh)
         data = super().validate(attrs)
-        
-        # On ajoute également l'utilisateur sérialisé dans la réponse HTTP directe
+        # Also include full user data in the response body for the frontend
         data['user'] = UserSerializer(self.user).data
         return data
 
 
 class UserSerializer(serializers.ModelSerializer):
     """
-    C'est mon sérialiseur de base. 
-    Je l'utilise pour transformer mon objet Utilisateur en JSON pour mon API.
+    Main user serializer used across the app for reading user data.
+    Returns a flat JSON representation with computed fields like nom_user.
     """
-    # Ici, je fais correspondre 'nom_user' de mon diagramme au nom complet de Django
     nom_user = serializers.SerializerMethodField()
 
     def get_nom_user(self, obj):
+        """Returns full name or falls back to code_user."""
         full = obj.get_full_name().strip()
         return full if full else obj.code_user
-    # Je renomme l'affichage pour coller au 'role_user' de mon schéma
+
+    # Alias 'role' as 'role_user' to match the UML diagram naming
     role_user = serializers.CharField(source='role', read_only=True)
 
     class Meta:
@@ -57,11 +62,11 @@ class UserSerializer(serializers.ModelSerializer):
 
 class RegisterSerializer(serializers.ModelSerializer):
     """
-    Ce sérialiseur me permet d'implémenter la méthode 'creerUtilisateur(data)' 
-    que j'ai attribuée à l'Admin dans mon diagramme.
+    Handles new user creation with password confirmation.
+    Validates that both password fields match before saving.
     """
     password = serializers.CharField(
-        write_only=True, 
+        write_only=True,
         required=True,
         validators=[validate_password]
     )
@@ -69,17 +74,15 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        # Je demande les informations nécessaires à la création d'un compte
         fields = ['first_name', 'last_name', 'email', 'role', 'password', 'password2']
 
     def validate(self, attrs):
-        # Je vérifie que les deux mots de passe saisis sont identiques
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({'password': 'Les mots de passe ne correspondent pas.'})
         return attrs
 
     def create(self, validated_data):
-        # Ici, je crée réellement l'utilisateur en utilisant la méthode de Django
+        """Creates user with hashed password (password2 is removed before save)."""
         validated_data.pop('password2')
         password = validated_data.pop('password')
         user = CustomUser(**validated_data)
@@ -90,17 +93,18 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 class ChangePasswordSerializer(serializers.Serializer):
     """
-    Je traduis ici la méthode 'modifierMotDePasse(ancien, nouveau)' de mon diagramme.
+    Validates password change requests. Requires the current password
+    and enforces Django's password validators on the new password.
     """
     ancien_mot_de_passe = serializers.CharField(required=True, write_only=True)
     nouveau_mot_de_passe = serializers.CharField(
-        required=True, 
+        required=True,
         write_only=True,
         validators=[validate_password]
     )
 
     def validate_ancien_mot_de_passe(self, value):
-        # Je m'assure que l'utilisateur connaît son mot de passe actuel avant de changer
+        """Ensures the user knows their current password."""
         user = self.context['request'].user
         if not user.check_password(value):
             raise serializers.ValidationError('Ancien mot de passe incorrect.')
@@ -109,9 +113,19 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 class UpdateProfileSerializer(serializers.ModelSerializer):
     """
-    C'est l'implémentation de ma méthode 'mettreAJourProfil(data)'.
-    Je ne permets de modifier que le nom, le prénom et l'email.
+    For self-service profile updates. Only allows changing
+    name and email (role and code are read-only).
     """
     class Meta:
         model = CustomUser
         fields = ['first_name', 'last_name', 'email']
+
+
+class UpdateUserSerializer(serializers.ModelSerializer):
+    """
+    For admin to modify any user's details including their role.
+    """
+    class Meta:
+        model = CustomUser
+        fields = ['first_name', 'last_name', 'email', 'role']
+        read_only_fields = []

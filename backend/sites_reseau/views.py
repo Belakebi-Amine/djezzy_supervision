@@ -1,60 +1,65 @@
+# sites_reseau/views.py
+# ─────────────────────────────────────────────────────────────
+# API views for network site management. Provides CRUD operations
+# with role-based access control. Supports filtering by status
+# and soft-deletion (archive) for operational sites.
+# ─────────────────────────────────────────────────────────────
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from .models import SiteReseau
 from .serializers import SiteReseauSerializer
-from accounts.models import Role 
+from accounts.models import Role
+
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def liste_sites(request):
     """
-    Je récupère tous les sites pour mon tableau ou ma cartographie.
-    J'ai ajouté un système de filtre par statut pour que mon frontend puisse 
-    demander uniquement les sites en panne (ex: ?statut=DOWN).
-    Par defaut, les sites archivés sont cachés ; ajouter ?archive=true pour les voir.
+    Lists all non-archived network sites. Supports query params:
+    - ?statut=DOWN to filter by status (used for critical alerts)
+    - ?archive=true to include archived sites (admin only)
+    Used by: engineer dashboard, cartography, ticket assignment.
     """
-    # Je commence par charger l'ensemble de mes sites réseau
     sites_queryset = SiteReseau.objects.all()
-    
-    # Je cache les sites archivés sauf si le frontend demande explicitement à les voir
+
+    # Hide archived sites unless explicitly requested
     afficher_archives = request.query_params.get('archive', 'false').lower() == 'true'
     if not afficher_archives:
         sites_queryset = sites_queryset.filter(archive=False)
-    
-    # Je récupère le paramètre 'statut' depuis l'URL si mon frontend l'envoie
+
+    # Optional status filter
     statut_filtre = request.query_params.get('statut', None)
-    
-    # Si mon frontend a demandé un filtre, je l'applique sur ma requête
     if statut_filtre is not None:
-        # '__iexact' me permet de filtrer sans me soucier des majuscules/minuscules
         sites_queryset = sites_queryset.filter(statut__iexact=statut_filtre)
-        
-    # J'utilise mon serializer personnalisé sur mon QuerySet filtré
+
     serializer = SiteReseauSerializer(sites_queryset, many=True)
-    
-    # Je retourne ma liste finale de sites au format JSON
     return Response(serializer.data, status=status.HTTP_200_OK)
 
-# --- Je garde mes fonctions creer_site et detail_site exactement telles quelles ---
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def creer_site(request):
-    """Correspond à la méthode ajouterSite() de mon diagramme."""
+    """Creates a new network site. Only admins and engineers allowed."""
     if request.user.role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX]:
         return Response({'error': 'Accès réservé aux ingénieurs réseau'}, status=status.HTTP_403_FORBIDDEN)
-    
+
     serializer = SiteReseauSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 @api_view(['GET', 'PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def detail_site(request, pk):
-    """Gère la lecture, la modification (modifierSite) et la suppression."""
+    """
+    GET: Returns full site details (used in map popups, detail views).
+    PUT: Updates site info (status changes, coordinates, etc.).
+    DELETE: Permanently removes the site (admin/engineers only).
+    """
     try:
         site = SiteReseau.objects.get(pk=pk)
     except SiteReseau.DoesNotExist:
@@ -64,6 +69,7 @@ def detail_site(request, pk):
         serializer = SiteReseauSerializer(site)
         return Response(serializer.data)
 
+    # Write operations require elevated permissions
     if request.user.role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX, Role.SUPERVISEUR]:
         return Response({'error': 'Permission refusée'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -80,10 +86,14 @@ def detail_site(request, pk):
         site.delete()
         return Response({'message': 'Site supprimé avec succès'}, status=status.HTTP_204_NO_CONTENT)
 
+
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def archiver_site(request, pk):
-    """Archive un site (archive=True) au lieu de le supprimer definitivement."""
+    """
+    Soft-deletes a site by setting archive=True.
+    Preferred over hard delete for data preservation.
+    """
     try:
         site = SiteReseau.objects.get(pk=pk)
     except SiteReseau.DoesNotExist:

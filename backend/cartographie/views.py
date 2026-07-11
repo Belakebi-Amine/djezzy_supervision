@@ -1,17 +1,24 @@
+# cartographie/views.py
+# ─────────────────────────────────────────────────────────────
+# Map data endpoint for the Leaflet-based cartography view.
+# Returns site locations with coordinates for rendering markers
+# on the interactive map.
+# ─────────────────────────────────────────────────────────────
 from django.shortcuts import render
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from sites_reseau.models import SiteReseau
 
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def carte_sites(request):
     """
-    Ma vue pour la carte : je récupère tous les sites qui ont des coordonnées valides
-    pour les envoyer directement à mon frontend (Leaflet / React).
+    Returns all network sites that have valid geographic coordinates.
+    Used by the frontend Leaflet map component to place markers.
+    Filters out sites without coordinates to avoid map errors.
     """
-    # Je filtre pour exclure les valeurs nulles ou vides pour ne pas faire bugger la carte
     sites_valides = SiteReseau.objects.exclude(
         latitude=None
     ).exclude(
@@ -22,17 +29,16 @@ def carte_sites(request):
         longitude=""
     )
 
-    # J'extrais directement les dictionnaires, c'est super rapide et optimisé en SQL
+    # Extract only the fields needed for map rendering (lightweight query)
     data = list(sites_valides.values(
-        'id', 
-        'code_site', 
-        'nom_site', 
-        'wilaya', 
-        'statut', 
-        'technologie', 
-        'latitude', 
+        'id',
+        'code_site',
+        'nom_site',
+        'wilaya',
+        'statut',
+        'technologie',
+        'latitude',
         'longitude'
     ))
 
-    # Je renvoie la réponse au format JSON
     return Response(data)

@@ -1,46 +1,43 @@
 # accounts/admin.py
+# ─────────────────────────────────────────────────────────────
+# Django admin configuration for the CustomUser model.
+# Customizes the admin panel to show role, code_user, and
+# provides search/filter capabilities for user management.
+# ─────────────────────────────────────────────────────────────
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import CustomUser
 
+
 @admin.register(CustomUser)
 class CustomUserAdmin(UserAdmin):
     """
-    Ici, je configure l'interface d'administration pour qu'elle respecte 
-    mon Use Case 'Gérer les Utilisateurs'.
+    Extends Django's built-in UserAdmin to include our custom fields
+    (role, code_user) while keeping the standard user creation flow.
     """
 
-    # Je définis les colonnes visibles dans ma liste d'utilisateurs.
-    # code_user est le principal identifiant, plus nom_user (car on utilise code_user)
+    # Columns displayed in the user list view
     list_display = ['code_user', 'nom_user', 'email', 'role', 'is_active']
-    
-    # Je rajoute des filtres pour que l'Admin puisse trier par rôle 
-    # (ex: voir uniquement les Agents Call Center).
+
+    # Sidebar filters for quick role/status filtering
     list_filter = ['role', 'is_active']
-    
-    # Je définis les champs sur lesquels l'Admin peut faire une recherche.
+
+    # Search bar fields
     search_fields = ['code_user', 'email', 'first_name', 'last_name']
-    
-    # L'ID (id_user) ne doit jamais être modifié manuellement, donc je le mets en lecture seule.
+
+    # Prevent manual editing of the auto-generated ID
     readonly_fields = ['id']
 
-    # --- CONFIGURATION DES FORMULAIRES ---
-
-    # Ici, je modifie le formulaire d'édition (quand je clique sur un utilisateur).
-    # Je retire tout ce qui n'est pas dans mon diagramme (comme le téléphone) 
-    # et j'ajoute mon champ 'role'.
+    # Fields shown when editing an existing user
     fieldsets = UserAdmin.fieldsets + (
         ('Informations du Diagramme', {
             'fields': ('role',),
         }),
     )
 
-    # Ici, je configure le formulaire de création (Ajouter un utilisateur).
-    # Cela correspond à l'action 'créerUtilisateur(data)' de mon diagramme.
+    # Fields shown in the "Add User" form
     add_fieldsets = UserAdmin.add_fieldsets + (
         ('Informations du Diagramme', {
             'fields': ('role', 'first_name', 'last_name', 'email'),
         }),
     )
-
-    # nom_user supprimé — on travaille maintenant avec code_user

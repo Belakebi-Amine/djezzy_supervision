@@ -1,3 +1,9 @@
+# reclamations/serializers.py
+# ─────────────────────────────────────────────────────────────
+# Serializers for reclamation tickets and comments. Handles
+# nested serialization of site and user data, plus write-only
+# ID fields for ticket creation and updates from the frontend.
+# ─────────────────────────────────────────────────────────────
 from rest_framework import serializers
 from .models import Reclamation, CommentaireTicket
 from accounts.serializers import UserSerializer
@@ -9,6 +15,7 @@ User = get_user_model()
 
 
 class CommentaireSerializer(serializers.ModelSerializer):
+    """Serializes ticket comments with author info (read-only)."""
     auteur = UserSerializer(read_only=True)
 
     class Meta:
@@ -18,16 +25,22 @@ class CommentaireSerializer(serializers.ModelSerializer):
 
 
 class ReclamationSerializer(serializers.ModelSerializer):
+    """
+    Main ticket serializer. Uses nested serializers for read operations
+    (site, author, assignee as full objects) and write-only integer
+    IDs for create/update operations from the React frontend.
+    """
+    # Read-only nested objects for display
     cree_par = UserSerializer(read_only=True)
     assigne_a = UserSerializer(read_only=True)
     site = SiteReseauSerializer(read_only=True)
     commentaires = CommentaireSerializer(many=True, read_only=True)
 
-    # Champs d'écriture pour recevoir les IDs numériques depuis React
+    # Write-only fields: frontend sends IDs, backend resolves objects
     site_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     assigne_a_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
 
-    # Champs de lecture plats pour l'affichage dans le tableau React
+    # Flat display fields for table rendering in React
     site_display = serializers.CharField(source='site.nom', read_only=True, default='Non spécifié')
     assigne_a_display = serializers.SerializerMethodField()
     nom_complet_client = serializers.CharField(read_only=True)
@@ -44,15 +57,20 @@ class ReclamationSerializer(serializers.ModelSerializer):
         read_only_fields = ['numero_ticket', 'cree_par', 'created_at', 'updated_at', 'resolu_le', 'description']
 
     def get_assigne_a_display(self, obj):
+        """Returns the assignee's code_user or '-' if unassigned."""
         if obj.assigne_a:
             return obj.assigne_a.code_user
         return "-"
 
     def create(self, validated_data):
+        """
+        Creates a new ticket, resolving site_id and assigne_a_id
+        to actual model instances before saving.
+        """
         site_id = validated_data.pop('site_id', None)
         assigne_a_id = validated_data.pop('assigne_a_id', None)
 
-        # Un nouveau ticket est toujours ouvert par défaut
+        # New tickets default to 'ouvert' status
         validated_data.setdefault('statut', 'ouvert')
         reclamation = Reclamation.objects.create(**validated_data)
 
@@ -72,6 +90,10 @@ class ReclamationSerializer(serializers.ModelSerializer):
         return reclamation
 
     def update(self, instance, validated_data):
+        """
+        Updates an existing ticket, handling site and assignee
+        reassignment via their respective IDs.
+        """
         site_id = validated_data.pop('site_id', None)
         assigne_a_id = validated_data.pop('assigne_a_id', None)
 

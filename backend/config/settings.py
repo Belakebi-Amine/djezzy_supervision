@@ -1,5 +1,9 @@
 """
 Django Settings - Djezzy Supervision Réseau
+─────────────────────────────────────────────
+Main configuration file for the Django backend. Uses python-decouple
+to load sensitive values from .env file. Configured for PostgreSQL,
+JWT authentication, and CORS for the React frontend.
 """
 
 from pathlib import Path
@@ -7,16 +11,16 @@ from decouple import config
 import os
 from datetime import timedelta
 
-# ─── Chemins ────────────────────────────────────────────────
-# Comme settings.py est dans backend/config/, on remonte 3 fois pour la racine
+# ─── Paths ────────────────────────────────────────────────
+# Since settings.py lives in backend/config/, we go up 3 levels to project root
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-# ─── Sécurité ────────────────────────────────────────────────
+# ─── Security ─────────────────────────────────────────────
 SECRET_KEY = config('SECRET_KEY', default='change-me-in-production')
 DEBUG = config('DEBUG', default=True, cast=bool)
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='127.0.0.1,localhost').split(',')
 
-# ─── Applications ────────────────────────────────────────────
+# ─── Installed Apps ───────────────────────────────────────
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -25,13 +29,13 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
-    # Librairies tierces
-    'corsheaders',
-    'rest_framework',
-    'crispy_forms',
-    'crispy_bootstrap5',
-    
-    # Applications du projet (Chemin vers les Configs)
+    # Third-party libraries
+    'corsheaders',           # Handles CORS headers for React frontend
+    'rest_framework',        # Django REST Framework for API views
+    'crispy_forms',          # Better form rendering (admin)
+    'crispy_bootstrap5',     # Bootstrap 5 template for crispy forms
+
+    # Project apps (using full paths for Django settings module)
     'backend.accounts.apps.AccountsConfig',
     'backend.reclamations.apps.ReclamationsConfig',
     'backend.sites_reseau.apps.SitesReseauConfig',
@@ -39,9 +43,9 @@ INSTALLED_APPS = [
     'backend.dashboard.apps.DashboardConfig',
 ]
 
-# ─── Middleware ───────────────────────────────────────────────
+# ─── Middleware ────────────────────────────────────────────
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',  # Bien placé en premier pour le CORS
+    'corsheaders.middleware.CorsMiddleware',  # Must be first for CORS to work
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -53,11 +57,11 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'backend.config.urls'
 
-# ─── Configuration Templates (Requis pour l'Admin) ───────────
+# ─── Templates (required for Django admin) ────────────────
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [], # Vide car tu utilises React
+        'DIRS': [],  # Empty because we use React, not Django templates
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -70,16 +74,13 @@ TEMPLATES = [
     },
 ]
 
-# ─── Fichiers Statiques ──────────────────────────────────────
+# ─── Static Files ─────────────────────────────────────────
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_DIRS = [
-    # BASE_DIR / "static", 
-]
 
 WSGI_APPLICATION = 'backend.config.wsgi.application'
 
-# ─── Base de données PostgreSQL ──────────────────────────────
+# ─── PostgreSQL Database ──────────────────────────────────
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -91,10 +92,10 @@ DATABASES = {
     }
 }
 
-# ─── Modèle utilisateur personnalisé ────────────────────────
+# ─── Custom User Model ───────────────────────────────────
 AUTH_USER_MODEL = 'accounts.CustomUser'
 
-# ─── Validation des mots de passe ────────────────────────────
+# ─── Password Validation ─────────────────────────────────
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
@@ -102,48 +103,48 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-# ─── Internationalisation ────────────────────────────────────
+# ─── Internationalization ─────────────────────────────────
 LANGUAGE_CODE = 'fr-fr'
 TIME_ZONE = 'Africa/Algiers'
 USE_I18N = True
 USE_TZ = True
 
-# ─── Fichiers médias ────────────────────────────
+# ─── Media Files ──────────────────────────────────────────
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-# ─── Clé primaire par défaut ─────────────────────────────────
+# ─── Default Primary Key ──────────────────────────────────
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# ─── Login / Logout ─────────────────────────────────────────
+# ─── Login/Logout Redirects ───────────────────────────────
 LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/dashboard/'
 LOGOUT_REDIRECT_URL = '/accounts/login/'
 
-# ─── Django REST Framework (Corrigé pour le dev local) ───────
+# ─── Django REST Framework ────────────────────────────────
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        # Changé en AllowAny temporairement pour s'assurer que React accède aux endpoints
-        'rest_framework.permissions.AllowAny', 
+        'rest_framework.permissions.AllowAny',  # Temporarily open for development
     ],
 }
 
+# ─── JWT Token Configuration ─────────────────────────────
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
 
-# ─── CORS (Autorise ton application Vite/React) ──────────────
+# ─── CORS (allows React dev server to call the API) ──────
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "http://localhost:5173",  # Port de ton serveur Vite (Frontend)
-    "http://127.0.0.1:5173",  # IP locale du serveur Vite
+    "http://localhost:5173",   # Vite dev server port
+    "http://127.0.0.1:5173",
 ]
 
-# Optionnel : Sécurité supplémentaire pour le dev afin d'éviter tout blocage de requêtes locales
+# Allow all origins during development to avoid CORS issues
 CORS_ALLOW_ALL_ORIGINS = True

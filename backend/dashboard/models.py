@@ -1,8 +1,20 @@
+# dashboard/models.py
+# ─────────────────────────────────────────────────────────────
+# Model for AI-generated reports. Stores the prompt, generated
+# HTML content, and date range for each report created by
+# supervisors using the Gemini AI integration.
+# ─────────────────────────────────────────────────────────────
 from django.db import models
 from django.conf import settings
 
 
 class RapportIA(models.Model):
+    """
+    Stores AI-generated network analysis reports.
+    Each report captures the user's prompt, the AI-generated HTML,
+    and the date range of data analyzed. Reports can be saved,
+    edited, and downloaded as PDF by supervisors.
+    """
     titre = models.CharField(max_length=255)
     prompt = models.TextField(help_text="La demande saisie par l'utilisateur")
     contenu = models.TextField(help_text="Contenu HTML généré par l'IA")

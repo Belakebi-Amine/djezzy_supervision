@@ -1,3 +1,9 @@
+# dashboard/rapport_services.py
+# ─────────────────────────────────────────────────────────────
+# AI report generation service. Collects real-time network data
+# and sends it to Google's Gemini API to produce professional
+# HTML reports with analysis, trends, and recommendations.
+# ─────────────────────────────────────────────────────────────
 import os
 from datetime import timedelta
 from django.utils import timezone
@@ -12,9 +18,15 @@ from accounts.models import CustomUser
 
 
 def _collecter_donnees(date_debut=None, date_fin=None):
-    """Collecte les données actuelles du réseau pour alimenter le rapport IA."""
+    """
+    Gathers current network statistics to feed the AI prompt.
+    Collects: site status, ticket counts, resolution rates,
+    top impacted sites, and geographic distribution.
+    Defaults to the last 30 days if no date range is provided.
+    """
     aujourd = timezone.now().date()
 
+    # Use provided date range or default to last 30 days
     if date_debut and date_fin:
         debut = timezone.make_aware(timezone.datetime.combine(date_debut, timezone.datetime.min.time()))
         fin = timezone.make_aware(timezone.datetime.combine(date_fin, timezone.datetime.max.time()))
@@ -22,13 +34,13 @@ def _collecter_donnees(date_debut=None, date_fin=None):
         debut = timezone.now() - timedelta(days=30)
         fin = timezone.now()
 
-    # Stats sites
+    # ── Site statistics ──
     total_sites = SiteReseau.objects.count()
     sites_up = SiteReseau.objects.filter(statut='UP').count()
     sites_down = SiteReseau.objects.filter(statut='DOWN').count()
     dispo = round((sites_up / total_sites * 100), 1) if total_sites else 100.0
 
-    # Stats tickets sur la période
+    # ── Ticket statistics for the period ──
     tickets_periode = Reclamation.objects.filter(created_at__range=(debut, fin))
     total_tickets = tickets_periode.count()
     ouverts = tickets_periode.filter(statut='ouvert').count()
@@ -36,7 +48,7 @@ def _collecter_donnees(date_debut=None, date_fin=None):
     fermes = tickets_periode.filter(statut='ferme').count()
     critques = tickets_periode.filter(priorite='critique').count()
 
-    # Répartition par priorité
+    # ── Priority breakdown ──
     repartition_priorite = {
         'critique': tickets_periode.filter(priorite='critique').count(),
         'haute': tickets_periode.filter(priorite='haute').count(),
@@ -44,18 +56,18 @@ def _collecter_donnees(date_debut=None, date_fin=None):
         'basse': tickets_periode.filter(priorite='basse').count(),
     }
 
-    # Top sites impactés
+    # ── Top 7 most impacted sites ──
     top_sites = (
         tickets_periode.values('site__codeSite', 'site__nom')
         .annotate(nb=Count('id'))
         .order_by('-nb')[:7]
     )
 
-    # Taux de résolution
+    # ── Resolution metrics ──
     tickets_resolus = tickets_periode.filter(statut__in=['resolu', 'ferme']).count()
     taux_resolution = round((tickets_resolus / total_tickets * 100), 1) if total_tickets else 0
 
-    # Délai moyen de résolution
+    # Average time from creation to resolution
     avg_delai = tickets_periode.filter(
         statut__in=['resolu', 'ferme'], resolu_le__isnull=False
     ).annotate(
@@ -71,7 +83,7 @@ def _collecter_donnees(date_debut=None, date_fin=None):
         minutes = int((avg_delai.total_seconds() % 3600) // 60)
         delai_moyen = f"{heures}h {minutes}m"
 
-    # Top wilayas
+    # ── Top 5 wilayas by ticket volume ──
     wilayas = (
         tickets_periode.values('site__wilaya')
         .annotate(nb=Count('id'))
@@ -112,7 +124,17 @@ def _collecter_donnees(date_debut=None, date_fin=None):
 
 def generer_rapport_ia(prompt_utilisateur, date_debut=None, date_fin=None):
     """
-    Génère un rapport HTML via Gemini basé sur les données réelles du réseau.
+    Generates a professional HTML report via Gemini AI.
+
+    Flow:
+    1. Collects real network data from the database
+    2. Builds a detailed prompt with the data + user's request
+    3. Sends to Gemini 2.5 Flash for report generation
+    4. Cleans up markdown code blocks if present in the response
+    5. Returns the HTML content for display in the frontend
+
+    The prompt instructs the AI to act as a Djezzy network analyst
+    and produce a structured, styled HTML report in French.
     """
     api_key = config('GEMINI_API_KEY', default=None)
 
@@ -155,6 +177,7 @@ def generer_rapport_ia(prompt_utilisateur, date_debut=None, date_fin=None):
             contents=prompt,
         )
         html = response.text.strip()
+        # Strip markdown code fences if the AI wraps its HTML output
         if html.startswith('```html'):
             html = html[7:]
         if html.endswith('```'):

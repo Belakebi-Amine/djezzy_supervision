@@ -1,5 +1,14 @@
+// api/dashboard.js
+// ─────────────────────────────────────────────────────────────
+// Dashboard API functions. Uses fetch() instead of Axios for
+// the main dashboard data. Includes JWT management inline
+// (decode, refresh, inject) for each request. Handles all
+// dashboard-related API calls: stats, reporting, sites, tickets,
+// comments, and AI report generation.
+// ─────────────────────────────────────────────────────────────
 const API_URL = "http://127.0.0.1:8000/api";
 
+// Decode JWT payload to check expiration
 const decodePayload = (token) => {
     try {
         const base64Url = token.split('.')[1];
@@ -8,6 +17,7 @@ const decodePayload = (token) => {
     } catch { return null; }
 };
 
+// Refresh the access token when it expires
 const refreshToken = async () => {
     const refresh = localStorage.getItem('refresh_token');
     if (!refresh) return null;
@@ -31,6 +41,7 @@ const refreshToken = async () => {
     }
 };
 
+// Build auth headers with automatic token refresh
 const getHeaders = async () => {
     let token = localStorage.getItem('access_token') || localStorage.getItem('token');
     const payload = token ? decodePayload(token) : null;
@@ -47,6 +58,16 @@ const getHeaders = async () => {
         'Authorization': token ? `Bearer ${token}` : ''
     };
 };
+
+// Redirect to login on 401 Unauthorized
+const checkAuthAndRedirect = (status) => {
+    if (status === 401) {
+        ['token', 'access_token', 'refresh_token'].forEach(k => localStorage.removeItem(k));
+        window.location.href = '/login';
+    }
+};
+
+// ── Dashboard Stats & Reporting ──
 
 export const getDashboardStats = async (jours = 30) => {
     const response = await fetch(`${API_URL}/dashboard/stats/?jours=${jours}`, {
@@ -75,6 +96,8 @@ export const getDashboardCartoSites = async () => {
     return await response.json();
 };
 
+// ── Reclamations ──
+
 export const getReclamationsList = async (params = {}) => {
     const qs = new URLSearchParams(params).toString();
     const response = await fetch(`${API_URL}/reclamations/?${qs}`, {
@@ -96,6 +119,8 @@ export const updateReclamation = async (id, data) => {
     return await response.json();
 };
 
+// ── Sites ──
+
 export const getSiteDetail = async (id) => {
     const response = await fetch(`${API_URL}/sites/${id}/`, {
         method: 'GET',
@@ -103,13 +128,6 @@ export const getSiteDetail = async (id) => {
     });
     if (!response.ok) throw new Error(`Erreur site [${response.status}]`);
     return await response.json();
-};
-
-const checkAuthAndRedirect = (status) => {
-    if (status === 401) {
-        ['token', 'access_token', 'refresh_token'].forEach(k => localStorage.removeItem(k));
-        window.location.href = '/login';
-    }
 };
 
 export const updateSite = async (id, data) => {
@@ -123,6 +141,8 @@ export const updateSite = async (id, data) => {
     return await response.json();
 };
 
+// ── Comments ──
+
 export const addComment = async (ticketId, contenu) => {
     const response = await fetch(`${API_URL}/reclamations/${ticketId}/commentaire/`, {
         method: 'POST',
@@ -133,7 +153,8 @@ export const addComment = async (ticketId, contenu) => {
     return await response.json();
 };
 
-// ── Rapport IA ────────────────────────────────────────────────
+// ── AI Reports ──
+
 export const genererRapportIA = async (prompt, dateDebut, dateFin) => {
     const body = { prompt };
     if (dateDebut) body.date_debut = dateDebut;

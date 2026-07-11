@@ -1,3 +1,10 @@
+# reclamations/models.py
+# ─────────────────────────────────────────────────────────────
+# Ticket and comment models for the complaint management system.
+# The Reclamation model is the core entity that tracks customer
+# complaints from creation to resolution, with AI-powered
+# description generation when tickets are created.
+# ─────────────────────────────────────────────────────────────
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
@@ -6,7 +13,9 @@ from sites_reseau.models import SiteReseau
 
 class Reclamation(models.Model):
     """
-    Modèle principal pour représenter un ticket de réclamation.
+    Main complaint ticket model. Each ticket represents a customer
+    issue tied to a specific network site. The AI integration auto-generates
+    structured descriptions from quick agent notes (mots_cles_ia).
     """
 
     STATUT_CHOICES = [
@@ -27,10 +36,10 @@ class Reclamation(models.Model):
         ('entreprise',  'Entreprise'),
     ]
 
-    # --- IDENTIFICATION UNIQUE ---
+    # ── Ticket identification ──
     numero_ticket = models.CharField(max_length=20, unique=True, editable=False)
 
-    # --- DONNÉES DU CLIENT ---
+    # ── Customer information ──
     nom_client = models.CharField(max_length=200, verbose_name='Nom du client')
     telephone_client = models.CharField(max_length=20, verbose_name='Téléphone client')
     email_client = models.EmailField(verbose_name='Email client', blank=True, default='')
@@ -39,7 +48,7 @@ class Reclamation(models.Model):
         verbose_name='Type de client',
     )
 
-    # --- LIEN AVEC L'INFRASTRUCTURE DJEZZY ---
+    # ── Link to Djezzy's network infrastructure ──
     site = models.ForeignKey(
         SiteReseau,
         on_delete=models.SET_NULL,
@@ -48,7 +57,7 @@ class Reclamation(models.Model):
         verbose_name='Site concerné',
     )
 
-    # --- BRIQUE D'INTÉGRATION IA ---
+    # ── AI integration: keywords fed to Gemini for auto-description ──
     mots_cles_ia = models.CharField(
         max_length=255,
         blank=True,
@@ -56,12 +65,12 @@ class Reclamation(models.Model):
         verbose_name="Mots-clés pour l'IA",
     )
 
-    # --- DÉTAILS ET ÉTATS DU TICKET ---
+    # ── Ticket details ──
     description = models.TextField(verbose_name="Description de l'incident", blank=True, null=True)
     priorite = models.CharField(max_length=10, choices=PRIORITE_CHOICES, default='normale')
     statut = models.CharField(max_length=10, choices=STATUT_CHOICES, default='ferme')
 
-    # --- ACTEURS ---
+    # ── Actors ──
     cree_par = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -77,7 +86,7 @@ class Reclamation(models.Model):
         verbose_name='Assigné à',
     )
 
-    # --- TIMESTAMPS ---
+    # ── Timestamps ──
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     resolu_le = models.DateTimeField(null=True, blank=True)
@@ -95,7 +104,13 @@ class Reclamation(models.Model):
         return self.nom_client
 
     def save(self, *args, **kwargs):
-        # 1. DÉCLENCHEMENT AUTOMATIQUE DE L'IA
+        """
+        Custom save logic:
+        1. Auto-generates description via AI if mots_cles_ia is set
+        2. Generates unique ticket number (TK001, TK002...)
+        3. Tracks resolution timestamp
+        """
+        # Step 1: AI description generation from agent keywords
         if self.mots_cles_ia and not self.description:
             from .services import generer_description_incident_ia
             self.description = generer_description_incident_ia(
@@ -104,7 +119,7 @@ class Reclamation(models.Model):
                 mots_cles=self.mots_cles_ia,
             )
 
-        # 2. GÉNÉRATION DU NUMÉRO DE TICKET
+        # Step 2: Auto-generate unique ticket number
         if not self.numero_ticket:
             import re
             existing = Reclamation.objects.filter(numero_ticket__regex=r'^TK\d+$').values_list('numero_ticket', flat=True)
@@ -118,7 +133,7 @@ class Reclamation(models.Model):
                     continue
             self.numero_ticket = f'TK{str(max_num + 1).zfill(3)}'
 
-        # 3. SUIVI DU MOMENT DE RÉSOLUTION
+        # Step 3: Record when the ticket was resolved
         if self.statut == 'resolu' and not self.resolu_le:
             self.resolu_le = timezone.now()
         elif self.statut != 'resolu':
@@ -128,6 +143,10 @@ class Reclamation(models.Model):
 
 
 class CommentaireTicket(models.Model):
+    """
+    Comments added by engineers on tickets. Used for internal
+    communication about issue resolution progress.
+    """
     reclamation = models.ForeignKey(
         Reclamation,
         on_delete=models.CASCADE,

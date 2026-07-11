@@ -1,10 +1,21 @@
 # sites_reseau/models.py
+# ─────────────────────────────────────────────────────────────
+# Network site model representing Djezzy's BTS (Base Transceiver
+# Station) sites across Algeria. Each site has geographic coordinates,
+# a status (UP/DOWN), technology type (4G/5G), and coverage radius
+# for the interactive map display.
+# ─────────────────────────────────────────────────────────────
 from django.db import models
+
 
 class SiteReseau(models.Model):
     """
-    Entité Site5G de mon diagramme de classes.
-    J'ai adapté les noms pour qu'ils correspondent exactement à ma conception.
+    Represents a single network site (BTS) in Djezzy's infrastructure.
+    Key features:
+    - Auto-generated site codes (S001, S002...)
+    - Status tracking (UP/DOWN) for real-time monitoring
+    - Geographic coordinates for map visualization
+    - Soft-delete via archive flag instead of actual deletion
     """
 
     STATUT_CHOICES = [
@@ -17,37 +28,26 @@ class SiteReseau(models.Model):
         ('5G', '5G'),
     ]
 
-    # --- ATTRIBUTS DU DIAGRAMME ---
-    # codeSite dans mon diagramme
+    # ── Identification ──
     codeSite = models.CharField(max_length=50, verbose_name="Code du Site")
-    
-    # nom dans mon diagramme
     nom = models.CharField(max_length=200)
-    
-    # wilaya et commune
+
+    # ── Geographic location ──
     wilaya = models.CharField(max_length=100)
     commune = models.CharField(max_length=100)
-    
-    # coordX et coordY (longitude et latitude dans mon diagramme)
     coordX = models.DecimalField(max_digits=12, decimal_places=9, null=True, blank=True, verbose_name="Longitude (X)")
     coordY = models.DecimalField(max_digits=12, decimal_places=9, null=True, blank=True, verbose_name="Latitude (Y)")
-    
-    # adresse
     adresse = models.TextField(blank=True)
-    
-    # statut : j'ajoute ce champ pour la gestion opérationnelle
-    statut = models.CharField(max_length=10, choices=STATUT_CHOICES, default='UP')
 
-    # technologie : 4G ou 5G (pour les perspectives d'avenir)
+    # ── Operational status ──
+    statut = models.CharField(max_length=10, choices=STATUT_CHOICES, default='UP')
     technologie = models.CharField(max_length=2, choices=TECHNOLOGIE_CHOICES, default='5G', verbose_name="Technologie")
 
-    # archive : true = site archivé (caché de l'interface mais conservé en BD)
+    # ── Soft delete & coverage ──
     archive = models.BooleanField(default=False)
-
-    # rayon de couverture en mètres (pour l'affichage carte)
     rayon_couverture = models.IntegerField(default=800, verbose_name="Rayon de couverture (m)")
 
-    # Dates de suivi technique
+    # ── Timestamps ──
     derniere_maj = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -59,9 +59,8 @@ class SiteReseau(models.Model):
     def __str__(self):
         return f"{self.codeSite} - {self.nom} ({self.wilaya})"
 
-    # --- MÉTHODES DU DIAGRAMME ---
-
     def save(self, *args, **kwargs):
+        """Auto-generates site code (S001, S002...) on first save."""
         if not self.codeSite:
             import re
             existing = SiteReseau.objects.filter(codeSite__regex=r'^S\d+$').values_list('codeSite', flat=True)
@@ -77,22 +76,19 @@ class SiteReseau(models.Model):
         super().save(*args, **kwargs)
 
     def ajouterSite(self):
-        """
-        Je sauvegarde mon nouveau site dans la base.
-        """
+        """Persists a new site to the database."""
         self.save()
 
     def modifierSite(self, data):
-        """
-        Je mets à jour les informations de mon site avec les données reçues.
-        """
+        """Updates site attributes from a dict and saves."""
         for key, value in data.items():
             setattr(self, key, value)
         self.save()
 
     def archiverSite(self):
         """
-        Au lieu de supprimer, je marque le site comme archivé (caché par défaut).
+        Soft-deletes the site by setting archive=True.
+        The site remains in the DB but is hidden from normal queries.
         """
         self.archive = True
         self.save()

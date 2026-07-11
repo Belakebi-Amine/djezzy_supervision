@@ -1,3 +1,10 @@
+# reclamations/services.py
+# ─────────────────────────────────────────────────────────────
+# AI service for automatic incident description generation.
+# Uses Google's Gemini API to transform quick agent notes
+# (keywords taken during a phone call) into a structured
+# incident report for the network engineering team.
+# ─────────────────────────────────────────────────────────────
 import os
 from decouple import config
 from google import genai
@@ -5,8 +12,16 @@ from google import genai
 
 def generer_description_incident_ia(nom_client, telephone_client, mots_cles):
     """
-    Transforme les notes rapides prises par l'agent au téléphone
-    en un rapport d'incident structuré pour Djezzy, via Gemini.
+    Transforms quick call center notes into a structured incident report.
+
+    The flow:
+    1. Agent takes brief notes during customer call (mots_cles)
+    2. On ticket save, this function sends those notes to Gemini
+    3. Gemini returns a formatted report with: problem description,
+       impact assessment, perceived urgency, and transmission note
+    4. The report is stored in the ticket's description field
+
+    If the API key is missing or the call fails, falls back to raw notes.
     """
     api_key = config('GEMINI_API_KEY', default=None)
 

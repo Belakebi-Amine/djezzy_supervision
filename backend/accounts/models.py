@@ -1,11 +1,17 @@
 # accounts/models.py
+# ─────────────────────────────────────────────────────────────
+# Custom user model for Djezzy Supervision.
+# Replaces Django's default User to add role-based access control
+# matching the project's UML class diagram.
+# ─────────────────────────────────────────────────────────────
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
+
 class Role(models.TextChoices):
     """
-    Ici, je définis les rôles exactement comme ils apparaissent sur mon diagramme.
-    Cela me permet de restreindre les accès plus tard dans mon projet.
+    Enum for user roles. Each role maps to a specific dashboard
+    and set of permissions within the application.
     """
     ADMIN                = 'ADMIN',                'Administrateur'
     INGENIEUR_RESEAUX    = 'INGENIEUR_RESEAUX',    'Ingénieur Réseaux'
@@ -13,56 +19,53 @@ class Role(models.TextChoices):
     RESPONSABLE_REPORTING = 'RESPONSABLE_REPORTING','Responsable Reporting'
     SUPERVISEUR          = 'SUPERVISEUR',          'Superviseur'
 
+
 class CustomUser(AbstractUser):
     """
-    Ma classe Utilisateur : c'est le miroir de mon diagramme de classes.
-    Je l'ai conçue pour regrouper tous les attributs et méthodes de l'entité Utilisateur.
+    Extended user model that replaces the default Django User.
+    Key changes from AbstractUser:
+    - Authentication via email instead of username
+    - Auto-generated unique code (U001, U002...) as primary identifier
+    - Role field for RBAC across the four dashboards
     """
 
-    # --- ATTRIBUTS DU DIAGRAMME ---
-    # id_user    -> j'utilise le champ 'id' auto-incrémenté de Django.
-    # nom_user   -> je le gère via une propriété (voir plus bas).
-    # email      -> j'utilise le champ 'email' hérité de AbstractUser (unique, sert à l'authentification).
-    # motDePasse -> j'utilise le champ 'password' sécurisé de Django.
-    
-    # Remplacer le username par un code_user auto-généré (ex: U001, U002...)
+    # Auto-incremented code like U001, U002... generated on first save
     code_user = models.CharField(
         max_length=10,
         unique=True,
         editable=False,
         verbose_name='Code utilisateur',
     )
-    
-    # L'email devient le champ d'authentification principal
+
+    # Email becomes the login field instead of username
     email = models.EmailField(unique=True, blank=False)
-    
-    # Pour le role_user, je crée ce champ avec les choix définis plus haut.
+
+    # Role determines which dashboard the user sees after login
     role = models.CharField(
         max_length=30,
         choices=Role.choices,
         default=Role.AGENT_CALL_CENTER,
-        verbose_name='role_user' 
+        verbose_name='role_user'
     )
 
     class Meta:
         verbose_name = 'Utilisateur'
         verbose_name_plural = 'Utilisateurs'
 
-    # On utilise l'email pour l'authentification au lieu du username
+    # Use email for authentication (login form sends email, not username)
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
 
-    # --- MÉTHODES DU DIAGRAMME ---
-
     @property
     def nom_user(self):
-        """
-        Dans mon diagramme, j'ai un attribut 'nom_user'. 
-        Ici, je le calcule en combinant le prénom et le nom pour qu'il soit dynamique.
-        """
+        """Computed full name, falls back to code_user if no name is set."""
         return self.get_full_name() or self.code_user
 
     def save(self, *args, **kwargs):
+        """
+        Auto-generates a unique code (U001, U002...) on first save.
+        Scans existing codes and increments from the highest number found.
+        """
         if not self.code_user:
             import re
             existing = CustomUser.objects.filter(code_user__regex=r'^U\d+$').values_list('code_user', flat=True)
@@ -79,22 +82,17 @@ class CustomUser(AbstractUser):
         super().save(*args, **kwargs)
 
     def sAuthentifier(self) -> bool:
-        """
-        Cette méthode de mon diagramme vérifie si je peux me connecter.
-        Je me base sur le statut 'is_active' de mon compte.
-        """
+        """Checks if the account is active and can log in."""
         return self.is_active
 
     def deconnecter(self) -> None:
-        """
-        Prévue dans mon schéma, cette action sera déclenchée par mes vues de déconnexion.
-        """
+        """Placeholder for logout logic (handled at view level with JWT)."""
         pass
 
     def modifierMotDePasse(self, ancien: str, nouveau: str) -> bool:
         """
-        Je vérifie d'abord si l'ancien mot de passe est correct avant d'enregistrer le nouveau,
-        exactement comme je l'ai modélisé.
+        Changes password after verifying the old one.
+        Returns True on success, False if old password is wrong.
         """
         if self.check_password(ancien):
             self.set_password(nouveau)
@@ -104,8 +102,8 @@ class CustomUser(AbstractUser):
 
     def mettreAJourProfil(self, data: dict) -> None:
         """
-        Je reçois un dictionnaire de données et je mets à jour mes informations
-        (nom, prénom, email) de manière sécurisée.
+        Updates profile fields (first_name, last_name, email) from a dict.
+        Only updates fields that actually exist on the model.
         """
         for champ, valeur in data.items():
             if hasattr(self, champ):

@@ -14,7 +14,17 @@ const Login = () => {
     useEffect(() => {
         const token = localStorage.getItem('token') || localStorage.getItem('access_token');
         if (token) {
-            navigate('/engineer-dashboard');
+            try {
+                const base64Url = token.split('.')[1];
+                const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+                const decoded = JSON.parse(atob(base64));
+                const r = (decoded?.role || decoded?.role_user || '').toString().toLowerCase();
+                if (r.includes('admin')) navigate('/admin-dashboard');
+                else if (r.includes('call') || r.includes('agent')) navigate('/call-center-dashboard');
+                else if (r.includes('ingenieur') || r.includes('engineer') || r.includes('reseau')) navigate('/engineer-dashboard');
+                else if (r.includes('reporting') || r.includes('responsable') || r.includes('supervis')) navigate('/supervisor-dashboard');
+                else navigate('/engineer-dashboard');
+            } catch { navigate('/engineer-dashboard'); }
         }
     }, [navigate]);
 
@@ -104,39 +114,40 @@ const Login = () => {
     };
 
     return (
-        <div style={styles.container}>
-            <div style={styles.gradientBg}>
-                <div style={styles.shapes}>
-                    <div style={styles.shape1} />
-                    <div style={styles.shape2} />
-                    <div style={styles.shape3} />
-                </div>
+        <div style={S.container}>
+            <div style={S.bgDecor}>
+                <div style={S.circle1} />
+                <div style={S.circle2} />
+                <div style={S.circle3} />
+                <div style={S.gridPattern} />
             </div>
 
-            <div style={styles.loginCard}>
-                <div style={styles.logoWrapper}>
-                    <img src={logoDjezzy} alt="Djezzy Logo" style={styles.logo} />
+            <div style={S.loginCard}>
+                <div style={S.topAccent} />
+
+                <div style={S.logoWrapper}>
+                    <img src={logoDjezzy} alt="Djezzy" style={S.logo} />
                 </div>
 
-                <h2 style={styles.title}>Bienvenue</h2>
-                <p style={styles.subtitle}>Connectez-vous a votre espace</p>
+                <h2 style={S.title}>Bienvenue</h2>
+                <p style={S.subtitle}>Connectez-vous a votre espace de supervision</p>
 
                 {error && (
-                    <div style={styles.errorBox}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, marginTop: '1px' }}><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                    <div style={S.errorBox}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
                         <span>{error}</span>
                     </div>
                 )}
 
-                <form onSubmit={handleSubmit} style={styles.form}>
-                    <div style={styles.inputGroup}>
-                        <label style={styles.label}>Email</label>
-                        <div style={styles.inputWrapper}>
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="1.8" style={styles.inputIcon}><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 4l-10 8L2 4"/></svg>
+                <form onSubmit={handleSubmit} style={S.form}>
+                    <div style={S.inputGroup}>
+                        <label style={S.label}>Email</label>
+                        <div style={S.inputWrapper}>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="1.8" style={S.inputIcon}><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 4l-10 8L2 4"/></svg>
                             <input
                                 type="email"
                                 placeholder="exemple@email.com"
-                                style={styles.input}
+                                style={S.input}
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                                 autoFocus
@@ -144,20 +155,20 @@ const Login = () => {
                         </div>
                     </div>
 
-                    <div style={styles.inputGroup}>
-                        <label style={styles.label}>Mot de passe</label>
-                        <div style={styles.inputWrapper}>
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="1.8" style={styles.inputIcon}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    <div style={S.inputGroup}>
+                        <label style={S.label}>Mot de passe</label>
+                        <div style={S.inputWrapper}>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="1.8" style={S.inputIcon}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                             <input
                                 type={showPassword ? "text" : "password"}
                                 placeholder="••••••••"
-                                style={styles.input}
+                                style={S.input}
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                             />
                             <button
                                 type="button"
-                                style={styles.eyeButton}
+                                style={S.eyeButton}
                                 onClick={() => setShowPassword(!showPassword)}
                                 tabIndex={-1}
                             >
@@ -170,10 +181,10 @@ const Login = () => {
                         </div>
                     </div>
 
-                    <button type="submit" style={loading ? { ...styles.button, ...styles.buttonDisabled } : styles.button} disabled={loading}>
+                    <button type="submit" style={loading ? { ...S.button, ...S.buttonDisabled } : S.button} disabled={loading}>
                         {loading ? (
-                            <span style={styles.buttonContent}>
-                                <span style={styles.spinner} />
+                            <span style={S.buttonContent}>
+                                <span style={S.spinner} />
                                 Connexion en cours...
                             </span>
                         ) : (
@@ -181,146 +192,158 @@ const Login = () => {
                         )}
                     </button>
                 </form>
+
+                <p style={S.footer}>Djezzy Hub &middot; Plateforme de gestion des reclamations</p>
             </div>
         </div>
     );
 };
 
-const styles = {
+const S = {
     container: {
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
         minHeight: '100vh',
-        background: '#0F172A',
+        background: '#f5f6fa',
         fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
         position: 'relative',
         overflow: 'hidden',
     },
-    gradientBg: {
+    bgDecor: {
         position: 'absolute',
         inset: 0,
-        overflow: 'hidden',
+        pointerEvents: 'none',
     },
-    shapes: {
+    circle1: {
         position: 'absolute',
-        inset: 0,
-    },
-    shape1: {
-        position: 'absolute',
-        top: '-20%',
-        right: '-15%',
-        width: '500px',
-        height: '500px',
+        top: '-15%',
+        right: '-10%',
+        width: 500,
+        height: 500,
         borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(232, 64, 26, 0.15) 0%, rgba(232, 64, 26, 0) 70%)',
-        animation: 'pulse 6s ease-in-out infinite',
+        background: 'radial-gradient(circle, rgba(232,64,26,0.06) 0%, transparent 70%)',
+        animation: 'loginPulse 8s ease-in-out infinite',
     },
-    shape2: {
+    circle2: {
         position: 'absolute',
-        bottom: '-10%',
-        left: '-10%',
-        width: '350px',
-        height: '350px',
+        bottom: '-12%',
+        left: '-8%',
+        width: 400,
+        height: 400,
         borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(255, 107, 61, 0.1) 0%, rgba(255, 107, 61, 0) 70%)',
-        animation: 'pulse 8s ease-in-out infinite 2s',
+        background: 'radial-gradient(circle, rgba(37,99,235,0.05) 0%, transparent 70%)',
+        animation: 'loginPulse 10s ease-in-out infinite 3s',
     },
-    shape3: {
+    circle3: {
         position: 'absolute',
-        top: '40%',
+        top: '50%',
         left: '50%',
-        width: '400px',
-        height: '400px',
+        transform: 'translate(-50%, -50%)',
+        width: 600,
+        height: 600,
         borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(168, 85, 247, 0.08) 0%, rgba(168, 85, 247, 0) 70%)',
-        animation: 'pulse 10s ease-in-out infinite 4s',
+        background: 'radial-gradient(circle, rgba(139,92,246,0.03) 0%, transparent 70%)',
+        animation: 'loginPulse 12s ease-in-out infinite 5s',
+    },
+    gridPattern: {
+        position: 'absolute',
+        inset: 0,
+        backgroundImage: 'radial-gradient(circle, #d8dde5 1px, transparent 1px)',
+        backgroundSize: '32px 32px',
+        opacity: 0.3,
     },
     loginCard: {
-        width: '420px',
-        backgroundColor: 'rgba(30, 41, 59, 0.9)',
-        backdropFilter: 'blur(20px)',
-        borderRadius: '20px',
-        padding: '40px 36px',
-        boxShadow: '0 25px 50px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06)',
+        width: 420,
+        maxWidth: '92vw',
+        backgroundColor: '#ffffff',
+        borderRadius: 16,
+        padding: '0 36px 36px',
+        boxShadow: '0 4px 24px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04)',
         boxSizing: 'border-box',
         position: 'relative',
         zIndex: 1,
-        animation: 'fadeUp 0.6s ease-out',
+        animation: 'loginFadeUp 0.5s cubic-bezier(0.4,0,0.2,1)',
+        overflow: 'hidden',
+    },
+    topAccent: {
+        height: 4,
+        background: 'linear-gradient(90deg, #E8401A, #FF6B3D)',
+        margin: '0 -36px 32px',
+        borderRadius: '0 0 2px 2px',
     },
     logoWrapper: {
         display: 'flex',
         justifyContent: 'center',
-        marginBottom: '32px',
+        marginBottom: 24,
     },
     logo: {
-        width: '100px',
+        width: 120,
         height: 'auto',
         objectFit: 'contain',
-        display: 'block',
     },
     title: {
-        color: '#FFFFFF',
+        color: '#1c212b',
         textAlign: 'center',
-        fontSize: '26px',
+        fontSize: 24,
         fontWeight: 700,
-        margin: '0 0 6px 0',
-        letterSpacing: '-0.5px',
+        margin: '0 0 4px',
+        letterSpacing: '-0.3px',
     },
     subtitle: {
-        color: '#64748B',
+        color: '#818898',
         textAlign: 'center',
-        fontSize: '14px',
-        margin: '0 0 28px 0',
+        fontSize: 13,
+        margin: '0 0 28px',
     },
     errorBox: {
         display: 'flex',
         alignItems: 'flex-start',
-        gap: '10px',
-        backgroundColor: 'rgba(239, 68, 68, 0.1)',
-        border: '1px solid rgba(239, 68, 68, 0.25)',
-        color: '#FCA5A5',
+        gap: 10,
+        backgroundColor: '#FEF2F2',
+        border: '1px solid #FECACA',
+        color: '#B91C1C',
         padding: '12px 14px',
-        borderRadius: '10px',
-        fontSize: '13px',
-        marginBottom: '20px',
-        animation: 'shake 0.4s ease-in-out',
+        borderRadius: 10,
+        fontSize: 13,
+        marginBottom: 20,
+        animation: 'loginShake 0.4s ease-in-out',
     },
     form: {
         display: 'flex',
         flexDirection: 'column',
-        gap: '20px',
+        gap: 18,
     },
     inputGroup: {
         display: 'flex',
         flexDirection: 'column',
-        gap: '8px',
+        gap: 6,
     },
     label: {
-        color: '#94A3B8',
-        fontSize: '13px',
-        fontWeight: 500,
+        color: '#475569',
+        fontSize: 13,
+        fontWeight: 600,
     },
     inputWrapper: {
         display: 'flex',
         alignItems: 'center',
-        backgroundColor: '#1E293B',
-        borderRadius: '12px',
-        border: '1px solid #334155',
+        backgroundColor: '#f8fafc',
+        borderRadius: 10,
+        border: '1px solid #e2e8f0',
         padding: '0 14px',
         transition: 'all 0.2s ease',
     },
     inputIcon: {
         flexShrink: 0,
-        marginRight: '12px',
+        marginRight: 12,
     },
     input: {
         flex: 1,
-        padding: '14px 0',
+        padding: '13px 0',
         border: 'none',
         backgroundColor: 'transparent',
-        fontSize: '14px',
-        color: '#F1F5F9',
+        fontSize: 14,
+        color: '#1c212b',
         outline: 'none',
         fontFamily: 'inherit',
     },
@@ -328,56 +351,70 @@ const styles = {
         background: 'none',
         border: 'none',
         cursor: 'pointer',
-        padding: '4px',
+        padding: 4,
         display: 'flex',
         alignItems: 'center',
         flexShrink: 0,
+        borderRadius: 6,
+        transition: 'background 0.15s ease',
     },
     button: {
         backgroundColor: '#E8401A',
-        color: '#FFFFFF',
+        color: '#ffffff',
         border: 'none',
-        padding: '14px 20px',
-        borderRadius: '12px',
-        fontSize: '15px',
+        padding: '13px 20px',
+        borderRadius: 10,
+        fontSize: 14,
         fontWeight: 600,
         cursor: 'pointer',
-        marginTop: '4px',
+        marginTop: 4,
         transition: 'all 0.2s ease',
         fontFamily: 'inherit',
+        boxShadow: '0 2px 8px rgba(232,64,26,0.25)',
     },
     buttonDisabled: {
-        backgroundColor: '#334155',
+        backgroundColor: '#cbd5e1',
         cursor: 'not-allowed',
-        opacity: 0.7,
+        boxShadow: 'none',
     },
     buttonContent: {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '10px',
+        gap: 10,
     },
     spinner: {
-        width: '18px',
-        height: '18px',
+        width: 18,
+        height: 18,
         border: '2px solid rgba(255,255,255,0.3)',
-        borderTopColor: '#FFFFFF',
+        borderTopColor: '#ffffff',
         borderRadius: '50%',
         animation: 'spin 0.7s linear infinite',
+    },
+    footer: {
+        textAlign: 'center',
+        fontSize: 11,
+        color: '#94a3b8',
+        marginTop: 28,
+        marginBottom: 0,
     },
 };
 
 const styleSheet = document.createElement('style');
 styleSheet.textContent = `
-    @keyframes pulse {
-        0%, 100% { transform: scale(1); opacity: 0.5; }
-        50% { transform: scale(1.1); opacity: 0.8; }
+    @keyframes loginPulse {
+        0%, 100% { transform: scale(1); opacity: 0.6; }
+        50% { transform: scale(1.08); opacity: 1; }
     }
-    @keyframes fadeUp {
-        from { opacity: 0; transform: translateY(20px); }
+    @keyframes loginFadeUp {
+        from { opacity: 0; transform: translateY(16px); }
         to { opacity: 1; transform: translateY(0); }
     }
-    @keyframes shake {
+    @keyframes loginScaleIn {
+        from { opacity: 0; transform: scale(0.8); }
+        to { opacity: 1; transform: scale(1); }
+    }
+    @keyframes loginShake {
         0%, 100% { transform: translateX(0); }
         20% { transform: translateX(-4px); }
         40% { transform: translateX(4px); }
@@ -386,6 +423,10 @@ styleSheet.textContent = `
     }
     @keyframes spin {
         to { transform: rotate(360deg); }
+    }
+    input:focus ~ div, input:focus + div {
+        border-color: #E8401A !important;
+        box-shadow: 0 0 0 3px rgba(232,64,26,0.1) !important;
     }
 `;
 document.head.appendChild(styleSheet);

@@ -1,6 +1,12 @@
-// src/api/tickets.js
+// api/tickets.js
+// ─────────────────────────────────────────────────────────────
+// Ticket and site management API functions. Handles CRUD for
+// reclamation tickets, network sites, and user management.
+// Includes JWT token handling for authenticated requests.
+// ─────────────────────────────────────────────────────────────
 const API_URL = "http://127.0.0.1:8000/api";
 
+// Extract user role from the JWT token payload
 export const getTokenRole = () => {
     const token = localStorage.getItem('access_token') || localStorage.getItem('token');
     if (!token) return null;
@@ -56,9 +62,19 @@ const getHeaders = async () => {
     };
 };
 
+// Redirect to login on 401
+const checkAuthAndRedirect = (status) => {
+    if (status === 401) {
+        ['token', 'access_token', 'refresh_token'].forEach(k => localStorage.removeItem(k));
+        window.location.href = '/login';
+    }
+};
+
+// ── Ticket Operations ──
+
 /**
- * Récupère la liste des réclamations.
- * @param {string} statut - ex: 'ouvert,en_cours' ou 'resolu,ferme'
+ * Fetches reclamation tickets with optional status filtering.
+ * @param {string} statut - Comma-separated statuses (e.g., 'ouvert,resolu')
  */
 export const getTickets = async (statut = '') => {
     let url = `${API_URL}/reclamations/`;
@@ -74,8 +90,8 @@ export const getTickets = async (statut = '') => {
 };
 
 /**
- * Crée un nouveau ticket de réclamation.
- * Les clés doivent correspondre aux champs du ReclamationSerializer.
+ * Creates a new complaint ticket.
+ * @param {Object} ticketData - Ticket fields matching ReclamationSerializer
  */
 export const createTicket = async (ticketData) => {
     const response = await fetch(`${API_URL}/reclamations/creer/`, {
@@ -95,7 +111,7 @@ export const createTicket = async (ticketData) => {
 };
 
 /**
- * Met à jour un ticket existant (PUT partiel).
+ * Updates an existing ticket (partial PUT).
  */
 export const updateTicket = async (id, ticketData) => {
     const response = await fetch(`${API_URL}/reclamations/${id}/`, {
@@ -112,9 +128,8 @@ export const updateTicket = async (id, ticketData) => {
     return response.json();
 };
 
-/**
- * Récupère le profil de l'utilisateur connecté.
- */
+// ── User Profile ──
+
 export const getMe = async () => {
     try {
         const response = await fetch(`${API_URL}/accounts/me/`, { method: 'GET', headers: await getHeaders() });
@@ -125,9 +140,9 @@ export const getMe = async () => {
     }
 };
 
-/**
- * Récupère les ingénieurs réseau pour l'assignation.
- */
+// ── Dropdown Lists ──
+
+/** Fetches network engineers for ticket assignment */
 export const getEngineers = async () => {
     const response = await fetch(`${API_URL}/accounts/ingenieurs/`, { method: 'GET', headers: await getHeaders() });
     if (!response.ok) {
@@ -136,9 +151,7 @@ export const getEngineers = async () => {
     return await response.json();
 };
 
-/**
- * Récupère les agents Call Center.
- */
+/** Fetches call center agents for filtering */
 export const getAgentsCC = async () => {
     const response = await fetch(`${API_URL}/accounts/agents-cc/`, { method: 'GET', headers: await getHeaders() });
     if (!response.ok) {
@@ -147,10 +160,9 @@ export const getAgentsCC = async () => {
     return await response.json();
 };
 
-/**
- * Récupère les sites réseau Djezzy pour le formulaire de création.
- * NOTE: vérifie que sites_reseau/urls.py expose bien un endpoint de liste à cette racine.
- */
+// ── Network Sites ──
+
+/** Fetches all network sites for forms and dropdowns */
 export const getSites = async () => {
     const response = await fetch(`${API_URL}/sites/`, { method: 'GET', headers: await getHeaders() });
     if (!response.ok) {
@@ -159,16 +171,7 @@ export const getSites = async () => {
     return await response.json();
 };
 
-/**
- * Met à jour le statut d'un site (UP/DOWN).
- */
-const checkAuthAndRedirect = (status) => {
-    if (status === 401) {
-        ['token', 'access_token', 'refresh_token'].forEach(k => localStorage.removeItem(k));
-        window.location.href = '/login';
-    }
-};
-
+/** Updates a site's status or details */
 export const updateSiteStatus = async (id, data) => {
     const response = await fetch(`${API_URL}/sites/${id}/`, {
         method: 'PUT',
@@ -182,9 +185,7 @@ export const updateSiteStatus = async (id, data) => {
     return await response.json();
 };
 
-/**
- * Crée un nouveau site réseau.
- */
+/** Creates a new network site */
 export const createSite = async (siteData) => {
     const response = await fetch(`${API_URL}/sites/creer/`, {
         method: 'POST',
@@ -200,18 +201,16 @@ export const createSite = async (siteData) => {
     return response.json();
 };
 
-/**
- * Récupère la liste de tous les utilisateurs (admin seulement).
- */
+// ── Admin: User Management ──
+
+/** Fetches all users (admin only) */
 export const getUsers = async () => {
     const response = await fetch(`${API_URL}/accounts/users/`, { method: 'GET', headers: await getHeaders() });
     if (!response.ok) throw new Error(`Erreur serveur [${response.status}]`);
     return await response.json();
 };
 
-/**
- * Crée un nouvel utilisateur (admin seulement).
- */
+/** Creates a new user account (admin only) */
 export const createUser = async (userData) => {
     const response = await fetch(`${API_URL}/accounts/users/register/`, {
         method: 'POST',
@@ -222,9 +221,7 @@ export const createUser = async (userData) => {
     return await response.json();
 };
 
-/**
- * Archive un site (passe son statut en DOWN).
- */
+/** Soft-deletes a site (sets archive=True) */
 export const archiverSite = async (id) => {
     const response = await fetch(`${API_URL}/sites/${id}/archiver/`, {
         method: 'PUT',
@@ -237,11 +234,47 @@ export const archiverSite = async (id) => {
     return response.json();
 };
 
-/**
- * Désactive un utilisateur (admin seulement).
- */
+/** Archives a user (sets is_active=False) */
 export const archiveUser = async (codeUser) => {
     const response = await fetch(`${API_URL}/accounts/users/${codeUser}/archive/`, {
+        method: 'DELETE',
+        headers: await getHeaders(),
+    });
+    if (!response.ok) {
+        throw new Error(`Erreur serveur [${response.status}]`);
+    }
+    return response.json();
+};
+
+/** Updates a user's info (admin only) */
+export const updateUser = async (codeUser, data) => {
+    const response = await fetch(`${API_URL}/accounts/users/${codeUser}/`, {
+        method: 'PATCH',
+        headers: await getHeaders(),
+        body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || err.error || `Erreur serveur [${response.status}]`);
+    }
+    return response.json();
+};
+
+/** Restores an archived user (sets is_active=True) */
+export const restoreUser = async (codeUser) => {
+    const response = await fetch(`${API_URL}/accounts/users/${codeUser}/restore/`, {
+        method: 'POST',
+        headers: await getHeaders(),
+    });
+    if (!response.ok) {
+        throw new Error(`Erreur serveur [${response.status}]`);
+    }
+    return response.json();
+};
+
+/** Permanently deletes a user from the database */
+export const deleteUser = async (codeUser) => {
+    const response = await fetch(`${API_URL}/accounts/users/${codeUser}/delete/`, {
         method: 'DELETE',
         headers: await getHeaders(),
     });

@@ -1,10 +1,24 @@
+/*
+ * EngineerDashboard.jsx
+ *
+ * Main dashboard page for network engineers at Djezzy.
+ * Provides three main views:
+ *   1. Reclamations – view and manage customer complaint tickets
+ *   2. Sites Reseau – manage telecom network sites (status, creation, archiving)
+ *   3. Cartographie – map view showing site locations and coverage
+ *
+ * Author: PFE Intern
+ */
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { spawnParticles } from '../hooks/useAnimations';
 import { getTickets, updateTicket, getSites, updateSiteStatus, createSite, archiverSite } from '../api/tickets';
 import MapComponent from '../components/Map';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
 
+// Theme colors used throughout the dashboard (mix of CSS variables and hardcoded values)
 const COLORS = {
   sidebarBg: 'var(--bg-sidebar)',
   sidebarActive: '#850a27',
@@ -15,16 +29,19 @@ const COLORS = {
   border: 'var(--border-color)',
   djezzyRed: '#e60023',
 
+  // Badge color schemes for client types
   types: {
     PARTICULIER: { bg: '#E2E8F0', text: '#475569', border: '#CBD5E1' },
     ENTREPRISE: { bg: '#475569', text: '#FFFFFF', border: '#334155' },
   },
+  // Badge color schemes for ticket priority levels
   priorities: {
     BASSE: { bg: '#E0F2FE', text: '#0284C7', side: '#0284C7' },
     NORMALE: { bg: '#DCFCE7', text: '#15803D', side: '#15803D' },
     HAUTE: { bg: '#FEF3C7', text: '#D97706', side: '#D97706' },
     CRITIQUE: { bg: '#FEE2E2', text: '#DC2626', side: '#DC2626' },
   },
+  // Badge color schemes for ticket status
   status: {
     OUVERT: { bg: '#BAE6FD', text: '#0369A1', dot: '#0284C7' },
     'EN COURS': { bg: '#FDE68A', text: '#B45309', dot: '#D97706' },
@@ -33,8 +50,10 @@ const COLORS = {
   },
 };
 
+// French month abbreviations for date formatting
 const MOIS_FR = ['JAN', 'FEV', 'MAR', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOU', 'SEP', 'OCT', 'NOV', 'DEC'];
 
+// Format an ISO date string to short French format: "15 JAN"
 const formatDateFr = (isoString) => {
   if (!isoString) return '-';
   const d = new Date(isoString);
@@ -42,6 +61,7 @@ const formatDateFr = (isoString) => {
   return `${d.getDate()} ${MOIS_FR[d.getMonth()]}`;
 };
 
+// Format an ISO date string to full French datetime: "15 JAN 2025 14:30"
 const formatDateTimeFr = (isoString) => {
   if (!isoString) return '-';
   const d = new Date(isoString);
@@ -49,8 +69,10 @@ const formatDateTimeFr = (isoString) => {
   return `${d.getDate()} ${MOIS_FR[d.getMonth()]} ${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
+// Default SVG icon props applied to all inline icons
 const iconProps = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' };
 
+// ----- Inline SVG icon components -----
 const IconTicket = (p) => (
   <svg {...iconProps} {...p}><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 6v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-6V7Z" /><path d="M10 6v2M10 16v2" /></svg>
 );
@@ -81,12 +103,18 @@ const IconX = (p) => (
 const IconChevronLeft = (p) => (
   <svg {...iconProps} {...p}><path d="M15 18l-6-6 6-6" /></svg>
 );
+
+// Possible ticket statuses and their display labels
 const ALL_STATUSES = ['ferme', 'ouvert', 'resolu'];
 const ALL_LABELS = { ferme: 'Ferme', ouvert: 'Ouvert', resolu: 'Resolu' };
+
+// Site status display labels and color mappings
 const SITE_LABELS = { UP: 'Actif', DOWN: 'Inactif' };
 const ST = { UP: '#059669', DOWN: '#DC2626' };
 const ST_BG = { UP: '#DCFCE7', DOWN: '#FEE2E2' };
 
+// Returns the list of valid forward transitions for a given ticket status
+// e.g. 'ferme' can move to 'ouvert', 'ouvert' can move to 'resolu'
 const getForwardStatuses = (statut) => {
   switch (statut) {
     case 'ferme': return ['ouvert'];
@@ -98,12 +126,20 @@ const getForwardStatuses = (statut) => {
 
 export default function EngineerDashboard() {
   const navigate = useNavigate();
-  const [currentView, setCurrentView] = useState('reclamations');
-  const [tickets, setTickets] = useState([]);
-  const [sites, setSites] = useState([]);
-  const [sitesList, setSitesList] = useState([]);
-  const [loading, setLoading] = useState(false);
+
+  // --- View & Navigation State ---
+  const [currentView, setCurrentView] = useState('reclamations'); // 'reclamations' | 'sites' | 'cartographie'
+
+  // --- Tickets State ---
+  const [tickets, setTickets] = useState([]);       // all tickets from the API
+  const [loading, setLoading] = useState(false);     // loading indicator for tickets
+
+  // --- Sites State ---
+  const [sites, setSites] = useState([]);            // sites list used for ticket filter dropdown
+  const [sitesList, setSitesList] = useState([]);    // full sites list for the sites management view
   const [sitesLoading, setSitesLoading] = useState(false);
+
+  // --- Search & Filters (Reclamations) ---
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatut, setFilterStatut] = useState('');
   const [filterPriority, setFilterPriority] = useState('');
@@ -111,25 +147,33 @@ export default function EngineerDashboard() {
   const [filterDate, setFilterDate] = useState('');
   const [filterSiteId, setFilterSiteId] = useState('');
   const [showFilters, setShowFilters] = useState(false);
-  const [selectedTicket, setSelectedTicket] = useState(null);
-  const [updatingId, setUpdatingId] = useState(null);
-  const [togglingSiteId, setTogglingSiteId] = useState(null);
-  const [selectedSite, setSelectedSite] = useState(null);
+
+  // --- Selection & Interaction State ---
+  const [selectedTicket, setSelectedTicket] = useState(null);   // ticket opened in modal
+  const [updatingId, setUpdatingId] = useState(null);           // ID of ticket being updated (for loading state)
+  const [togglingSiteId, setTogglingSiteId] = useState(null);   // ID of site being toggled/archived
+  const [selectedSite, setSelectedSite] = useState(null);       // site opened in modal
+  const [hoveredUser, setHoveredUser] = useState(null);         // user info shown in tooltip on hover
+
+  // --- Site Form State ---
   const [showSiteForm, setShowSiteForm] = useState(false);
   const [siteSubmitting, setSiteSubmitting] = useState(false);
-  const [siteFilterCommune, setSiteFilterCommune] = useState('');
-  const [siteFilterWilaya, setSiteFilterWilaya] = useState('');
-  const [siteFilterStatut, setSiteFilterStatut] = useState('');
-  const [showSiteFilters, setShowSiteFilters] = useState(false);
-  const [hoveredUser, setHoveredUser] = useState(null);
   const [newSiteForm, setNewSiteForm] = useState({
     nom: '', wilaya: '', commune: '', coordX: '', coordY: '', adresse: '', statut: 'UP', technologie: '5G',
   });
 
+  // --- Sites Filters ---
+  const [siteFilterCommune, setSiteFilterCommune] = useState('');
+  const [siteFilterWilaya, setSiteFilterWilaya] = useState('');
+  const [siteFilterStatut, setSiteFilterStatut] = useState('');
+  const [showSiteFilters, setShowSiteFilters] = useState(false);
+
+  // Fetch sites on mount (used for the ticket filter dropdown)
   useEffect(() => {
     getSites().then(setSites).catch(() => setSites([]));
   }, []);
 
+  // Fetch all tickets from the backend
   const fetchTickets = useCallback(async () => {
     setLoading(true);
     try {
@@ -143,14 +187,16 @@ export default function EngineerDashboard() {
     }
   }, []);
 
+  // Load tickets on mount
   useEffect(() => {
     fetchTickets();
   }, [fetchTickets]);
 
+  // Fetch full sites list (for the Sites management view)
   const fetchSitesData = useCallback(async () => {
     setSitesLoading(true);
     try {
-      const data = await getSites();
+      const data = getSites ? await getSites() : [];
       setSitesList(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Impossible de charger les sites', err);
@@ -160,10 +206,12 @@ export default function EngineerDashboard() {
     }
   }, []);
 
+  // Only fetch sites data when the user switches to the sites view
   useEffect(() => {
     if (currentView === 'sites') fetchSitesData();
   }, [currentView, fetchSitesData]);
 
+  // Toggle a site between UP (active) and DOWN (inactive) status
   const handleSiteToggle = useCallback(async (siteId, currentStatut) => {
     const newStatut = currentStatut === 'UP' ? 'DOWN' : 'UP';
     const action = newStatut === 'UP' ? 'activer' : 'desactiver';
@@ -172,6 +220,7 @@ export default function EngineerDashboard() {
     setTogglingSiteId(siteId);
     try {
       await updateSiteStatus(siteId, { statut: newStatut });
+      // Update the site in the local list without refetching
       setSitesList((prev) =>
         prev.map((s) => (s.id === siteId ? { ...s, statut: newStatut } : s))
       );
@@ -183,13 +232,15 @@ export default function EngineerDashboard() {
     }
   }, []);
 
+  // Archive a site – removes it from the visible list
   const handleArchiverSite = useCallback(async (siteId) => {
     if (!window.confirm('Archiver ce site ? Il sera masqué de la liste principale.')) return;
     setTogglingSiteId(siteId);
     try {
       await archiverSite(siteId);
+      // Remove archived site from local state
       setSitesList((prev) => prev.filter((s) => s.id !== siteId));
-      setSelectedSite(null);
+      setSelectedSite(null); // close the modal
     } catch (err) {
       console.error(err);
       alert('Erreur lors de l\'archivage.');
@@ -198,7 +249,9 @@ export default function EngineerDashboard() {
     }
   }, []);
 
+  // Change ticket status with confirmation dialog for forward transitions
   const handleStatusChange = useCallback(async (ticketId, newStatut, currentStatut) => {
+    // Only show confirmation for meaningful transitions
     const msgs = {
       'ferme->ouvert': 'Confirmer l ouverture de ce ticket ?',
       'ouvert->resolu': 'Confirmer la resolution de ce ticket ?',
@@ -209,6 +262,7 @@ export default function EngineerDashboard() {
     setUpdatingId(ticketId);
     try {
       await updateTicket(ticketId, { statut: newStatut });
+      // Optimistically update the ticket status in local state
       setTickets((prev) =>
         prev.map((t) => (t.id === ticketId ? { ...t, statut: newStatut } : t))
       );
@@ -220,19 +274,22 @@ export default function EngineerDashboard() {
     }
   }, []);
 
+  // Submit new site creation form
   const handleCreateSite = useCallback(async (e) => {
     e.preventDefault();
     setSiteSubmitting(true);
     try {
       const payload = {
         ...newSiteForm,
+        // Send null for empty coordinates so the backend handles defaults
         coordX: newSiteForm.coordX || null,
         coordY: newSiteForm.coordY || null,
       };
       await createSite(payload);
       setShowSiteForm(false);
+      // Reset form to defaults after successful creation
       setNewSiteForm({ nom: '', wilaya: '', commune: '', coordX: '', coordY: '', adresse: '', statut: 'UP', technologie: '5G' });
-      fetchSitesData();
+      fetchSitesData(); // refresh the list
     } catch (err) {
       console.error(err);
       alert('Erreur: ' + err.message);
@@ -241,10 +298,12 @@ export default function EngineerDashboard() {
     }
   }, [newSiteForm, fetchSitesData]);
 
+  // Generic input handler for the new site form
   const handleSiteFormChange = (e) => {
     setNewSiteForm({ ...newSiteForm, [e.target.name]: e.target.value });
   };
 
+  // Logout – clear tokens and redirect to login
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('access_token');
@@ -252,27 +311,37 @@ export default function EngineerDashboard() {
     navigate('/login');
   };
 
+  // Convert a raw status string to the uppercase key used in the COLORS map
   const getStatutKey = (statut) => statut?.replace('_', ' ').toUpperCase();
 
+  // ---- Filtered & sorted sites list ----
   const filteredSites = sitesList.filter((s) => {
+    // Filter by commune (case-insensitive partial match)
     if (siteFilterCommune) {
       if (!s.commune?.toLowerCase().includes(siteFilterCommune.toLowerCase())) return false;
     }
+    // Filter by wilaya
     if (siteFilterWilaya) {
       if (!s.wilaya?.toLowerCase().includes(siteFilterWilaya.toLowerCase())) return false;
     }
+    // Filter by active/inactive status
     if (siteFilterStatut) {
       if (s.statut !== siteFilterStatut) return false;
     }
     return true;
   }).sort((a, b) => {
+    // Sort sites by numeric part of their code (ascending)
     const numA = parseInt(a.codeSite?.replace(/\D/g, '')) || 0;
     const numB = parseInt(b.codeSite?.replace(/\D/g, '')) || 0;
     return numA - numB;
   });
 
+  // ---- Filtered tickets list ----
+  // Resolved tickets are excluded by default (engineer only handles open ones)
   const filteredTickets = tickets.filter((t) => {
     if (t.statut === 'resolu') return false;
+
+    // Text search across multiple ticket fields
     const term = searchTerm.toLowerCase();
     const matchSearch =
       t.nom_complet_client?.toLowerCase().includes(term) ||
@@ -280,6 +349,8 @@ export default function EngineerDashboard() {
       t.site_display?.toLowerCase().includes(term) ||
       t.description?.toLowerCase().includes(term);
     if (!matchSearch) return false;
+
+    // Apply each active filter independently
     if (filterPriority) {
       const prio = (t.priorite || '').toUpperCase();
       if (prio !== filterPriority.toUpperCase()) return false;
@@ -305,29 +376,33 @@ export default function EngineerDashboard() {
 
   return (
     <div style={styles.appLayout}>
+      {/* ===== Sidebar Navigation ===== */}
       <aside style={styles.sidebar}>
+        {/* Brand / logo area */}
         <div style={styles.brandZone}>
           <img src={logoDjezzy} alt="Djezzy" style={styles.brandLogo} />
           <div>
-            <div style={styles.brandName}>Djezzy</div>
+            <div style={styles.brandName}>Djezzy Hub</div>
             <div style={styles.brandRole}>Ingénieur Réseau</div>
           </div>
         </div>
 
+        {/* Main navigation menu */}
         <div style={styles.menuSection}>
           <span style={styles.sectionLabel}>PRINCIPAL</span>
-          <button style={{ ...styles.menuItem, ...(currentView === 'reclamations' ? styles.menuItemActive : {}) }} onClick={() => setCurrentView('reclamations')}>
+          <button style={{ ...styles.menuItem, ...(currentView === 'reclamations' ? styles.menuItemActive : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('reclamations'); }}>
             <IconTicket style={{ marginRight: '10px', flexShrink: 0 }} /> Reclamations
           </button>
-          <button style={{ ...styles.menuItem, ...(currentView === 'sites' ? styles.menuItemActive : {}) }} onClick={() => { setCurrentView('sites'); setSelectedTicket(null); }}>
+          <button style={{ ...styles.menuItem, ...(currentView === 'sites' ? styles.menuItemActive : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('sites'); setSelectedTicket(null); }}>
             <IconSite style={{ marginRight: '10px', flexShrink: 0 }} /> Sites Reseau
           </button>
-          <button style={{ ...styles.menuItem, ...(currentView === 'cartographie' ? styles.menuItemActive : {}) }} onClick={() => setCurrentView('cartographie')}>
+          <button style={{ ...styles.menuItem, ...(currentView === 'cartographie' ? styles.menuItemActive : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('cartographie'); }}>
             <IconMap style={{ marginRight: '10px', flexShrink: 0 }} /> Cartographie
           </button>
         </div>
 
-        <div style={{ ...styles.menuSection, marginTop: '40px' }}>
+        {/* Bottom section: profile & logout */}
+        <div style={{ ...styles.menuSection, marginTop: 'auto' }}>
           <span style={styles.sectionLabel}>PERSONNEL</span>
           <button style={styles.menuItem} onClick={() => navigate('/profile')}>
             <IconUser style={{ marginRight: '10px', flexShrink: 0 }} /> Profile
@@ -336,15 +411,15 @@ export default function EngineerDashboard() {
             <IconLogout style={{ marginRight: '10px', flexShrink: 0 }} /> Log out
           </button>
         </div>
-
-        <div style={{ ...styles.menuSection, marginTop: '10px' }}>
-        </div>
       </aside>
 
+      {/* ===== Main Content Area ===== */}
       <div style={{ ...styles.mainContent, backgroundColor: COLORS.mainBg }}>
+        {/* Sticky header bar with dynamic title */}
         <header style={{ ...styles.topHeader, backgroundColor: COLORS.cardBg }}>
           {currentView === 'sites' && showSiteForm ? (
             <div>
+              {/* Back navigation when in the "new site" form */}
               <div style={styles.backNav} onClick={() => setShowSiteForm(false)}>
                 <IconChevronLeft />
                 <span style={{ marginLeft: '8px', fontWeight: 600 }}>Nouveau Site</span>
@@ -358,20 +433,25 @@ export default function EngineerDashboard() {
           )}
         </header>
 
+        {/* ===== View Router ===== */}
         {currentView === 'cartographie' ? (
+          /* ---------- Cartographie (Map) View ---------- */
           <div style={styles.pageContent}>
             <div style={{ ...styles.tableCard, backgroundColor: COLORS.cardBg }}>
               <div style={styles.formHeader}>
                 <IconMap style={{ marginRight: '10px' }} />
                 <span style={{ fontWeight: 700, fontSize: '14px' }}>Cartographie des sites 5G</span>
               </div>
+              {/* Map component fills available height */}
               <div style={{ height: 'calc(100vh - 200px)', minHeight: 500 }}>
                 <MapComponent sites={sitesList} showCoverage />
               </div>
             </div>
           </div>
         ) : currentView === 'sites' ? (
+          /* ---------- Sites Management View ---------- */
           showSiteForm ? (
+            /* -- New Site Creation Form -- */
           <div style={styles.pageContent}>
             <div style={styles.tableCard}>
               <div style={styles.formHeader}>
@@ -379,6 +459,7 @@ export default function EngineerDashboard() {
                 <span style={{ fontWeight: 700, fontSize: '14px' }}>Ajouter un site reseau</span>
               </div>
               <form onSubmit={handleCreateSite} style={styles.formBody}>
+                {/* Two-column grid layout for site form fields */}
                 <div style={styles.formGrid}>
                   <div style={styles.inputGroup}>
                     <label style={styles.label}>NOM</label>
@@ -400,6 +481,7 @@ export default function EngineerDashboard() {
                     <label style={styles.label}>Y (Latitude)</label>
                     <input type="text" name="coordY" value={newSiteForm.coordY} onChange={handleSiteFormChange} placeholder="Ex: 36.753" style={styles.input} />
                   </div>
+                  {/* Full-width address field */}
                   <div style={{ ...styles.inputGroup, gridColumn: '1 / -1' }}>
                     <label style={styles.label}>ADRESSE</label>
                     <input type="text" name="adresse" value={newSiteForm.adresse} onChange={handleSiteFormChange} placeholder="Adresse complete" style={styles.input} />
@@ -430,7 +512,9 @@ export default function EngineerDashboard() {
             </div>
           </div>
           ) : (
+          /* -- Sites List View -- */
           <div style={styles.pageContent}>
+            {/* Summary stat cards */}
             <div style={styles.statsRow}>
               <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#3B82F6', backgroundColor: COLORS.cardBg, animationDelay: '0s' }}>
                 <span style={{ ...styles.statNumber, color: '#171a21' }}>{sitesList.length}</span>
@@ -445,7 +529,10 @@ export default function EngineerDashboard() {
                 <span style={styles.statLabel}>Inactif</span>
               </div>
             </div>
+
+            {/* Sites table card */}
             <div className="fade-in table-card" style={{ ...styles.tableCard, backgroundColor: COLORS.cardBg, animationDelay: '0.15s' }}>
+              {/* Toolbar: title + action buttons */}
               <div style={{ ...styles.toolbar, borderBottom: `1px solid ${COLORS.border}` }}>
                 <div style={styles.toolbarLeft}>
                   <h2 style={{ ...styles.tableTitle, color: '#181c24' }}>Liste des sites reseau</h2>
@@ -463,6 +550,7 @@ export default function EngineerDashboard() {
                 </div>
               </div>
 
+              {/* Collapsible filter bar for sites */}
               {showSiteFilters && (
                 <div style={styles.filterArea}>
                   <input
@@ -490,6 +578,8 @@ export default function EngineerDashboard() {
                   </select>
                 </div>
               )}
+
+              {/* Sites data table */}
               <div style={{ overflowX: 'auto' }}>
                 <table style={styles.table}>
                   <thead>
@@ -515,6 +605,7 @@ export default function EngineerDashboard() {
                           onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#F8FAFC'; }}
                           onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
                         >
+                          {/* Code column with colored status indicator dot */}
                           <td style={{ ...styles.td, fontWeight: 600 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <span style={{
@@ -528,6 +619,7 @@ export default function EngineerDashboard() {
                           <td style={styles.td}>{site.nom}</td>
                           <td style={styles.td}>{site.wilaya}</td>
                           <td style={styles.td}>{site.commune}</td>
+                          {/* Toggle buttons: Actif / Inactif */}
                           <td style={{ ...styles.td, textAlign: 'center' }}>
                             <div style={styles.statusActions}>
                               {['UP', 'DOWN'].map((s) => {
@@ -562,8 +654,10 @@ export default function EngineerDashboard() {
             </div>
           </div>
         )) : (
+        /* ---------- Reclamations (Tickets) View ---------- */
         <div style={styles.pageContent}>
           <div className="fade-in table-card" style={{ ...styles.tableCard, backgroundColor: COLORS.cardBg, animationDelay: '0.1s' }}>
+            {/* Toolbar with search and filter controls */}
             <div style={{ ...styles.toolbar, borderBottom: `1px solid ${COLORS.border}` }}>
               <div style={styles.toolbarLeft}>
                 <h2 style={{ ...styles.tableTitle, color: '#181c24' }}>Listes des reclamations</h2>
@@ -577,6 +671,7 @@ export default function EngineerDashboard() {
                   <IconFilter style={{ marginRight: '6px' }} /> Filtrer
                 </button>
 
+                {/* Search bar */}
                 <div style={{ ...styles.searchWrapper, backgroundColor: '#F8FAFC' }}>
                   <IconSearch style={styles.searchIcon} />
                   <input
@@ -590,6 +685,7 @@ export default function EngineerDashboard() {
               </div>
             </div>
 
+            {/* Collapsible filter panel for tickets */}
             {showFilters && (
               <div style={{ ...styles.filterArea, backgroundColor: '#fafbfc', borderBottom: `1px solid ${COLORS.border}` }}>
                 <input
@@ -625,6 +721,7 @@ export default function EngineerDashboard() {
               </div>
             )}
 
+            {/* Tickets data table */}
             <div style={{ overflowX: 'auto' }}>
               <table style={{ ...styles.table, backgroundColor: COLORS.cardBg }}>
                 <thead>
@@ -644,6 +741,7 @@ export default function EngineerDashboard() {
                   ) : filteredTickets.length === 0 ? (
                     <tr><td colSpan="7" style={styles.emptyCell}>Aucune reclamation trouvee.</td></tr>
                   ) : filteredTickets.map((ticket) => {
+                    // Resolve color config for this ticket's priority, type, and status
                     const prio = COLORS.priorities[ticket.priorite?.toUpperCase()] || COLORS.priorities.NORMALE;
                     const typ = COLORS.types[ticket.type_client?.toUpperCase()] || COLORS.types.PARTICULIER;
                     const statutKey = getStatutKey(ticket.statut);
@@ -656,6 +754,7 @@ export default function EngineerDashboard() {
                         onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#F8FAFC'; }}
                         onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
                       >
+                        {/* Ticket number – clickable to open detail modal */}
                         <td style={{ ...styles.td, borderLeft: `4px solid ${prio.side}`, fontWeight: 600, cursor: 'pointer' }}
                           onClick={() => setSelectedTicket(ticket)}>
                           {ticket.numero_ticket}
@@ -678,6 +777,7 @@ export default function EngineerDashboard() {
                           </span>
                         </td>
                         <td style={{ ...styles.td, color: COLORS.textMuted }}>{formatDateFr(ticket.created_at)}</td>
+                        {/* Status action buttons – only forward transitions are enabled */}
                         <td style={{ ...styles.td, textAlign: 'center' }}>
                           <div style={styles.statusActions}>
                             {ALL_STATUSES.map((s) => {
@@ -717,6 +817,7 @@ export default function EngineerDashboard() {
         )}
       </div>
 
+      {/* ===== Ticket Detail Modal ===== */}
       {selectedTicket && (
         <div className="fade-in" style={styles.overlay} onClick={() => setSelectedTicket(null)}>
           <div className="scale-in" style={styles.modal} onClick={(e) => e.stopPropagation()}>
@@ -726,6 +827,7 @@ export default function EngineerDashboard() {
             </div>
 
             <div style={styles.modalBody}>
+              {/* Two-column grid: client info + ticket info */}
               <div style={styles.modalGrid}>
                 <div style={styles.modalSection}>
                   <h3 style={styles.modalSectionTitle}>Client</h3>
@@ -769,6 +871,7 @@ export default function EngineerDashboard() {
                     <span style={styles.modalLabel}>Site concerne</span>
                     <span style={styles.modalValue}>{selectedTicket.site_display || '-'}</span>
                   </div>
+                  {/* Created-by user chip with hover tooltip */}
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Cree par</span>
                     {selectedTicket.cree_par ? (
@@ -782,6 +885,7 @@ export default function EngineerDashboard() {
                       <span style={styles.modalValue}>{selectedTicket.cree_par?.code_user || '-'}</span>
                     )}
                   </div>
+                  {/* Assigned-to user chip with hover tooltip */}
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Assigne a</span>
                     {selectedTicket.assigne_a ? (
@@ -799,6 +903,7 @@ export default function EngineerDashboard() {
                     <span style={styles.modalLabel}>Date creation</span>
                     <span style={styles.modalValue}>{formatDateTimeFr(selectedTicket.created_at)}</span>
                   </div>
+                  {/* Show resolution date only if the ticket was resolved */}
                   {selectedTicket.resolu_le && (
                     <div style={styles.modalField}>
                       <span style={styles.modalLabel}>Resolu le</span>
@@ -808,11 +913,13 @@ export default function EngineerDashboard() {
                 </div>
               </div>
 
+              {/* AI-generated keywords section */}
               <div style={styles.modalSection}>
                 <h3 style={styles.modalSectionTitle}>Mots-cles saisis</h3>
                 <p style={styles.modalText}>{selectedTicket.mots_cles_ia || 'Aucun mot-cle saisi.'}</p>
               </div>
 
+              {/* Ticket description (if present) */}
               {selectedTicket.description && (
                 <div style={styles.modalSection}>
                   <h3 style={styles.modalSectionTitle}>Description</h3>
@@ -820,6 +927,7 @@ export default function EngineerDashboard() {
                 </div>
               )}
 
+              {/* Comments thread */}
               {selectedTicket.commentaires && selectedTicket.commentaires.length > 0 && (
                 <div style={styles.modalSection}>
                   <h3 style={styles.modalSectionTitle}>Commentaires ({selectedTicket.commentaires.length})</h3>
@@ -835,6 +943,7 @@ export default function EngineerDashboard() {
 
             </div>
 
+            {/* Modal footer with status transition buttons */}
             <div style={styles.modalFooter}>
               <div style={styles.statusActions}>
                 {ALL_STATUSES.map((s) => {
@@ -865,6 +974,7 @@ export default function EngineerDashboard() {
               <button style={styles.btnCancel} onClick={() => setSelectedTicket(null)}>Fermer</button>
             </div>
           </div>
+          {/* User tooltip – positioned near the hovered user chip */}
           {hoveredUser && (
             <div style={{ ...styles.userTooltip, top: hoveredUser.rect.bottom + 6, left: hoveredUser.rect.left }}>
               <div style={styles.userTooltipArrow} />
@@ -877,6 +987,7 @@ export default function EngineerDashboard() {
         </div>
       )}
 
+      {/* ===== Site Detail Modal ===== */}
       {selectedSite && (
         <div className="fade-in" style={styles.overlay} onClick={() => setSelectedSite(null)}>
           <div className="scale-in" style={styles.modal} onClick={(e) => e.stopPropagation()}>
@@ -885,6 +996,7 @@ export default function EngineerDashboard() {
               <button style={styles.modalClose} onClick={() => setSelectedSite(null)}><IconX /></button>
             </div>
             <div style={styles.modalBody}>
+              {/* Two-column grid: site info + status info */}
               <div style={styles.modalGrid}>
                 <div style={styles.modalSection}>
                   <h3 style={styles.modalSectionTitle}>Site</h3>
@@ -927,6 +1039,7 @@ export default function EngineerDashboard() {
                       </span>
                     </span>
                   </div>
+                  {/* Conditionally show coordinates if they exist */}
                   {selectedSite.coordX && (
                     <div style={styles.modalField}>
                       <span style={styles.modalLabel}>Longitude</span>
@@ -950,6 +1063,7 @@ export default function EngineerDashboard() {
                 </div>
               </div>
             </div>
+            {/* Modal footer: toggle status + archive */}
             <div style={styles.modalFooter}>
               <div style={styles.statusActions}>
                 {['UP', 'DOWN'].map((s) => {
@@ -994,9 +1108,14 @@ export default function EngineerDashboard() {
 
 }
 
+/*
+ * ===== Inline Styles Object =====
+ * All component styles are defined here at the bottom of the file.
+ * Uses a mix of CSS variables (for theming) and hardcoded values.
+ */
 const styles = {
   appLayout: { display: 'flex', minHeight: '100vh', fontFamily: "'Inter', system-ui, sans-serif", width: '100%' },
-  sidebar: { width: '193px', backgroundColor: COLORS.sidebarBg, color: 'var(--text-sidebar)', display: 'flex', flexDirection: 'column', padding: '0', flexShrink: 0 },
+  sidebar: { width: '193px', backgroundColor: COLORS.sidebarBg, color: 'var(--text-sidebar)', display: 'flex', flexDirection: 'column', padding: '0', flexShrink: 0, overflow: 'hidden' },
   brandZone: { height: '82px', display: 'flex', alignItems: 'center', gap: '13px', padding: '0 17px', borderBottom: '1px solid rgba(255,255,255,0.07)' },
   brandLogo: { width: '34px', height: 'auto', objectFit: 'contain' },
   brandName: { color: '#FFFFFF', fontWeight: 700, fontSize: '16px' },
@@ -1016,7 +1135,7 @@ const styles = {
   statLabel: { fontSize: '11px', fontWeight: 600, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: '0.3px' },
   backNav: { display: 'flex', alignItems: 'center', fontSize: '16px', color: COLORS.textDark, cursor: 'pointer', marginBottom: '4px' },
   breadcrumb: { fontSize: '12px', color: COLORS.textMuted, fontWeight: 500 },
-  tableCard: { backgroundColor: COLORS.cardBg, borderRadius: '7px', border: `1px solid ${COLORS.border}`, borderTop: '3px solid #E8401A', display: 'flex', flexDirection: 'column', width: '100%', boxShadow: '0 1px 4px rgba(0,0,0,0.12)' },
+  tableCard: { backgroundColor: COLORS.cardBg, borderRadius: '7px', border: `1px solid ${COLORS.border}`, display: 'flex', flexDirection: 'column', width: '100%', boxShadow: '0 1px 4px rgba(0,0,0,0.12)' },
   formHeader: { padding: '16px 20px', borderBottom: `1px solid ${COLORS.border}`, display: 'flex', alignItems: 'center' },
   formBody: { padding: '24px 30px' },
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px', marginBottom: '12px' },
@@ -1046,6 +1165,7 @@ const styles = {
   statusActions: { display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center', flexWrap: 'wrap' },
   statusBtn: { display: 'inline-flex', alignItems: 'center', padding: '3px 8px', borderRadius: '9px', border: '1px solid', fontSize: '9px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.15s ease' },
 
+  // Modal overlay and container styles
   overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { backgroundColor: 'var(--cardBg, #FFFFFF)', borderRadius: '12px', width: '700px', maxWidth: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}` },
@@ -1065,6 +1185,7 @@ const styles = {
   btnNew: { display: 'flex', alignItems: 'center', backgroundColor: COLORS.djezzyRed, color: '#FFFFFF', border: 'none', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' },
   btnDanger: { display: 'flex', alignItems: 'center', backgroundColor: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA', padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' },
 
+  // User hover tooltip styles
   userChip: { fontSize: '13px', color: COLORS.djezzyRed, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px', textDecorationColor: 'rgba(230,0,35,0.3)', position: 'relative' },
 
   userTooltip: { position: 'fixed', zIndex: 1200, backgroundColor: '#1E293B', color: '#F1F5F9', padding: '10px 14px', borderRadius: '8px', fontSize: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.3)', pointerEvents: 'none', whiteSpace: 'nowrap' },

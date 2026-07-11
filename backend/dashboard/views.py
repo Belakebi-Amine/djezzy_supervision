@@ -1,3 +1,10 @@
+# dashboard/views.py
+# ─────────────────────────────────────────────────────────────
+# Core dashboard views providing analytics, KPIs, and reporting
+# endpoints. These views aggregate data from reclamation tickets
+# and network sites to power all the charts and stats on the
+# admin, call center, and supervisor dashboards.
+# ─────────────────────────────────────────────────────────────
 from django.shortcuts import render
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -13,9 +20,12 @@ from sites_reseau.models import SiteReseau
 from accounts.models import CustomUser, Role
 from .models import RapportIA
 
+# French day names for the weekly ticket distribution chart
 JOURS_SEMAINE = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
 
+
 def _format_duree(duree):
+    """Formats a timedelta into a human-readable 'Xh Ym' string."""
     if not duree:
         return "N/A"
     total_seconds = int(duree.total_seconds())
@@ -25,10 +35,17 @@ def _format_duree(duree):
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 1. VUE TABLEAU DE BORD GÉNÉRAL (ADMIN / CALL CENTER / SUPERVISEUR)
+# 1. GENERAL DASHBOARD STATS (Admin / Call Center / Supervisor)
+#
+# Main KPI endpoint that powers the overview dashboard. Returns:
+# - Network status (sites UP/DOWN, availability %)
+# - Ticket stats (total, open, resolved, resolution rate)
+# - Charts data (priority donut, evolution over time, weekly pattern)
+# - Employee performance (engineer and agent stats)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 @api_view(['GET'])
 def statistiques(request):
+    # Parse the day range parameter (default: last 30 days)
     jours_param = request.query_params.get('jours', '30')
     try:
         nb_jours = int(jours_param)
@@ -37,7 +54,7 @@ def statistiques(request):
 
     date_limite = timezone.now() - timedelta(days=nb_jours)
 
-    # ── Stats Sites ──
+    # ── Network site statistics ──
     stats_sites = SiteReseau.objects.aggregate(
         total=Count('id'),
         up=Count('id', filter=Q(statut='UP')),
@@ -47,9 +64,10 @@ def statistiques(request):
     )
     total_s = stats_sites['total']
     sites_up = stats_sites['up']
+    # Global network availability = (UP sites / total sites) * 100
     disponibilite = round((sites_up / total_s) * 100, 1) if total_s > 0 else 100.0
 
-    # ── Stats Tickets (période filtrée) ──
+    # ── Ticket statistics for the filtered period ──
     stats_tickets = Reclamation.objects.filter(created_at__gte=date_limite).aggregate(
         total=Count('id'),
         ouverts=Count('id', filter=Q(statut__iexact='ouvert')),
@@ -65,15 +83,17 @@ def statistiques(request):
     )
     total_t = stats_tickets['total']
     resolus_t = stats_tickets['resolus']
+    # Resolution rate = (resolved / total) * 100
     taux_resolution = round((resolus_t / total_t) * 100, 1) if total_t > 0 else 0.0
 
-    # ── Délai moyen de résolution ──
+    # ── Average resolution delay ──
+    # Calculates mean time between ticket creation and resolution
     delai_stats = Reclamation.objects.filter(
         created_at__gte=date_limite, statut='resolu', resolu_le__isnull=False
     ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
     delai_moyen_str = _format_duree(delai_stats['duree__avg'])
 
-    # ── Délai moyen par priorité ──
+    # ── Average delay per priority level ──
     delai_par_prio = {}
     for prio in ['critique', 'haute', 'normale', 'basse']:
         d = Reclamation.objects.filter(
@@ -82,7 +102,8 @@ def statistiques(request):
         ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
         delai_par_prio[prio] = _format_duree(d['duree__avg'])
 
-    # ── Tickets par jour de la semaine ──
+    # ── Ticket distribution by day of week ──
+    # Helps identify peak days for staffing decisions
     tickets_par_jour = (
         Reclamation.objects.filter(created_at__gte=date_limite)
         .annotate(jour_semaine=ExtractWeekDay('created_at'))
@@ -96,13 +117,13 @@ def statistiques(request):
         for item in tickets_par_jour
     ]
 
-    # ── Répartition par type de client ──
+    # ── Client type breakdown ──
     tickets_par_type = [
         {'type': 'Particulier', 'total': stats_tickets['type_particulier']},
         {'type': 'Entreprise', 'total': stats_tickets['type_entreprise']},
     ]
 
-    # ── Top sites impactés ──
+    # ── Top impacted sites (most tickets in the period) ──
     top_sites_impactes = (
         SiteReseau.objects.annotate(
             num_reclamations=Count('reclamations', filter=Q(reclamations__created_at__gte=date_limite))
@@ -111,7 +132,7 @@ def statistiques(request):
         .values('id', 'codeSite', 'nom', 'num_reclamations')
     )
 
-    # ── Évolution temporelle ──
+    # ── Daily ticket creation evolution (for line chart) ──
     try:
         evolution_tickets = list(
             Reclamation.objects.filter(created_at__gte=date_limite)
@@ -123,7 +144,7 @@ def statistiques(request):
     except Exception:
         evolution_tickets = []
 
-    # Résolutions par jour
+    # ── Daily resolution count ──
     try:
         resolutions_par_jour = list(
             Reclamation.objects.filter(resolu_le__gte=date_limite, resolu_le__isnull=False)
@@ -135,7 +156,7 @@ def statistiques(request):
     except Exception:
         resolutions_par_jour = []
 
-    # ── Stats par employé (ingénieurs) ──
+    # ── Per-engineer performance stats ──
     stats_employes = []
     ingenieurs = CustomUser.objects.filter(role=Role.INGENIEUR_RESEAUX, is_active=True)
     for ing in ingenieurs:
@@ -191,7 +212,7 @@ def statistiques(request):
         },
         'stats_employes': stats_employes,
 
-        # ── Stats par agent Call Center ──
+        # Per-agent call center performance
         'stats_agents_cc': [{
             'code': a.code_user,
             'nom': a.get_full_name().strip() or a.code_user,
@@ -205,7 +226,11 @@ def statistiques(request):
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 2. VUE REPORTING ANALYTIQUE (WILAYAS + COMMUNES)
+# 2. ANALYTICAL REPORTING (Wilayas + Communes)
+#
+# Geographic breakdown of network performance. Provides per-wilaya
+# and per-commune stats including availability rates, open tickets,
+# and resolution delays. Used by the supervisor reporting view.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 @api_view(['GET'])
 def stats_reporting(request):
@@ -216,7 +241,7 @@ def stats_reporting(request):
         nb_jours = 30
     date_limite = timezone.now() - timedelta(days=nb_jours)
 
-    # ── KPIs Globaux ──
+    # ── Global KPIs for the period ──
     stats_globales = Reclamation.objects.filter(created_at__gte=date_limite).aggregate(
         total_tickets=Count('id'),
         resolus=Count('id', filter=Q(statut__iexact='resolu')),
@@ -236,7 +261,8 @@ def stats_reporting(request):
 
     total_sites_down = SiteReseau.objects.filter(statut='DOWN').count()
 
-    # ── Stats par Wilaya ──
+    # ── Per-wilaya breakdown ──
+    # Normalizes wilaya names to handle inconsistent casing
     brutes_wilayas = SiteReseau.objects.values_list('wilaya', flat=True)
     wilayas_distinctes = set(w.strip().upper() for w in brutes_wilayas if w)
 
@@ -257,6 +283,7 @@ def stats_reporting(request):
         ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
         delai_w_str = _format_duree(delai_w_stats['duree__avg'])
 
+        # Simple trend indicator based on availability threshold
         tendance = "Stable"
         if taux_dispo < 95.0:
             tendance = "En baisse"
@@ -273,9 +300,10 @@ def stats_reporting(request):
             'tendance': tendance,
             'taux_dispo_num': taux_dispo,
         })
+    # Sort by availability (worst first for quick identification)
     tableau_wilayas.sort(key=lambda x: x['taux_dispo_num'])
 
-    # ── Stats par Commune (top 15) ──
+    # ── Per-commune breakdown (top 15 lowest availability) ──
     brutes_communes = SiteReseau.objects.values_list('commune', flat=True)
     communes_distinctes = set(c.strip().upper() for c in brutes_communes if c)
 
@@ -300,7 +328,8 @@ def stats_reporting(request):
         })
     tableau_communes.sort(key=lambda x: x['taux_dispo_num'])
 
-    # ── Évolution 6 semaines ──
+    # ── 6-week trend evolution ──
+    # Shows open vs resolved tickets per week for trend analysis
     evolution_6_semaines = []
     now = timezone.now()
     for i in range(5, -1, -1):
@@ -334,15 +363,24 @@ def stats_reporting(request):
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 3. VUE CARTOGRAPHIE LÉGÈRE
+# 3. LIGHTWEIGHT CARTOGRAPHY ENDPOINT
+#
+# Returns site data optimized for the map component. Includes
+# coordinates and open ticket count for each site marker.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 @api_view(['GET'])
 def liste_sites_carto(request):
+    """
+    Returns all sites with their coordinates and the count of
+    open tickets. Used by the Leaflet map component to render
+    markers with status-based coloring.
+    """
     sites_queryset = SiteReseau.objects.values(
         'id', 'codeSite', 'nom', 'wilaya', 'commune', 'coordX', 'coordY', 'statut'
     )
     liste_finales = []
     for site in sites_queryset:
+        # Count open tickets for each site (for badge display on map)
         tickets_comptage = Reclamation.objects.filter(
             site_id=site['id'], statut__iexact='ouvert'
         ).count()
@@ -352,18 +390,25 @@ def liste_sites_carto(request):
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 4. VUES RAPPORT IA (Superviseur)
+# 4. AI REPORT VIEWS (Supervisor only)
+#
+# CRUD operations for AI-generated network analysis reports.
+# Reports are generated via Gemini AI with real-time network data.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def generer_rapport_ia(request):
-    """Génère un rapport via Gemini avec les données actuelles du réseau."""
+    """
+    Generates an AI report by sending the user's prompt along with
+    current network data to Gemini. Returns HTML content.
+    """
     from .rapport_services import generer_rapport_ia as gemini_generate
 
     prompt = request.data.get('prompt', '').strip()
     if not prompt:
         return Response({'error': 'Le prompt est requis.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Optional date range for the report
     date_debut = request.data.get('date_debut')
     date_fin = request.data.get('date_fin')
 
@@ -386,10 +431,14 @@ def generer_rapport_ia(request):
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def liste_rapports_ia(request):
-    """GET : liste des rapports sauvegardés. POST : sauvegarde un rapport."""
+    """
+    GET: Lists saved reports (admin sees all, others see their own).
+    POST: Saves a new report to the database.
+    """
     from .serializers import RapportIASerializer
 
     if request.method == 'GET':
+        # Admin can see all reports, other roles only see their own
         if request.user.role == 'ADMIN':
             rapports = RapportIA.objects.all()
         else:
@@ -408,10 +457,15 @@ def liste_rapports_ia(request):
 @api_view(['GET', 'PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def detail_rapport_ia(request, pk):
-    """GET/PUT/DELETE d'un rapport spécifique."""
+    """
+    GET: Returns a single report's full content.
+    PUT: Updates report title/content (for editing before export).
+    DELETE: Removes a report permanently.
+    """
     from .serializers import RapportIASerializer
 
     try:
+        # Admin can access any report, others only their own
         if request.user.role == 'ADMIN':
             rapport = RapportIA.objects.get(pk=pk)
         else:

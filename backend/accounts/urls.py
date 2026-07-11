@@ -1,3 +1,9 @@
+# accounts/urls.py
+# ─────────────────────────────────────────────────────────────
+# URL routing for the accounts module. Maps endpoints to views
+# for authentication, profile management, and admin user CRUD.
+# All routes are prefixed with /api/accounts/ (set in config/urls.py)
+# ─────────────────────────────────────────────────────────────
 from django.urls import path
 from .views import (
     CustomTokenObtainPairView,
@@ -8,26 +14,32 @@ from .views import (
     list_users_view,
     register_view,
     archive_user_view,
+    update_user_view,
+    restore_user_view,
+    delete_user_view,
     liste_agents_cc,
     liste_ingenieurs,
 )
 
 urlpatterns = [
-    # On utilise maintenant la nouvelle vue JWT à la place de login_view
+    # ── Authentication ──
     path('token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    
-    # Le reste de tes routes reste identique
     path('logout/', logout_view, name='logout'),
+
+    # ── Profile ──
     path('me/', me_view, name='me'),
     path('change-password/', change_password_view, name='change_password'),
     path('update-profile/', update_profile_view, name='update_profile'),
-    
-    # Routes pour les listes
+
+    # ── Dropdown lists (used in ticket forms and assignment) ──
     path('agents-cc/', liste_agents_cc, name='liste-agents-cc'),
     path('ingenieurs/', liste_ingenieurs, name='liste-ingenieurs'),
-    
-    # Routes Admin
+
+    # ── Admin: user management ──
     path('users/', list_users_view, name='list_users'),
     path('users/register/', register_view, name='register_user'),
+    path('users/<str:code_user>/', update_user_view, name='update_user'),
     path('users/<str:code_user>/archive/', archive_user_view, name='archive_user'),
+    path('users/<str:code_user>/restore/', restore_user_view, name='restore_user'),
+    path('users/<str:code_user>/delete/', delete_user_view, name='delete_user'),
 ]
