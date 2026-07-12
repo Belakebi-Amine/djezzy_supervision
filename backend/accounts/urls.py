@@ -14,6 +14,7 @@ from .views import (
     list_users_view,
     register_view,
     archive_user_view,
+    toggle_active_view,
     update_user_view,
     restore_user_view,
     delete_user_view,
@@ -40,6 +41,7 @@ urlpatterns = [
     path('users/register/', register_view, name='register_user'),
     path('users/<str:code_user>/', update_user_view, name='update_user'),
     path('users/<str:code_user>/archive/', archive_user_view, name='archive_user'),
+    path('users/<str:code_user>/toggle-active/', toggle_active_view, name='toggle_active'),
     path('users/<str:code_user>/restore/', restore_user_view, name='restore_user'),
     path('users/<str:code_user>/delete/', delete_user_view, name='delete_user'),
 ]

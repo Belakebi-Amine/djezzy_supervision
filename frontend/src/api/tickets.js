@@ -62,11 +62,10 @@ const getHeaders = async () => {
     };
 };
 
-// Redirect to login on 401
+// On 401, clear tokens — components will handle the redirect gracefully
 const checkAuthAndRedirect = (status) => {
     if (status === 401) {
         ['token', 'access_token', 'refresh_token'].forEach(k => localStorage.removeItem(k));
-        window.location.href = '/login';
     }
 };
 
@@ -234,10 +233,22 @@ export const archiverSite = async (id) => {
     return response.json();
 };
 
-/** Archives a user (sets is_active=False) */
+/** Archives a user (sets is_archived=True, user disappears from list) */
 export const archiveUser = async (codeUser) => {
     const response = await fetch(`${API_URL}/accounts/users/${codeUser}/archive/`, {
         method: 'DELETE',
+        headers: await getHeaders(),
+    });
+    if (!response.ok) {
+        throw new Error(`Erreur serveur [${response.status}]`);
+    }
+    return response.json();
+};
+
+/** Toggles a user's active status (active/inactive, user stays in list) */
+export const toggleActiveUser = async (codeUser) => {
+    const response = await fetch(`${API_URL}/accounts/users/${codeUser}/toggle-active/`, {
+        method: 'POST',
         headers: await getHeaders(),
     });
     if (!response.ok) {
@@ -260,7 +271,7 @@ export const updateUser = async (codeUser, data) => {
     return response.json();
 };
 
-/** Restores an archived user (sets is_active=True) */
+/** Restores an archived user (sets is_archived=False) */
 export const restoreUser = async (codeUser) => {
     const response = await fetch(`${API_URL}/accounts/users/${codeUser}/restore/`, {
         method: 'POST',
@@ -282,4 +293,36 @@ export const deleteUser = async (codeUser) => {
         throw new Error(`Erreur serveur [${response.status}]`);
     }
     return response.json();
+};
+
+// ── Reclamation Archive Operations ──
+
+/** Archives a reclamation ticket (admin only) */
+export const archiverReclamation = async (id) => {
+    const response = await fetch(`${API_URL}/reclamations/${id}/archiver/`, {
+        method: 'POST',
+        headers: await getHeaders(),
+    });
+    if (!response.ok) throw new Error(`Erreur archivage [${response.status}]`);
+    return response.json();
+};
+
+/** Unarchives a reclamation ticket (admin only) */
+export const desarchiverReclamation = async (id) => {
+    const response = await fetch(`${API_URL}/reclamations/${id}/desarchiver/`, {
+        method: 'POST',
+        headers: await getHeaders(),
+    });
+    if (!response.ok) throw new Error(`Erreur désarchivage [${response.status}]`);
+    return response.json();
+};
+
+/** Fetches archived reclamation tickets (admin only) */
+export const getArchivedTickets = async () => {
+    const response = await fetch(`${API_URL}/reclamations/?archived=true`, {
+        method: 'GET',
+        headers: await getHeaders(),
+    });
+    if (!response.ok) throw new Error(`Erreur serveur [${response.status}]`);
+    return await response.json();
 };

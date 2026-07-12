@@ -22,6 +22,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         # Add custom claims to the JWT payload
         token['code_user'] = user.code_user
         token['role'] = getattr(user, 'role', 'aucun')
+        token['is_active'] = user.is_active
         return token
 
     def validate(self, attrs):
@@ -56,8 +57,9 @@ class UserSerializer(serializers.ModelSerializer):
             'email',
             'role_user',
             'is_active',
+            'is_archived',
         ]
-        read_only_fields = ['code_user', 'nom_user', 'role_user', 'is_active']
+        read_only_fields = ['code_user', 'nom_user', 'role_user', 'is_active', 'is_archived']
 
 
 class RegisterSerializer(serializers.ModelSerializer):

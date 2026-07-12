@@ -143,17 +143,41 @@ def liste_ingenieurs(request):
 @permission_classes([IsAuthenticated])
 def archive_user_view(request, code_user):
     """
-    Soft-deletes a user by setting is_active=False.
-    The user data stays in DB but can no longer log in.
+    Archives a user by setting is_archived=True.
+    The user disappears from the UI and goes to the archives tab.
     """
     if request.user.role != Role.ADMIN:
         return Response({'error': "Accès réservé à l'administrateur"}, status=status.HTTP_403_FORBIDDEN)
 
     try:
         user = CustomUser.objects.get(code_user=code_user)
-        user.is_active = False
-        user.save(update_fields=['is_active'])
+        user.is_archived = True
+        user.save(update_fields=['is_archived'])
         return Response({'message': f'Utilisateur {user.code_user} archivé'})
+    except CustomUser.DoesNotExist:
+        return Response({'error': 'Utilisateur introuvable'}, status=status.HTTP_404_NOT_FOUND)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def toggle_active_view(request, code_user):
+    """
+    Toggles a user's is_active status.
+    Inactive users stay visible in the list but can't log in.
+    """
+    if request.user.role != Role.ADMIN:
+        return Response({'error': "Accès réservé à l'administrateur"}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        user = CustomUser.objects.get(code_user=code_user)
+        user.is_active = not user.is_active
+        user.save(update_fields=['is_active'])
+        status_text = 'activé' if user.is_active else 'désactivé'
+        return Response({
+            'message': f'Utilisateur {user.code_user} {status_text}',
+            'is_active': user.is_active,
+            'user': UserSerializer(user).data,
+        })
     except CustomUser.DoesNotExist:
         return Response({'error': 'Utilisateur introuvable'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -185,14 +209,14 @@ def update_user_view(request, code_user):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def restore_user_view(request, code_user):
-    """Restores an archived user by setting is_active=True."""
+    """Restores an archived user by setting is_archived=False."""
     if request.user.role != Role.ADMIN:
         return Response({'error': "Accès réservé à l'administrateur"}, status=status.HTTP_403_FORBIDDEN)
 
     try:
         user = CustomUser.objects.get(code_user=code_user)
-        user.is_active = True
-        user.save(update_fields=['is_active'])
+        user.is_archived = False
+        user.save(update_fields=['is_archived'])
         return Response({
             'message': f'Utilisateur {user.code_user} restauré',
             'user': UserSerializer(user).data,

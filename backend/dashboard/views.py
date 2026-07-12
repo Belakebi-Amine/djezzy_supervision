@@ -272,10 +272,18 @@ def stats_reporting(request):
         total_sites = sites_wilaya.count()
         sites_down = sites_wilaya.filter(statut='DOWN').count()
         sites_up = sites_wilaya.filter(statut='UP').count()
+        sites_degrades = sites_wilaya.filter(statut='DEGRADE').count()
+        sites_perturbes = sites_wilaya.filter(statut='PERTURBE').count()
         taux_dispo = round((sites_up / total_sites) * 100, 1) if total_sites > 0 else 100.0
-        tickets_ouverts_wilaya = Reclamation.objects.filter(
-            created_at__gte=date_limite, site__wilaya__iexact=wilaya_nom, statut__iexact='ouvert'
-        ).count()
+
+        tickets_wilaya = Reclamation.objects.filter(
+            created_at__gte=date_limite, site__wilaya__iexact=wilaya_nom
+        )
+        total_tickets_w = tickets_wilaya.count()
+        tickets_ouverts_w = tickets_wilaya.filter(statut__iexact='ouvert').count()
+        tickets_resolus_w = tickets_wilaya.filter(statut__iexact='resolu').count()
+        tickets_critiques_w = tickets_wilaya.filter(priorite__iexact='critique', statut__iexact='ouvert').count()
+        taux_res_w = round((tickets_resolus_w / total_tickets_w) * 100, 1) if total_tickets_w > 0 else 0.0
 
         delai_w_stats = Reclamation.objects.filter(
             created_at__gte=date_limite, site__wilaya__iexact=wilaya_nom,
@@ -283,18 +291,33 @@ def stats_reporting(request):
         ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
         delai_w_str = _format_duree(delai_w_stats['duree__avg'])
 
-        # Simple trend indicator based on availability threshold
-        tendance = "Stable"
-        if taux_dispo < 95.0:
-            tendance = "En baisse"
-        elif taux_dispo >= 98.0:
+        # Trend indicator: compare first half vs second half of period
+        milieu = timezone.now() - timedelta(days=nb_jours // 2)
+        tickets_avant = Reclamation.objects.filter(
+            created_at__gte=date_limite, created_at__lt=milieu, site__wilaya__iexact=wilaya_nom
+        ).count()
+        tickets_apres = Reclamation.objects.filter(
+            created_at__gte=milieu, site__wilaya__iexact=wilaya_nom
+        ).count()
+        if tickets_apres > tickets_avant * 1.2:
             tendance = "En hausse"
+        elif tickets_apres < tickets_avant * 0.8:
+            tendance = "En baisse"
+        else:
+            tendance = "Stable"
 
         tableau_wilayas.append({
             'wilaya': wilaya_nom,
             'total_sites': total_sites,
+            'sites_up': sites_up,
             'sites_down': sites_down,
-            'tickets_ouverts': tickets_ouverts_wilaya,
+            'sites_degrades': sites_degrades,
+            'sites_perturbes': sites_perturbes,
+            'total_tickets': total_tickets_w,
+            'tickets_ouverts': tickets_ouverts_w,
+            'tickets_resolus': tickets_resolus_w,
+            'tickets_critiques': tickets_critiques_w,
+            'taux_resolution': f"{taux_res_w}%",
             'delai_moyen_resolution': delai_w_str,
             'taux_disponibilite': f"{taux_dispo}%",
             'tendance': tendance,
@@ -438,11 +461,11 @@ def liste_rapports_ia(request):
     from .serializers import RapportIASerializer
 
     if request.method == 'GET':
-        # Admin can see all reports, other roles only see their own
+        # Admin can see all reports, other roles only see their own. Excludes archived.
         if request.user.role == 'ADMIN':
-            rapports = RapportIA.objects.all()
+            rapports = RapportIA.objects.filter(is_archived=False)
         else:
-            rapports = RapportIA.objects.filter(cree_par=request.user)
+            rapports = RapportIA.objects.filter(cree_par=request.user, is_archived=False)
         serializer = RapportIASerializer(rapports, many=True)
         return Response(serializer.data)
 
@@ -460,7 +483,7 @@ def detail_rapport_ia(request, pk):
     """
     GET: Returns a single report's full content.
     PUT: Updates report title/content (for editing before export).
-    DELETE: Removes a report permanently.
+    DELETE: Archives the report (soft-delete, admin only).
     """
     from .serializers import RapportIASerializer
 
@@ -485,5 +508,42 @@ def detail_rapport_ia(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     if request.method == 'DELETE':
-        rapport.delete()
-        return Response({'message': 'Rapport supprimé'}, status=status.HTTP_204_NO_CONTENT)
+        if request.user.role != 'ADMIN':
+            return Response({'error': 'Seul l\'admin peut supprimer.'}, status=status.HTTP_403_FORBIDDEN)
+        rapport.is_archived = True
+        rapport.archived_at = timezone.now()
+        rapport.archived_by = request.user
+        rapport.save()
+        return Response({'message': 'Rapport archivé'}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def liste_rapports_archives(request):
+    """
+    GET: List archived reports (admin only).
+    POST: Restore an archived report (admin only).
+    """
+    from .serializers import RapportIASerializer
+
+    if request.user.role != 'ADMIN':
+        return Response({'error': 'Permission refusée.'}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == 'GET':
+        rapports = RapportIA.objects.filter(is_archived=True)
+        serializer = RapportIASerializer(rapports, many=True)
+        return Response(serializer.data)
+
+    if request.method == 'POST':
+        rapport_id = request.data.get('id')
+        if not rapport_id:
+            return Response({'error': 'id requis'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            rapport = RapportIA.objects.get(pk=rapport_id, is_archived=True)
+        except RapportIA.DoesNotExist:
+            return Response({'error': 'Rapport introuvable'}, status=status.HTTP_404_NOT_FOUND)
+        rapport.is_archived = False
+        rapport.archived_at = None
+        rapport.archived_by = None
+        rapport.save()
+        return Response({'message': 'Rapport restauré', 'id': rapport.id})

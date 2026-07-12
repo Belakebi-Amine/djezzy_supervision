@@ -1,7 +1,7 @@
 :root {
-  --bg-sidebar: #11101f;
-  --bg-sidebar-hover: #1a1930;
-  --text-sidebar: #92909e;
+  --bg-sidebar: #181a20;
+  --bg-sidebar-hover: #22252e;
+  --text-sidebar: #9ca3af;
   --text-sidebar-active: #ffffff;
   --sidebar-active-bg: linear-gradient(90deg, #9a0c2d, #710820);
 

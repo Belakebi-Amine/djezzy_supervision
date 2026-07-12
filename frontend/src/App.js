@@ -1,11 +1,6 @@
 // App.js
-// ─────────────────────────────────────────────────────────────
-// Root component for the Djezzy Supervision React app.
-// Defines all routes and maps them to the corresponding
-// dashboard components. Each role has its own dedicated page.
-// ─────────────────────────────────────────────────────────────
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import './styles/themes.css';
 import Login from './pages/Login';
 import CallCenter from './pages/CallCenter';
@@ -14,24 +9,64 @@ import SupervisorDashboard from './pages/SupervisorDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import Profile from './pages/Profile';
 
+const ROLE_ICONS = {
+  ADMIN: '/Icon/Admin-M.png',
+  SUPERVISEUR: '/Icon/Supervisor-M.png',
+  AGENT_CALL_CENTER: '/Icon/CallCenter.png',
+  INGENIEUR_RESEAUX: '/Icon/Reseau.png',
+};
+
+function setDynamicFavicon(role) {
+  const iconPath = ROLE_ICONS[role] || '/Icon/Login.png';
+  let link = document.querySelector("link[rel='icon']");
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'icon';
+    document.head.appendChild(link);
+  }
+  link.type = 'image/png';
+  link.href = iconPath;
+}
+
+function AppContent() {
+  const location = useLocation();
+
+  useEffect(() => {
+    const token = localStorage.getItem('token') || localStorage.getItem('access_token');
+    if (token) {
+      try {
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const decoded = JSON.parse(atob(base64));
+        const role = (decoded?.role || '').toString().toUpperCase();
+        setDynamicFavicon(role);
+      } catch {
+        setDynamicFavicon(null);
+      }
+    } else {
+      setDynamicFavicon(null);
+    }
+  }, [location.pathname]);
+
+  return (
+    <div className="App">
+      <Routes>
+        <Route path="/" element={<Navigate to="/login" />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/call-center-dashboard" element={<CallCenter />} />
+        <Route path="/admin-dashboard" element={<AdminDashboard />} />
+        <Route path="/engineer-dashboard" element={<EngineerDashboard />} />
+        <Route path="/supervisor-dashboard" element={<SupervisorDashboard />} />
+        <Route path="/profile" element={<Profile />} />
+      </Routes>
+    </div>
+  );
+}
+
 function App() {
   return (
     <Router>
-      <div className="App">
-        <Routes>
-          {/* Root redirects to login */}
-          <Route path="/" element={<Navigate to="/login" />} />
-          {/* Authentication */}
-          <Route path="/login" element={<Login />} />
-          {/* Role-based dashboards */}
-          <Route path="/call-center-dashboard" element={<CallCenter />} />
-          <Route path="/admin-dashboard" element={<AdminDashboard />} />
-          <Route path="/engineer-dashboard" element={<EngineerDashboard />} />
-          <Route path="/supervisor-dashboard" element={<SupervisorDashboard />} />
-          {/* User profile (shared across roles) */}
-          <Route path="/profile" element={<Profile />} />
-        </Routes>
-      </div>
+      <AppContent />
     </Router>
   );
 }

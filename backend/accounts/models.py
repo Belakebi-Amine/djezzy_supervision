@@ -48,6 +48,9 @@ class CustomUser(AbstractUser):
         verbose_name='role_user'
     )
 
+    # Separate from is_active: archived users disappear from the UI entirely
+    is_archived = models.BooleanField(default=False, verbose_name='Archivé')
+
     class Meta:
         verbose_name = 'Utilisateur'
         verbose_name_plural = 'Utilisateurs'

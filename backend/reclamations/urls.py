@@ -15,4 +15,7 @@ urlpatterns = [
     path('<int:pk>/', views.detail_reclamation, name='detail-reclamation'),
     # Add a comment to a ticket (engineers only)
     path('<int:pk>/commentaire/', views.ajouter_commentaire, name='ajouter-commentaire'),
+    # Archive/unarchive a ticket (admin only)
+    path('<int:pk>/archiver/', views.archiver_reclamation, name='archiver-reclamation'),
+    path('<int:pk>/desarchiver/', views.desarchiver_reclamation, name='desarchiver-reclamation'),
 ]

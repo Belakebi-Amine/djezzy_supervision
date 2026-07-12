@@ -1,13 +1,14 @@
 # reclamations/views.py
 # ─────────────────────────────────────────────────────────────
 # API views for complaint ticket management. Handles listing,
-# creation, updates, and comments on reclamation tickets.
+# creation, updates, archiving, and comments on reclamation tickets.
 # Supports flexible status filtering with aliases for the frontend.
 # ─────────────────────────────────────────────────────────────
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from django.utils import timezone
 from .models import Reclamation
 from .serializers import ReclamationSerializer, CommentaireSerializer
 from accounts.models import Role
@@ -43,10 +44,18 @@ def _statuts_depuis_param(statut_filter):
 def liste_reclamations(request):
     """
     Lists all reclamation tickets with optional status filtering.
-    Uses select_related for efficient SQL joins on site/author data.
+    Excludes archived tickets by default. Use ?archived=true to see only archived.
     """
     statut_filter = request.query_params.get('statut')
+    archived_filter = request.query_params.get('archived', '').lower()
+
     reclamations = Reclamation.objects.select_related('site', 'cree_par', 'assigne_a').all()
+
+    # Filter by archive status
+    if archived_filter == 'true':
+        reclamations = reclamations.filter(is_archived=True)
+    elif archived_filter != 'all':
+        reclamations = reclamations.filter(is_archived=False)
 
     if statut_filter:
         statuts = _statuts_depuis_param(statut_filter)
@@ -151,3 +160,37 @@ def ajouter_commentaire(request, pk):
             serializer.save(reclamation=reclamation)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def archiver_reclamation(request, pk):
+    """Archive a reclamation (admin only). Sets is_archived=True."""
+    if request.user.role != Role.ADMIN:
+        return Response({'error': 'Permission refusée.'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        reclamation = Reclamation.objects.get(pk=pk)
+    except Reclamation.DoesNotExist:
+        return Response({'error': 'Ticket introuvable'}, status=status.HTTP_404_NOT_FOUND)
+    reclamation.is_archived = True
+    reclamation.archived_at = timezone.now()
+    reclamation.archived_by = request.user
+    reclamation.save()
+    return Response({'message': 'Ticket archivé', 'id': pk})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def desarchiver_reclamation(request, pk):
+    """Unarchive a reclamation (admin only). Sets is_archived=False."""
+    if request.user.role != Role.ADMIN:
+        return Response({'error': 'Permission refusée.'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        reclamation = Reclamation.objects.get(pk=pk)
+    except Reclamation.DoesNotExist:
+        return Response({'error': 'Ticket introuvable'}, status=status.HTTP_404_NOT_FOUND)
+    reclamation.is_archived = False
+    reclamation.archived_at = None
+    reclamation.archived_by = None
+    reclamation.save()
+    return Response({'message': 'Ticket désarchivé', 'id': pk})

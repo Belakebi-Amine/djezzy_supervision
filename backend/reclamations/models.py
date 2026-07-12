@@ -86,6 +86,16 @@ class Reclamation(models.Model):
         verbose_name='Assigné à',
     )
 
+    # ── Archive (soft-delete) ──
+    is_archived = models.BooleanField(default=False, verbose_name='Archivé')
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='reclamations_archivees',
+    )
+
     # ── Timestamps ──
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -131,7 +141,7 @@ class Reclamation(models.Model):
                         max_num = num
                 except ValueError:
                     continue
-            self.numero_ticket = f'TK{str(max_num + 1).zfill(3)}'
+            self.numero_ticket = f'TK{str(max_num + 1).zfill(6)}'
 
         # Step 3: Record when the ticket was resolved
         if self.statut == 'resolu' and not self.resolu_le:

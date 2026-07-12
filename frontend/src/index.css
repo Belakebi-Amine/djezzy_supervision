@@ -96,10 +96,10 @@ th {
 
 /* ─── Sidebar buttons ─── */
 .side-btn {
-  transition: background 0.2s ease, color 0.2s ease, padding-left 0.2s ease;
+  transition: background 0.2s ease, color 0.2s ease, padding-left 0.2s ease, border-radius 0.2s ease;
 }
 .side-btn:hover {
-  background: rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.08);
   color: #fff;
 }
 .side-btn:active {

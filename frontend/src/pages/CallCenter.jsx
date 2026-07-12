@@ -11,7 +11,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { spawnParticles } from '../hooks/useAnimations';
-import { getTickets, createTicket, updateTicket, getSites } from '../api/tickets';
+import { getTickets, createTicket, updateTicket, getSites, getTokenRole } from '../api/tickets';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
 /* Color palette and badge styles used across the UI */
@@ -49,6 +49,11 @@ const COLORS = {
 
 /* French month abbreviations for date formatting */
 const MOIS_FR = ['JAN', 'FEV', 'MAR', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOU', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+const now = () => {
+  const d = new Date();
+  return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+};
 
 /* Format an ISO date string to a short French date like "15 JUIN" */
 const formatDateFr = (isoString) => {
@@ -114,6 +119,19 @@ const INITIAL_FORM = {
 
 export default function CallCenter() {
   const navigate = useNavigate();
+
+  // Role guard
+  const tokenRole = getTokenRole();
+  const [authChecked, setAuthChecked] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setAuthChecked(true), 100); return () => clearTimeout(t); }, []);
+  useEffect(() => {
+    if (!authChecked) return;
+    if (!tokenRole) { navigate('/login', { replace: true }); return; }
+    if (tokenRole !== 'AGENT_CALL_CENTER') {
+      const dashMap = { ADMIN: '/admin-dashboard', INGENIEUR_RESEAUX: '/engineer-dashboard', SUPERVISEUR: '/supervisor-dashboard' };
+      navigate(dashMap[tokenRole] || '/login', { replace: true });
+    }
+  }, [authChecked, tokenRole, navigate]);
 
   /* --- View / UI state --- */
   // currentView controls which panel is shown: 'non-traites', 'traites', or 'nouveau-ticket'
@@ -254,63 +272,37 @@ export default function CallCenter() {
     <div style={styles.appLayout}>
       {/* ========== LEFT SIDEBAR ========== */}
       <aside style={styles.sidebar}>
-        {/* Brand / logo area */}
-        <div style={styles.brandZone}>
-          <img src={logoDjezzy} alt="Djezzy" style={styles.brandLogo} />
-          <div>
-            <div style={styles.brandName}>Djezzy Hub</div>
-            <div style={styles.brandRole}>Agent Call Center</div>
-          </div>
+        <div style={styles.brand}>
+          <img src={logoDjezzy} alt="" style={styles.brandLogo} />
+          <div><div style={styles.brandName}>Djezzy Hub</div><div style={styles.brandRole}>Agent Call Center</div></div>
         </div>
-
-        {/* Main navigation menu */}
-        <div style={styles.menuSection}>
+        <div style={styles.menu}>
           <span style={styles.sectionLabel}>PRINCIPAL</span>
-          <button
-            onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('non-traites'); }}
-            style={{ ...styles.menuItem, ...(currentView === 'non-traites' ? styles.menuItemActive : {}) }}
-          >
-            <IconTicket style={{ marginRight: '10px', flexShrink: 0 }} /> Tickets Non-Traites
+          <button onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('non-traites'); }}
+            style={{ ...styles.navItem, ...(currentView === 'non-traites' ? styles.navItemActive : {}) }}>
+            <IconTicket /> Tickets Non-Traites
           </button>
-          <button
-            onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('traites'); }}
-            style={{ ...styles.menuItem, ...(currentView === 'traites' ? styles.menuItemActive : {}) }}
-          >
-            <IconArchive style={{ marginRight: '10px', flexShrink: 0 }} /> Tickets Traites
+          <button onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('traites'); }}
+            style={{ ...styles.navItem, ...(currentView === 'traites' ? styles.navItemActive : {}) }}>
+            <IconArchive /> Tickets Traites
           </button>
         </div>
-
-        {/* Personal / account section pushed to the bottom */}
-        <div style={{ ...styles.menuSection, marginTop: 'auto' }}>
-          <span style={styles.sectionLabel}>PERSONNEL</span>
-          <button style={styles.menuItem} onClick={() => navigate('/profile')}>
-            <IconUser style={{ marginRight: '10px', flexShrink: 0 }} /> Profile
-          </button>
-          <button style={styles.menuItem} onClick={handleLogout}>
-            <IconLogout style={{ marginRight: '10px', flexShrink: 0 }} /> Log out
-          </button>
-        </div>
-
       </aside>
 
       {/* ========== MAIN CONTENT AREA ========== */}
       <div style={{ ...styles.mainContent, backgroundColor: COLORS.mainBg }}>
         {/* Top header with page title or back navigation */}
-        <header style={{ ...styles.topHeader, backgroundColor: COLORS.cardBg, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ flex: 1 }}>
-            {currentView === 'nouveau-ticket' ? (
-              <div>
-                <div style={styles.backNav} onClick={() => setCurrentView('non-traites')}>
-                  <IconChevronLeft />
-                  <span style={{ marginLeft: '8px', fontWeight: 600 }}>Nouveau Ticket</span>
-                </div>
-                <div style={styles.breadcrumb}>
-                  Reclamations &gt; <span style={{ color: COLORS.djezzyRed }}>Nouveau Ticket</span>
-                </div>
-              </div>
-            ) : (
-              <h1 style={{ ...styles.pageTitle, color: COLORS.textDark }}>Reclamations</h1>
-            )}
+        <header style={{ position: 'sticky', top: 0, height: 51, display: 'flex', alignItems: 'center', padding: '0 27px', background: COLORS.cardBg, borderBottom: `1px solid ${COLORS.border}`, boxShadow: 'var(--shadow-sm)', zIndex: 10 }}>
+          <h1 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-secondary)' }}>
+            {currentView === 'nouveau-ticket' ? 'Nouveau Ticket' : 'Réclamations'}
+          </h1>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button onClick={fetchTickets} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-toolbar)', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-muted3)' }} title="Actualiser"><IconRefresh style={{ width: 14, height: 14 }} /></button>
+            <span style={{ fontSize: 10, color: 'var(--text-muted2)', fontWeight: 500, padding: '4px 10px', background: 'var(--bg-toolbar)', borderRadius: 4 }}>{now()}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8, paddingLeft: 12, borderLeft: '1px solid var(--border-color)' }}>
+              <button onClick={() => navigate('/profile')} title="Profil" style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FEE2E2', border: 'none', cursor: 'pointer', color: '#E8401A' }}><IconUser style={{ width: 15, height: 15 }} /></button>
+              <button onClick={handleLogout} title="Déconnexion" style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FEE2E2', border: 'none', cursor: 'pointer', color: '#E8401A' }}><IconLogout style={{ width: 15, height: 15 }} /></button>
+            </div>
           </div>
         </header>
 
@@ -721,15 +713,15 @@ export default function CallCenter() {
  * ============================================================ */
 const styles = {
   appLayout: { display: 'flex', minHeight: '100vh', backgroundColor: COLORS.mainBg, fontFamily: "'Inter', system-ui, sans-serif", width: '100%' },
-  sidebar: { width: '193px', backgroundColor: COLORS.sidebarBg, color: 'var(--text-muted2)', display: 'flex', flexDirection: 'column', padding: '0', flexShrink: 0, overflow: 'hidden' },
-  brandZone: { height: '82px', display: 'flex', alignItems: 'center', gap: '13px', padding: '0 17px', borderBottom: '1px solid rgba(255,255,255,0.07)' },
-  brandLogo: { width: '34px', height: 'auto', objectFit: 'contain' },
-  brandName: { color: '#FFFFFF', fontWeight: 700, fontSize: '16px' },
-  brandRole: { marginTop: '6px', fontSize: '10px', color: 'var(--text-muted3)' },
-  menuSection: { display: 'flex', flexDirection: 'column', gap: '5px', padding: '26px 12px 0' },
-  sectionLabel: { margin: '0 5px 10px', fontSize: '6px', fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: '1px' },
-  menuItem: { display: 'flex', alignItems: 'center', background: 'transparent', border: 'none', color: 'var(--text-muted2)', padding: '0 10px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', fontSize: '13px', width: '100%', height: '34px', textDecoration: 'none', outline: 'none' },
-  menuItemActive: { background: 'linear-gradient(90deg, #9a0c2d, #710820)', color: '#FFFFFF', fontWeight: 600, position: 'relative' },
+  sidebar: { width: 193, backgroundColor: COLORS.sidebarBg, color: 'var(--text-sidebar)', display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden' },
+  brand: { height: 82, display: 'flex', alignItems: 'center', gap: 13, padding: '0 17px', borderBottom: '1px solid rgba(255,255,255,0.07)' },
+  brandLogo: { width: 34, height: 'auto', objectFit: 'contain' },
+  brandName: { color: '#FFFFFF', fontWeight: 700, fontSize: 16 },
+  brandRole: { marginTop: 6, fontSize: 10, color: 'var(--text-sidebar)' },
+  menu: { display: 'flex', flexDirection: 'column', gap: 5, padding: '26px 12px 0' },
+  sectionLabel: { margin: '0 5px 10px', fontSize: 6, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: '1px' },
+  navItem: { display: 'flex', alignItems: 'center', gap: 9, background: 'transparent', border: 'none', color: 'var(--text-sidebar)', padding: '0 10px', borderRadius: 6, cursor: 'pointer', textAlign: 'left', fontSize: 13, width: '100%', height: 34, textDecoration: 'none', outline: 'none' },
+  navItemActive: { background: 'linear-gradient(90deg, #9a0c2d, #710820)', color: '#FFFFFF', fontWeight: 600 },
   mainContent: { flex: 1, padding: '30px 40px', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' },
   topHeader: { marginBottom: '20px' },
   pageTitle: { margin: 0, fontSize: '22px', fontWeight: 700, color: COLORS.textDark },

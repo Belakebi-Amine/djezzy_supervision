@@ -3,14 +3,9 @@
   "name": "Djezzy Hub - Gestion des reclamations",
   "icons": [
     {
-      "src": "favicon.svg",
-      "type": "image/svg+xml",
+      "src": "Icon/Login.png",
+      "type": "image/png",
       "sizes": "any"
-    },
-    {
-      "src": "favicon.ico",
-      "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/x-icon"
     },
     {
       "src": "logo192.png",

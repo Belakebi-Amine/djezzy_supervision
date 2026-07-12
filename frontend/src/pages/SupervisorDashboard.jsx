@@ -15,8 +15,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { spawnParticles } from '../hooks/useAnimations';
 import {
-  LineChart, Line, BarChart, Bar,
-  PieChart, Pie, Cell,
+  LineChart, Line, BarChart, Bar, Cell,
+  PieChart, Pie, Sector,
   ResponsiveContainer, XAxis, YAxis, CartesianGrid,
   Tooltip,
 } from 'recharts';
@@ -27,7 +27,7 @@ import {
   genererRapportIA, getRapportsIA, sauvegarderRapportIA,
   updateRapportIA, deleteRapportIA,
 } from '../api/dashboard';
-import { getSites } from '../api/tickets';
+import { getSites, getTickets, getTokenRole } from '../api/tickets';
 import DetailModal from '../components/DetailModal';
 import MapComponent from '../components/Map';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
@@ -37,7 +37,6 @@ const C = {
   sidebarBg: 'var(--bg-sidebar)', mainBg: 'var(--bg-main)', cardBg: 'var(--bg-card)',
   textDark: 'var(--text-primary)', textMuted: 'var(--text-muted)', border: 'var(--border-color)',
 };
-const PALETTE = ['#E8401A', '#2563EB', '#10B981', '#F59E0B', '#8B5CF6'];
 
 /* ── Reusable SVG icon props and inline icon components ── */
 const iconProps = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' };
@@ -46,7 +45,7 @@ const IconU = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="8" r="3.2" /
 const IconL = (p) => <svg {...iconProps} {...p}><path d="M15 16l4-4-4-4" /><path d="M19 12H8" /><path d="M12 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6" /></svg>;
 const IconI = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>;
 const IconRefresh = (p) => <svg {...iconProps} {...p}><path d="M3 12a9 9 0 0 1 15.5-6.3M21 12a9 9 0 0 1-15.5 6.3" /><path d="M3 4v5h5M21 20v-5h-5" /></svg>;
-const IconMap = (p) => <svg {...iconProps} {...p}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>;
+const IconMap = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>;
 const IconFile = (p) => <svg {...iconProps} {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>;
 const IconTrash = (p) => <svg {...iconProps} {...p}><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
 const IconEdit = (p) => <svg {...iconProps} {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>;
@@ -57,25 +56,14 @@ const IconCalendar = (p) => <svg {...iconProps} {...p}><rect x="3" y="4" width="
 const IconX = (p) => <svg {...iconProps} {...p}><path d="M18 6L6 18M6 6l12 12" /></svg>;
 const IconSite = (p) => <svg {...iconProps} {...p}><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z" /><circle cx="12" cy="9.5" r="2.3" /></svg>;
 
-/* Maps internal priority keys to human-readable French labels */
-const LABEL_MAP = { critique: 'Critique', haute: 'Haute', normale: 'Normale', basse: 'Basse' };
-
-/* Returns a color code based on the availability percentage */
-const dispoColor = (v) => {
-  if (v >= 100) return '#059669';
-  if (v >= 75) return '#65A30D';
-  if (v >= 50) return '#F59E0B';
-  if (v >= 25) return '#EA580C';
-  if (v > 0) return '#DC2626';
-  return '#DC2626';
-};
-
 /* Custom tooltip component used by all Recharts charts */
 const Tip = ({ active, payload, label }) => {
   if (!active || !payload) return null;
+  const extra = payload?.[0]?.payload;
   return (
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 6, padding: '8px 14px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: 12 }}>
       <p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>{label}</p>
+      {extra?.codeSite && <p style={{ margin: '2px 0', color: 'var(--text-muted2)', fontSize: 11 }}>Code: {extra.codeSite}</p>}
       {payload.map((e, i) => (
         <p key={i} style={{ margin: '2px 0', color: e.color || '#555' }}>
           {e.name}: {typeof e.value === 'number' ? e.value.toLocaleString() : e.value}
@@ -125,6 +113,19 @@ function InfoPopup({ text }) {
 export default function SupervisorDashboard() {
   const navigate = useNavigate();
 
+  // Role guard
+  const tokenRole = getTokenRole();
+  const [authChecked, setAuthChecked] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setAuthChecked(true), 100); return () => clearTimeout(t); }, []);
+  useEffect(() => {
+    if (!authChecked) return;
+    if (!tokenRole) { navigate('/login', { replace: true }); return; }
+    if (tokenRole !== 'SUPERVISEUR') {
+      const dashMap = { ADMIN: '/admin-dashboard', INGENIEUR_RESEAUX: '/engineer-dashboard', AGENT_CALL_CENTER: '/call-center-dashboard' };
+      navigate(dashMap[tokenRole] || '/login', { replace: true });
+    }
+  }, [authChecked, tokenRole, navigate]);
+
   /* ── Core view / navigation state ── */
   const [currentView, setCurrentView] = useState('dashboard');   // 'dashboard' | 'cartographie' | 'rapport-ia'
   const [period, setPeriod] = useState(30);                       // number of days for data range
@@ -151,7 +152,18 @@ export default function SupervisorDashboard() {
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
   const [rapportView, setRapportView] = useState('create'); // sub-view: 'create' | 'list'
+  const [viewRapport, setViewRapport] = useState(null); // rapport to view in popup
   const resultRef = useRef(null);  // ref used to auto-scroll to the generated report
+
+  /* ── Performance view state ── */
+  const [perfRole, setPerfRole] = useState('ingenieurs');
+  const [perfUser, setPerfUser] = useState(null);
+
+  /* ── Priority modal state ── */
+  const [prioModal, setPrioModal] = useState(null); // null or { priorite: string, label: string, color: string }
+  const [allTickets, setAllTickets] = useState([]);
+  const [prioLoading, setPrioLoading] = useState(false);
+  const [prioFilter, setPrioFilter] = useState('all'); // 'all' | 'ouvert' | 'resolu' | 'ferme'
 
   /* ── Data fetching ── */
 
@@ -181,6 +193,19 @@ export default function SupervisorDashboard() {
 
   // When switching to the rapport-ia view, load the saved reports list
   useEffect(() => { if (currentView === 'rapport-ia') { getRapportsIA().then(setSavedReports).catch(() => {}); } }, [currentView]);
+
+  // When priority modal opens, fetch all reclamations once
+  useEffect(() => {
+    if (!prioModal) return;
+    if (allTickets.length > 0) return; // already loaded
+    setPrioLoading(true);
+    getTickets().then((data) => {
+      setAllTickets(Array.isArray(data) ? data : []);
+    }).catch(() => setAllTickets([])).finally(() => setPrioLoading(false));
+  }, [prioModal, allTickets.length]);
+
+  // Derived: filter tickets by selected priority
+  const prioTickets = prioModal ? allTickets.filter((t) => t.priorite === prioModal.priorite) : [];
 
   /* ── AI Report handlers ── */
 
@@ -316,35 +341,14 @@ export default function SupervisorDashboard() {
     return { ...d, _raw: d.jour, jour: isNaN(dd.getTime()) ? d.jour : dd.toLocaleDateString('fr', { day: '2-digit', month: 'short' }) };
   });
 
-  // reso – raw resolution-per-day data
-  const reso = stats?.graphiques?.resolutions_par_jour ?? [];
-
-  // Build a lookup map: date string → total resolved count
-  const evoResoMap = {};
-  reso.forEach((r) => { const k = r.jour.slice(0, 10); evoResoMap[k] = (evoResoMap[k] || 0) + r.resolus; });
-
-  // Merge created vs resolved counts per day for the comparison chart
-  const creesVsResolus = evo.map((d) => ({
-    ...d,
-    crees: d.total,
-    resolus: evoResoMap[d._raw.slice(0, 10)] || 0,
-  }));
-
-  // donut – priority distribution transformed into Recharts-friendly format
-  const donut = stats?.graphiques?.repartition_priorite_donut
-    ? Object.entries(stats.graphiques.repartition_priorite_donut).map(([k, v]) => ({
-        name: LABEL_MAP[k] || k,
-        value: v,
-        color: { critique: '#DC2626', haute: '#F59E0B', normale: '#2563EB', basse: '#10B981' }[k] || 'var(--text-muted2)',
-        raw: k,
-      })) : [];
-
-  const topSites = stats?.graphiques?.top_sites_impactes ?? [];
-  const communes = reporting?.tableau_communes ?? [];
-
-  // Quick site status counts for the stat cards
-  const sitesUp = sites.filter((s) => s.statut === 'UP').length;
-  const sitesDown = sites.filter((s) => s.statut === 'DOWN').length;
+  // Performance data for engineers and call center agents
+  const employes = (stats?.stats_employes ?? []).map((e) => {
+    const m = (e.delai_moyen || '').match(/(\d+)h\s*(\d+)m/);
+    return { ...e, label: `${e.nom} (${e.code})`, delai_h: m ? parseInt(m[1]) + parseInt(m[2]) / 60 : 0 };
+  });
+  const agentsCC = (stats?.stats_agents_cc ?? []).map((a) => ({ ...a, label: `${a.nom} (${a.code})` }));
+  const perfUsers = perfRole === 'ingenieurs' ? employes : agentsCC;
+  const selectedPerfUser = perfUsers.find((u) => u.code === perfUser) || null;
 
   /* ── Sub-views for loading / error states ── */
 
@@ -365,8 +369,8 @@ export default function SupervisorDashboard() {
           <h3 style={{ color: 'var(--text-primary)', fontSize: 16, margin: '0 0 8px' }}>Erreur</h3>
           <p style={{ color: 'var(--text-muted3)', fontSize: 13, margin: '0 0 20px' }}>{error}</p>
           <button onClick={fetchData} style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border-color)', borderRadius: 6, cursor: 'pointer', background: 'var(--bg-card)', color: 'var(--text-primary)', fontFamily: 'inherit' }}>Réessayer</button>
-        </div>
       </div>
+    </div>
     </div>
   );
 
@@ -378,6 +382,147 @@ export default function SupervisorDashboard() {
       {/* Detail modal – shown when the user clicks on a chart element */}
       {detail && <DetailModal type={detail.type} data={detail.data} stats={stats} reporting={reporting} onClose={() => { setDetail(null); refresh(); }} />}
 
+      {/* ── RAPPORT VIEW POPUP ── */}
+      {viewRapport && (
+        <div className="fade-in" style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(2px)' }}
+          onClick={() => setViewRapport(null)}>
+          <div className="scale-in" style={{ background: C.cardBg, borderRadius: 10, width: 780, maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
+            onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                <span style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(232,64,26,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <IconFile style={{ width: 16, height: 16, color: '#E8401A' }} />
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{viewRapport.titre}</h2>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>
+                    {viewRapport.cree_par?.nom_user || '—'} · {new Date(viewRapport.created_at).toLocaleDateString('fr', { day: '2-digit', month: 'long', year: 'numeric' })}
+                    {viewRapport.date_debut && viewRapport.date_fin ? ` · ${new Date(viewRapport.date_debut).toLocaleDateString('fr')} → ${new Date(viewRapport.date_fin).toLocaleDateString('fr')}` : ''}
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setViewRapport(null)}
+                style={{ width: 28, height: 28, borderRadius: 6, border: `1px solid ${C.border}`, background: 'var(--bg-card)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted3)', flexShrink: 0, marginLeft: 12 }}
+                title="Fermer">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+            <div style={{ padding: '20px 28px', overflowY: 'auto', flex: 1, fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.8 }}
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(viewRapport.contenu) }} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Priority detail modal ── */}
+      {prioModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999 }} onClick={() => setPrioModal(null)}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 12, width: '90vw', maxWidth: 900, maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }} onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ width: 12, height: 12, borderRadius: '50%', background: prioModal.color, flexShrink: 0 }} />
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>Réclamations par priorité</span>
+              </div>
+              <button onClick={() => setPrioModal(null)} style={{ background: 'var(--bg-hover)', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 14, color: 'var(--text-muted3)', fontWeight: 700 }}>✕</button>
+            </div>
+            {/* Priority filter tabs */}
+            <div style={{ padding: '8px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', gap: 4 }}>
+              {[{ key: 'critique', label: 'Critique', color: '#DC2626' }, { key: 'haute', label: 'Haute', color: '#F59E0B' }, { key: 'normale', label: 'Normale', color: '#2563EB' }, { key: 'basse', label: 'Basse', color: '#10B981' }].map((p) => {
+                const count = stats?.graphiques?.repartition_priorite_donut?.[p.key] ?? 0;
+                return (
+                  <button key={p.key} onClick={() => setPrioModal((prev) => ({ ...prev, priorite: p.key, label: p.label, color: p.color }))}
+                    style={{ padding: '5px 14px', fontSize: 11, fontWeight: 600, border: `2px solid ${prioModal.priorite === p.key ? p.color : 'transparent'}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', background: prioModal.priorite === p.key ? `${p.color}15` : 'var(--bg-hover)', color: prioModal.priorite === p.key ? p.color : 'var(--text-muted3)', transition: 'all 0.15s', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: p.color }} />
+                    {p.label}
+                    <span style={{ fontSize: 10, fontWeight: 700, background: prioModal.priorite === p.key ? p.color : 'var(--text-muted2)', color: '#fff', padding: '0 5px', borderRadius: 8, lineHeight: '16px' }}>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {/* Body: donut left + list right */}
+            <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+              {/* Left: donut chart */}
+              <div style={{ width: 280, flexShrink: 0, borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px 16px', gap: 16 }}>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie data={[
+                      { name: 'Critique', value: stats?.graphiques?.repartition_priorite_donut?.critique ?? 0, color: '#DC2626' },
+                      { name: 'Haute', value: stats?.graphiques?.repartition_priorite_donut?.haute ?? 0, color: '#F59E0B' },
+                      { name: 'Normale', value: stats?.graphiques?.repartition_priorite_donut?.normale ?? 0, color: '#2563EB' },
+                      { name: 'Basse', value: stats?.graphiques?.repartition_priorite_donut?.basse ?? 0, color: '#10B981' },
+                    ].filter((d) => d.value > 0)} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3} dataKey="value" stroke="none">
+                      {[{ color: '#DC2626' }, { color: '#F59E0B' }, { color: '#2563EB' }, { color: '#10B981' }].map((_, i) => <Cell key={i} fill={[stats?.graphiques?.repartition_priorite_donut?.critique, stats?.graphiques?.repartition_priorite_donut?.haute, stats?.graphiques?.repartition_priorite_donut?.normale, stats?.graphiques?.repartition_priorite_donut?.basse][i] > 0 ? ['#DC2626', '#F59E0B', '#2563EB', '#10B981'][i] : 'transparent'} />)}
+                    </Pie>
+                    <Tooltip content={() => null} />
+                  </PieChart>
+                </ResponsiveContainer>
+                {/* Priority legend */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
+                  {[{ name: 'Critique', color: '#DC2626', key: 'critique' }, { name: 'Haute', color: '#F59E0B', key: 'haute' }, { name: 'Normale', color: '#2563EB', key: 'normale' }, { name: 'Basse', color: '#10B981', key: 'basse' }].map((p) => {
+                    const count = stats?.graphiques?.repartition_priorite_donut?.[p.key] ?? 0;
+                    const total = (stats?.graphiques?.repartition_priorite_donut?.critique ?? 0) + (stats?.graphiques?.repartition_priorite_donut?.haute ?? 0) + (stats?.graphiques?.repartition_priorite_donut?.normale ?? 0) + (stats?.graphiques?.repartition_priorite_donut?.basse ?? 0);
+                    return (
+                      <div key={p.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', borderRadius: 6, background: prioModal.key === p.key ? `${p.color}15` : 'transparent' }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 2, background: p.color, flexShrink: 0 }} />
+                        <span style={{ fontSize: 11, color: 'var(--text-muted3)', flex: 1 }}>{p.name}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{count}</span>
+                        <span style={{ fontSize: 9, color: 'var(--text-muted2)' }}>{total > 0 ? Math.round((count / total) * 100) : 0}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              {/* Right: reclamations list */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                {/* Status filter bar */}
+                <div style={{ padding: '10px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', gap: 4 }}>
+                  {[
+                    { key: 'all', label: 'Tous' },
+                    { key: 'ouvert', label: 'Ouverts' },
+                    { key: 'resolu', label: 'Résolus' },
+                    { key: 'ferme', label: 'Fermés' },
+                  ].map((f) => (
+                    <button key={f.key} onClick={() => setPrioFilter(f.key)}
+                      style={{ padding: '4px 12px', fontSize: 10, fontWeight: 600, border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', background: prioFilter === f.key ? prioModal.color : 'var(--bg-hover)', color: prioFilter === f.key ? '#fff' : 'var(--text-muted3)', transition: 'all 0.15s' }}>
+                      {f.label}
+                    </button>
+                  ))}
+                  <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-muted2)', alignSelf: 'center' }}>
+                    {prioFilter !== 'all' && prioTickets.filter((t) => prioFilter === 'all' || t.statut === prioFilter).length} résultat{prioFilter !== 'all' && prioTickets.filter((t) => prioFilter === 'all' || t.statut === prioFilter).length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                {/* Ticket list */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
+                  {prioLoading ? (
+                    <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted2)', fontSize: 12 }}>Chargement...</div>
+                  ) : (() => {
+                    const filtered = prioTickets.filter((t) => prioFilter === 'all' || t.statut === prioFilter);
+                    if (filtered.length === 0) return <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted2)', fontSize: 12 }}>Aucune réclamation</div>;
+                    return filtered.map((t) => (
+                      <div key={t.id} style={{ padding: '10px 12px', borderBottom: `1px solid ${C.border}`, borderRadius: 6, marginBottom: 4, transition: 'background 0.1s' }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-hover)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{t.numero_ticket}</span>
+                          <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, fontWeight: 600, color: '#fff', background: { critique: '#DC2626', haute: '#F59E0B', normale: '#2563EB', basse: '#10B981' }[t.priorite] || prioModal.color }}>{t.priorite}</span>
+                          <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, fontWeight: 600, background: t.statut === 'ouvert' ? '#F59E0B18' : t.statut === 'resolu' ? '#10B98118' : '#6B728018', color: t.statut === 'ouvert' ? '#F59E0B' : t.statut === 'resolu' ? '#10B981' : '#6B7280' }}>
+                            {t.statut}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted3)', marginBottom: 2 }}>{t.type_reclamation || '—'} — {t.site_display || 'Non assigné'}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted2)' }}>
+                          {t.cree_par?.first_name} {t.cree_par?.last_name} • {t.created_at ? new Date(t.created_at).toLocaleDateString('fr') : '—'}
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ═══════ SIDEBAR ═══════ */}
       <aside style={S.side}>
         <div style={S.brand}><img src={logoDjezzy} alt="" style={S.logo} /><div><div style={S.bn}>Djezzy Hub</div><div style={S.br}>Superviseur</div></div></div>
@@ -388,13 +533,7 @@ export default function SupervisorDashboard() {
           <button className="side-btn" style={{ ...S.mi, ...(currentView === 'dashboard' ? S.mia : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('dashboard'); }}><IconD style={{ marginRight: 10 }} /> Dashboard</button>
           <button className="side-btn" style={{ ...S.mi, ...(currentView === 'cartographie' ? S.mia : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('cartographie'); }}><IconMap style={{ marginRight: 10 }} /> Cartographie</button>
           <button className="side-btn" style={{ ...S.mi, ...(currentView === 'rapport-ia' ? S.mia : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('rapport-ia'); }}><IconFile style={{ marginRight: 10 }} /> Rapport IA</button>
-        </div>
-
-        {/* Account menu at the bottom of the sidebar */}
-        <div style={{ ...S.menu, marginTop: 'auto' }}>
-          <span style={S.sl}>COMPTE</span>
-          <button className="side-btn" style={S.mi} onClick={() => navigate('/profile')}><IconU style={{ marginRight: 10 }} /> Profil</button>
-          <button className="side-btn" style={S.mi} onClick={logout}><IconL style={{ marginRight: 10 }} /> Déconnexion</button>
+          <button className="side-btn" style={{ ...S.mi, ...(currentView === 'performance' ? S.mia : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('performance'); }}><IconU style={{ marginRight: 10 }} /> Performance</button>
         </div>
       </aside>
 
@@ -402,16 +541,20 @@ export default function SupervisorDashboard() {
       <div style={S.main}>
         {/* Top header bar with title, period toggle, refresh, and date */}
         <header style={S.head}>
-          <h1 style={S.title}>{currentView === 'cartographie' ? 'Cartographie' : currentView === 'rapport-ia' ? 'Rapport IA' : "Vue d'ensemble"}</h1>
+          <h1 style={S.title}>{currentView === 'cartographie' ? 'Cartographie' : currentView === 'rapport-ia' ? 'Rapport IA' : currentView === 'performance' ? 'Performance Équipe' : "Vue d'ensemble"}</h1>
           <div style={S.right}>
-            {/* Period toggle buttons: 7 / 30 / 90 days */}
+            {/* Period toggle buttons: 7 / 30 / 60 / 90 / All */}
             <div style={S.toggle}>
-              {[{ l: '7j', v: 7 }, { l: '30j', v: 30 }, { l: '90j', v: 90 }].map((p) => (
+              {[{ l: '7j', v: 7 }, { l: '30j', v: 30 }, { l: '60j', v: 60 }, { l: '90j', v: 90 }, { l: 'Tout', v: 3650 }].map((p) => (
                 <button key={p.v} onClick={() => setPeriod(p.v)} style={{ ...S.togBtn, ...(period === p.v ? S.togOn : {}) }}>{p.l}</button>
               ))}
             </div>
             <button onClick={fetchData} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-toolbar)', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-muted3)' }} title="Actualiser"><IconRefresh style={{ width: 14, height: 14 }} /></button>
             <span style={S.date}>{now()}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8, paddingLeft: 12, borderLeft: '1px solid var(--border-color)' }}>
+              <button onClick={() => navigate('/profile')} style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FEE2E2', border: 'none', cursor: 'pointer', color: '#E8401A' }} title="Profil"><IconU style={{ width: 15, height: 15 }} /></button>
+              <button onClick={logout} style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FEE2E2', border: 'none', cursor: 'pointer', color: '#E8401A' }} title="Déconnexion"><IconL style={{ width: 15, height: 15 }} /></button>
+            </div>
           </div>
         </header>
 
@@ -437,11 +580,11 @@ export default function SupervisorDashboard() {
               <button onClick={() => setRapportView('create')}
                 style={{ padding: '6px 16px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', background: rapportView === 'create' ? 'var(--bg-card)' : 'transparent', color: rapportView === 'create' ? 'var(--text-primary)' : 'var(--text-muted3)', boxShadow: rapportView === 'create' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', transition: 'all 0.15s' }}>
                 <IconFile style={{ width: 12, height: 12, marginRight: 6, verticalAlign: 'middle' }} />
-                Créer
+                Création de rapport
               </button>
               <button onClick={() => { setRapportView('list'); getRapportsIA().then(setSavedReports).catch(() => {}); }}
                 style={{ padding: '6px 16px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', background: rapportView === 'list' ? 'var(--bg-card)' : 'transparent', color: rapportView === 'list' ? 'var(--text-primary)' : 'var(--text-muted3)', boxShadow: rapportView === 'list' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', transition: 'all 0.15s' }}>
-                Mes rapports ({savedReports.length})
+                Liste de rapports ({savedReports.length})
               </button>
             </div>
 
@@ -474,7 +617,7 @@ export default function SupervisorDashboard() {
                       <tbody>
                         {savedReports.map((r) => (
                           // Clicking a row loads the report into the editor
-                          <tr key={r.id} onClick={() => { handleLoadReport(r.id); setRapportView('create'); }}
+                          <tr key={r.id} onClick={() => setViewRapport(r)}
                             style={{ borderBottom: '1px solid var(--border-color)', cursor: 'pointer', transition: 'background 0.1s' }}
                             onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-hover)'}
                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
@@ -506,7 +649,6 @@ export default function SupervisorDashboard() {
             /* ── CREATE VIEW: prompt input + generated report + sidebar list ── */
             ) : (
               <div style={{ display: 'flex', gap: 16 }}>
-                {/* Left column: form + generated report content */}
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
                   {/* Report generation form */}
                   <div style={S.chartBordered}>
@@ -522,23 +664,24 @@ export default function SupervisorDashboard() {
                           <label style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted3)' }}>Au</label>
                           <input type="date" value={dateFin} onChange={(e) => setDateFin(e.target.value)} style={S.inp} />
                         </div>
-                        {/* Quick-set button: fills dates for the last 30 days */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 100, justifyContent: 'flex-end' }}>
-                          <button onClick={() => {
-                            const today = new Date();
-                            const past = new Date();
-                            past.setDate(today.getDate() - 30);
-                            setDateDebut(past.toISOString().split('T')[0]);
-                            setDateFin(today.toISOString().split('T')[0]);
-                          }} style={{ ...S.inp, cursor: 'pointer', background: 'var(--bg-hover)', fontWeight: 600, fontSize: 10, border: '1px solid var(--border-color)', textAlign: 'center', display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
-                            <IconCalendar style={{ width: 12, height: 12 }} /> 30 jours
-                          </button>
-                        </div>
                       </div>
-                      {/* Prompt textarea for the AI report */}
+                      {/* Prompt textarea for the AI report — larger, with suggestion chips */}
                       <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)}
-                        placeholder="Décrivez le rapport que vous souhaitez... Ex: « Rapport synthétique des 3 derniers mois avec indicateurs clés »"
-                        style={{ ...S.inp, minHeight: 80, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
+                        placeholder={"Exemples :\n• Rapport synthétique des 90 derniers jours avec KPI principaux\n• Analyse des sites les plus impactés et recommandations\n• Évolution des réclamations par commune avec tendances"}
+                        style={{ ...S.inp, minHeight: 110, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6, whiteSpace: 'pre-wrap' }} />
+                      {/* Quick suggestion chips */}
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {[
+                          'Synthèse 90j avec KPI',
+                          'Sites les plus impactés',
+                          'Analyse par commune',
+                          'Tendances et recommandations',
+                        ].map((s) => (
+                          <button key={s} onClick={() => setPrompt(s)} style={{ fontSize: 10, padding: '4px 10px', borderRadius: 12, border: '1px solid var(--border-color)', background: 'var(--bg-hover)', color: 'var(--text-muted3)', cursor: 'pointer', fontWeight: 500, transition: 'all 0.15s', fontFamily: 'inherit' }}>
+                            {s}
+                          </button>
+                        ))}
+                      </div>
                       <button onClick={handleGenerate} disabled={generating || !prompt.trim()}
                         style={{ ...S.btn, opacity: generating || !prompt.trim() ? 0.6 : 1, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
                         {generating ? (
@@ -550,7 +693,7 @@ export default function SupervisorDashboard() {
                     </div>
                   </div>
 
-                  {/* Generated report display – only visible after generation */}
+                    {/* Generated report display – only visible after generation */}
                   {generatedContent && (
                     <div style={S.chartBordered}>
                       {/* Toolbar: back button, editable title, action buttons */}
@@ -597,62 +740,130 @@ export default function SupervisorDashboard() {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+          </div>
 
-                {/* Right sidebar: quick list of saved reports */}
-                <div style={{ width: 240, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={S.chartBordered}>
-                    <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <IconFile style={{ width: 12, height: 12, color: '#7C3AED' }} />
-                      <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase' }}>
-                        Rapports ({savedReports.length})
-                      </span>
-                    </div>
-                    <div style={{ maxHeight: 'calc(100vh - 300px)', overflowY: 'auto', background: 'var(--bg-hover)' }}>
-                      {savedReports.length === 0 ? (
-                        <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted2)', fontSize: 11 }}>Aucun rapport</div>
+        /* ═══════ PERFORMANCE VIEW ═══════ */
+        ) : currentView === 'performance' ? (
+        <div style={S.scroll}>
+          <div style={{ padding: '16px 21px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5, textTransform: 'uppercase' }}>PERFORMANCES ÉQUIPE</span>
+              <div style={{ display: 'flex', gap: 4, background: 'var(--bg-toolbar)', borderRadius: 6, padding: 2, marginLeft: 8 }}>
+                <button onClick={() => { setPerfRole('ingenieurs'); setPerfUser(null); }}
+                  style={{ padding: '4px 12px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', background: perfRole === 'ingenieurs' ? 'var(--bg-card)' : 'transparent', color: perfRole === 'ingenieurs' ? 'var(--text-primary)' : 'var(--text-muted3)', boxShadow: perfRole === 'ingenieurs' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Ingénieurs</button>
+                <button onClick={() => { setPerfRole('agents_cc'); setPerfUser(null); }}
+                  style={{ padding: '4px 12px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', background: perfRole === 'agents_cc' ? 'var(--bg-card)' : 'transparent', color: perfRole === 'agents_cc' ? 'var(--text-primary)' : 'var(--text-muted3)', boxShadow: perfRole === 'agents_cc' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Call Center</button>
+              </div>
+              <select value={perfUser || ''} onChange={(e) => setPerfUser(e.target.value || null)}
+                style={{ marginLeft: 'auto', padding: '5px 12px', fontSize: 11, borderRadius: 4, border: '1px solid var(--border-color)', fontFamily: 'inherit', maxWidth: 240, cursor: 'pointer', backgroundColor: 'var(--bg-input)' }}>
+                <option value="">Choisir un utilisateur...</option>
+                {perfUsers.map((u) => <option key={u.code} value={u.code}>{u.nom} ({u.code})</option>)}
+              </select>
+            </div>
+
+            {!selectedPerfUser ? (
+              <div className="fade-in chart-card" style={{ ...S.chart, padding: 50, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 13 }}>
+                Sélectionnez un utilisateur pour voir ses statistiques de performance
+              </div>
+            ) : (
+              <div className="fade-in">
+                {/* KPI cards for selected user */}
+                <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+                  {perfRole === 'ingenieurs' ? (
+                    <>
+                      <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-card)', borderRadius: 8, border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                        <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' }}>{selectedPerfUser.total_assignes}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Assignés</div>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-card)', borderRadius: 8, border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                        <div style={{ fontSize: 24, fontWeight: 700, color: '#10B981' }}>{selectedPerfUser.resolus}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Résolus</div>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-card)', borderRadius: 8, border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                        <div style={{ fontSize: 24, fontWeight: 700, color: selectedPerfUser.taux_resolution >= 80 ? '#10B981' : selectedPerfUser.taux_resolution >= 50 ? '#F59E0B' : '#EF4444' }}>{selectedPerfUser.taux_resolution}%</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Taux résolution</div>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-card)', borderRadius: 8, border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                        <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' }}>{selectedPerfUser.delai_h ? `${selectedPerfUser.delai_h.toFixed(1)}h` : selectedPerfUser.delai_moyen}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Délai moyen</div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-card)', borderRadius: 8, border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                        <div style={{ fontSize: 24, fontWeight: 700, color: '#E8401A' }}>{selectedPerfUser.tickets_crees}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Créés</div>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-card)', borderRadius: 8, border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                        <div style={{ fontSize: 24, fontWeight: 700, color: '#F59E0B' }}>{selectedPerfUser.ouverts}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Ouverts</div>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-card)', borderRadius: 8, border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                        <div style={{ fontSize: 24, fontWeight: 700, color: '#10B981' }}>{selectedPerfUser.resolus}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Résolus</div>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-card)', borderRadius: 8, border: '1px solid var(--border-color)', textAlign: 'center' }}>
+                        <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-muted3)' }}>{selectedPerfUser.fermes}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Fermés</div>
+                      </div>
+                    </>
+                  )}
+                </div>
+                {/* Performance bar chart for selected user */}
+                <div className="chart-card" style={{ ...S.chart, marginBottom: 24 }}>
+                  <div style={S.ch}><span style={S.cht}>Performances — {selectedPerfUser.nom}</span></div>
+                  <div style={{ width: '100%', height: 260, padding: '6px 6px 4px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      {perfRole === 'ingenieurs' ? (
+                        <BarChart data={[selectedPerfUser]} margin={{ top: 5, right: 10, left: -5, bottom: 5 }} barSize={50}>
+                          <CartesianGrid stroke="#f5f5f5" vertical={false} />
+                          <XAxis dataKey="label" tick={{ fontSize: 11 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} />
+                          <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} width={25} />
+                          <Tooltip content={<Tip />} />
+                          <Bar dataKey="total_assignes" radius={[4, 4, 0, 0]} fill="#2563EB" name="Assignés" />
+                          <Bar dataKey="resolus" radius={[4, 4, 0, 0]} fill="#10B981" name="Résolus" />
+                        </BarChart>
                       ) : (
-                        // Show up to 20 reports in the sidebar quick list
-                        savedReports.slice(0, 20).map((r) => (
-                          <div key={r.id} onClick={() => handleLoadReport(r.id)}
-                            style={{
-                              padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid var(--border-color)',
-                              background: selectedReportId === r.id ? '#f8f4ff' : 'transparent',
-                              borderLeft: selectedReportId === r.id ? '3px solid #7C3AED' : '3px solid transparent',
-                              transition: 'all 0.15s',
-                            }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', flex: 1, wordBreak: 'break-word' }}>{r.titre}</div>
-                              <button onClick={(e) => handleDeleteReport(r.id, e)}
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted2)', flexShrink: 0 }}
-                                title="Supprimer">
-                                <IconTrash style={{ width: 12, height: 12 }} />
-                              </button>
-                            </div>
-                            <div style={{ fontSize: 9, color: 'var(--text-muted2)', marginTop: 3 }}>
-                              {new Date(r.created_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' })}
-                            </div>
-                          </div>
-                        ))
+                        <BarChart data={[selectedPerfUser]} margin={{ top: 5, right: 10, left: -5, bottom: 5 }} barSize={50}>
+                          <CartesianGrid stroke="#f5f5f5" vertical={false} />
+                          <XAxis dataKey="label" tick={{ fontSize: 11 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} />
+                          <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} width={25} />
+                          <Tooltip content={<Tip />} />
+                          <Bar dataKey="tickets_crees" radius={[4, 4, 0, 0]} fill="#E8401A" name="Créés" />
+                          <Bar dataKey="ouverts" radius={[4, 4, 0, 0]} fill="#F59E0B" name="Ouverts" />
+                          <Bar dataKey="resolus" radius={[4, 4, 0, 0]} fill="#10B981" name="Résolus" />
+                          <Bar dataKey="fermes" radius={[4, 4, 0, 0]} fill="var(--text-muted3)" name="Fermés" />
+                        </BarChart>
                       )}
-                      {/* Link to full list view when there are more than 20 reports */}
-                      {savedReports.length > 20 && (
-                        <div style={{ padding: '10px 14px', textAlign: 'center', fontSize: 10, color: '#7C3AED', cursor: 'pointer', fontWeight: 600 }}
-                          onClick={() => setRapportView('list')}>
-                          Voir tout ({savedReports.length}) →
-                        </div>
-                      )}
-                    </div>
+                    </ResponsiveContainer>
                   </div>
                 </div>
               </div>
             )}
           </div>
+        </div>
 
         /* ═══════ DEFAULT DASHBOARD VIEW ═══════ */
         ) : (
         <div style={S.scroll}>
+
+          {/* ─── KPI ROW: core stats at a glance ─── */}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+            {[
+              { label: 'Sites UP', value: stats?.reseau_global?.sites_up ?? '—', color: '#15803D' },
+              { label: 'Sites DOWN', value: stats?.reseau_global?.sites_down ?? '—', color: '#DC2626' },
+              { label: 'Disponibilité', value: stats?.reseau_global?.disponibilite_globale ?? '—', color: '#2563EB' },
+            ].map((kpi, i) => (
+              <div key={i} className="fade-in" style={{ animationDelay: `${i * 0.04}s`, flex: '1 1 0', minWidth: 140, background: 'var(--bg-card)', border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 4, borderLeft: `4px solid ${kpi.color}` }}>
+                <div style={{ fontSize: 10, color: 'var(--text-muted3)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: 0.3 }}>{kpi.label}</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)' }}>{kpi.value}</div>
+              </div>
+            ))}
+          </div>
+
           {/* ─── ROW 1: Ticket evolution (full-width line chart) ─── */}
-          <div style={S.sb}><span style={S.st}>TENDANCE</span></div>
           <div style={S.chartsRow}>
             <div className="fade-in chart-card" style={{ animationDelay: '0s', ...S.chart, width: '100%' }}>
               <div style={S.ch}>
@@ -677,202 +888,120 @@ export default function SupervisorDashboard() {
             </div>
           </div>
 
-          {/* ─── ROW 2: Priority donut + Created vs Resolved comparison ─── */}
-          <div style={S.sb}><span style={S.st}>ANALYTIQUE</span></div>
+          {/* ─── ROW 2: Priority donut + sites impactés ─── */}
           <div style={S.chartsRow}>
-            {/* Donut chart: ticket distribution by priority */}
-            <div className="fade-in chart-card" style={{ animationDelay: '0.05s', ...S.chart, flex: 1 }}>
+            <div className="fade-in chart-card" style={{ animationDelay: '0.08s', ...S.chart, flex: 1 }}>
               <div style={S.ch}>
-                <span style={S.cht}>Par priorité</span>
-                <span style={S.chs}>cliquez sur un secteur</span>
-                <InfoPopup text="Répartition des tickets par priorité. Cliquez sur une part pour filtrer la liste des tickets récents." />
+                <span style={S.cht}>Répartition par priorité</span>
+                <InfoPopup text="Distribution des tickets par niveau de priorité." />
               </div>
-              <div style={{ ...S.cb, minHeight: 180 }}>
-                {donut.length === 0 ? <div style={S.empty}>Aucune donnée</div>
-                : <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={donut} cx="50%" cy="50%" innerRadius={32} outerRadius={60} paddingAngle={4} dataKey="value"
-                        style={{ cursor: 'pointer' }}
-                        onClick={(e) => e?.name && setDetail({ type: 'priorite', data: e })}>
-                        {donut.map((e) => <Cell key={e.name} fill={e.color} style={{ cursor: 'pointer' }} />)}
-                      </Pie>
-                      <Tooltip content={<Tip />} />
-                    </PieChart>
-                  </ResponsiveContainer>}
-              </div>
-              {/* Color-coded legend */}
-              <div style={{ display: 'flex', justifyContent: 'center', gap: 12, padding: '2px 0 8px', flexWrap: 'wrap' }}>
-                  {donut.map((e) => (
-                    <div key={e.name} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, color: 'var(--text-secondary)', cursor: 'pointer', transition: 'opacity 0.15s' }}
-                      onClick={() => setDetail({ type: 'priorite', data: e })}>
-                      <span style={{ width: 7, height: 7, borderRadius: 2, background: e.color, flexShrink: 0 }} />
-                      {e.name}: <strong>{e.value}</strong>
+              <div style={{ ...S.cb, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                {(() => {
+                  const prio = stats?.graphiques?.repartition_priorite_donut;
+                  const hasData = prio && (prio.critique + prio.haute + prio.normale + prio.basse) > 0;
+                  if (!hasData) return <div style={S.empty}>Aucune donnée</div>;
+                  const pieData = [
+                    { name: 'Critique', value: prio.critique, color: '#DC2626', key: 'critique' },
+                    { name: 'Haute', value: prio.haute, color: '#F59E0B', key: 'haute' },
+                    { name: 'Normale', value: prio.normale, color: '#2563EB', key: 'normale' },
+                    { name: 'Basse', value: prio.basse, color: '#10B981', key: 'basse' },
+                  ].filter((d) => d.value > 0);
+                  const total = pieData.reduce((s, d) => s + d.value, 0);
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 20, width: '100%', height: '100%' }}>
+                      <ResponsiveContainer width="60%" height={220}>
+                        <PieChart>
+                          <Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" nameKey="name" stroke="none" style={{ cursor: 'pointer' }}
+                            onClick={(data, idx) => setPrioModal({ priorite: data.key, label: data.name, color: data.color })}>
+                            {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                          </Pie>
+                          <Tooltip content={({ active, payload }) => {
+                            if (!active || !payload?.length) return null;
+                            const d = payload[0].payload;
+                            return <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 6, padding: '8px 14px', fontSize: 12 }}>
+                              <p style={{ margin: 0, fontWeight: 700, color: d.color }}>{d.name}</p>
+                              <p style={{ margin: '2px 0', color: 'var(--text-muted3)' }}>{d.value} tickets ({total > 0 ? Math.round((d.value / total) * 100) : 0}%)</p>
+                            </div>;
+                          }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
+                        {pieData.map((d) => (
+                          <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ width: 10, height: 10, borderRadius: 3, background: d.color, flexShrink: 0 }} />
+                            <span style={{ fontSize: 11, color: 'var(--text-muted3)' }}>{d.name}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', marginLeft: 'auto' }}>{d.value}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  ))}
+                  );
+                })()}
               </div>
             </div>
 
-            {/* Created vs Resolved – dual-line chart to visualize workload balance */}
-            <div className="fade-in chart-card" style={{ animationDelay: '0.1s', ...S.chart, flex: 1.2 }}>
+            <div className="fade-in chart-card" style={{ animationDelay: '0.12s', ...S.chart, flex: 1 }}>
               <div style={S.ch}>
-                <span style={S.cht}>Créés vs Résolus</span>
-                <span style={S.chs}>par jour</span>
-                <InfoPopup text="Évolution quotidienne des tickets créés et résolus. Permet de visualiser l'équilibre charge / capacité." />
+                <span style={S.cht}>Top sites impactés</span>
+                <InfoPopup text="Sites avec le plus de tickets sur la période." />
               </div>
               <div style={S.cb}>
-                {creesVsResolus.length === 0 ? <div style={S.empty}>Aucune donnée</div>
-                : <div style={{ overflowX: 'auto', height: '100%' }}>
-                    <LineChart data={creesVsResolus} width={Math.max(creesVsResolus.length * 35, 300)} height={220}
-                      margin={{ top: 8, right: 20, left: 0, bottom: 8 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
-                      <XAxis dataKey="jour" tick={{ fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} interval="preserveStartEnd" />
-                      <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} width={25} />
-                      <Tooltip content={<Tip />} />
-                      <Line type="monotone" dataKey="crees" stroke="#2563EB" strokeWidth={2} dot={{ r: 1.5 }} activeDot={{ r: 5 }} name="Créés" />
-                      <Line type="monotone" dataKey="resolus" stroke="#10B981" strokeWidth={2} dot={{ r: 1.5 }} activeDot={{ r: 5 }} name="Résolus" />
-                    </LineChart>
-                  </div>}
-              </div>
-            </div>
-          </div>
-
-          {/* ─── ROW 3: Most impacted sites + Commune availability ─── */}
-          <div style={S.sb}><span style={S.st}>RÉSEAU</span></div>
-          <div style={S.chartsRow}>
-            {/* Top impacted sites – horizontal bar chart */}
-            <div className="fade-in chart-card" style={{ animationDelay: '0.2s', ...S.chart, flex: 1 }}>
-              <div style={S.ch}>
-                <span style={S.cht}>Sites les plus impactés</span>
-                <span style={S.chs}>nombre de réclamations</span>
-                <InfoPopup text="Top sites avec le plus de réclamations sur la période. Cliquez pour voir les détails." />
-              </div>
-              <div style={S.cb}>
-                {topSites.length === 0 ? <div style={S.empty}>Aucune donnée</div>
+                {(stats?.graphiques?.top_sites_impactes ?? []).length === 0 ? <div style={S.empty}>Aucune donnée</div>
                 : <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={topSites} margin={{ top: 5, right: 10, left: -5, bottom: 5 }} barSize={28}
-                      onClick={(e) => e?.activePayload && setDetail({ type: 'top_site', data: e.activePayload[0].payload })}>
-                      <CartesianGrid stroke="#f5f5f5" vertical={false} horizontal={false} />
-                      <XAxis dataKey="codeSite" tick={{ fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} />
-                      <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} width={25} />
-                      <Tooltip content={<Tip />} />
-                      <Bar dataKey="num_reclamations" radius={[4, 4, 0, 0]} name="Réclamations" style={{ cursor: 'pointer' }}>
-                        {topSites.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} style={{ cursor: 'pointer' }} />)}
-                      </Bar>
+                    <BarChart data={(stats?.graphiques?.top_sites_impactes ?? []).slice(0, 8)} margin={{ top: 5, right: 10, left: -5, bottom: 5 }} layout="vertical" barSize={14}>
+                      <CartesianGrid stroke="#f5f5f5" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} />
+                      <YAxis dataKey="nom" type="category" tick={{ fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} width={120} />
+                      <Tooltip content={({ active, payload }) => {
+                        if (!active || !payload?.length) return null;
+                        const d = payload[0].payload;
+                        return <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 6, padding: '8px 14px', fontSize: 12 }}>
+                          <p style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)' }}>{d.nom}</p>
+                          <p style={{ margin: '2px 0', color: 'var(--text-muted3)', fontSize: 10 }}>Code: {d.codeSite}</p>
+                          <p style={{ margin: '2px 0', color: '#E8401A' }}>{d.num_reclamations} tickets</p>
+                        </div>;
+                      }} />
+                      <Bar dataKey="num_reclamations" radius={[0, 4, 4, 0]} fill="#E8401A" name="Tickets" />
                     </BarChart>
                   </ResponsiveContainer>}
               </div>
             </div>
+          </div>
 
-            {/* Commune availability – horizontal bar chart with custom colored bars */}
-            <div className="fade-in chart-card" style={{ animationDelay: '0.25s', ...S.chart, flex: 1.2 }}>
+          {/* ─── ROW 3: Disponibilité par commune (full width, all communes) ─── */}
+          <div style={S.chartsRow}>
+            <div className="fade-in chart-card" style={{ animationDelay: '0.16s', ...S.chart, width: '100%' }}>
               <div style={S.ch}>
                 <span style={S.cht}>Disponibilité par commune</span>
-                <span style={S.chs}>survolez pour voir le nom</span>
-                <InfoPopup text="Taux de disponibilité des sites par commune. Survolez les barres pour voir le nom. Vert ≥95%, Orange ≥80%, Rouge <80%." />
+                <InfoPopup text="Taux de disponibilité moyen des sites par commune (pires en premier). Toutes les communes." />
               </div>
-              <div style={{ ...S.cb, overflowY: 'auto', minHeight: 280 }}>
-                {communes.length === 0 ? <div style={S.empty}>Aucune donnée</div>
-                : <div style={{ height: Math.max(communes.length * 26, 200), width: '100%' }}>
-                    <ResponsiveContainer width="100%" height={Math.max(communes.length * 28, 200)}>
-                      <BarChart data={communes} layout="vertical" margin={{ top: 5, right: 20, left: 0, bottom: 5 }} barSize={18}
-                        onClick={(e) => e?.activePayload && setDetail({ type: 'commune', data: e.activePayload[0].payload })}>
-                        <CartesianGrid stroke="#f5f5f5" horizontal={false} />
-                        <XAxis type="number" tick={{ fontSize: 9 }} domain={[0, 100]} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} tickFormatter={(v) => `${v}%`} width={30} />
-                        <YAxis type="category" dataKey="commune" tick={false} tickLine={false} axisLine={false} width={4} />
-                        <Tooltip content={<Tip />} />
-                        <Bar dataKey="taux_dispo_num" radius={[0, 4, 4, 0]} name="Disponibilité" style={{ cursor: 'pointer' }}
-                          shape={(props) => {
-                            /* Custom bar shape: colors bars by availability,
-                               adds a red dot indicator when value is zero */
-                            const { x, y, width, height, value } = props;
-                            const w = Math.max(width, value === 0 ? 6 : 0);
-                            return (
-                              <g>
-                                <rect x={x} y={y} width={w} height={height} fill={dispoColor(value)} rx={2} />
-                                {value === 0 && (
-                                  <circle cx={x + w + 5} cy={y + height / 2} r={3.5} fill="#DC2626" />
-                                )}
-                              </g>
-                            );
-                          }}
-                        >
-                          {communes.map((e) => <Cell key={e.commune} fill={dispoColor(e.taux_dispo_num)} style={{ cursor: 'pointer' }} />)}
+              <div style={{ ...S.cb, overflowX: 'auto', minHeight: 320 }}>
+                {(reporting?.tableau_communes ?? []).length === 0 ? <div style={S.empty}>Aucune donnée</div>
+                : <div style={{ minWidth: Math.max(800, (reporting?.tableau_communes ?? []).length * 30), height: '100%' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={reporting?.tableau_communes ?? []} margin={{ top: 5, right: 10, left: -5, bottom: 20 }} barSize={16}>
+                        <CartesianGrid stroke="#f5f5f5" vertical={false} />
+                        <XAxis dataKey="commune" tick={{ fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} interval={0} />
+                        <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} domain={[0, 100]} width={30} />
+                        <Tooltip content={({ active, payload }) => {
+                          if (!active || !payload?.length) return null;
+                          const d = payload[0].payload;
+                          const v = d.taux_dispo_num;
+                          return <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 6, padding: '8px 14px', fontSize: 12 }}>
+                            <p style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)' }}>{d.commune}</p>
+                            <p style={{ margin: '2px 0', color: 'var(--text-muted3)' }}>Disponibilité: <span style={{ color: v >= 95 ? '#15803D' : v >= 80 ? '#F59E0B' : '#DC2626', fontWeight: 700 }}>{d.taux_disponibilite}</span></p>
+                            <p style={{ margin: '2px 0', color: 'var(--text-muted3)' }}>Sites: {d.total_sites} • Down: {d.sites_down}</p>
+                          </div>;
+                        }} />
+                        <Bar dataKey="taux_dispo_num" radius={[4, 4, 0, 0]} name="Disponibilité %">
+                          {(reporting?.tableau_communes ?? []).map((entry, idx) => (
+                            <Cell key={idx} fill={entry.taux_dispo_num >= 95 ? '#15803D' : entry.taux_dispo_num >= 80 ? '#F59E0B' : '#DC2626'} />
+                          ))}
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
                   </div>}
               </div>
-            </div>
-          </div>
-
-          {/* ─── ROW 4: Site statistics cards + sites table ─── */}
-          <div style={S.sb}><span style={S.st}>SITES</span></div>
-          {/* Summary stat cards: total, active, down, and complaint count */}
-          <div style={{ display: 'flex', gap: 16, marginBottom: 24 }}>
-            <div className="fade-in stat-card" style={{ ...S.statCard, animationDelay: '0.28s', textAlign: 'center' }}>
-              <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)' }}>{sites.length}</div>
-              <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>Total Sites</div>
-            </div>
-            <div className="fade-in stat-card" style={{ ...S.statCard, animationDelay: '0.32s', textAlign: 'center' }}>
-              <div style={{ fontSize: 28, fontWeight: 700, color: '#15803D' }}>{sitesUp}</div>
-              <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>Actifs (UP)</div>
-            </div>
-            <div className="fade-in stat-card" style={{ ...S.statCard, animationDelay: '0.36s', textAlign: 'center' }}>
-              <div style={{ fontSize: 28, fontWeight: 700, color: '#DC2626' }}>{sitesDown}</div>
-              <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>Inactifs (DOWN)</div>
-            </div>
-            <div className="fade-in stat-card" style={{ ...S.statCard, animationDelay: '0.40s', textAlign: 'center' }}>
-              <div style={{ fontSize: 28, fontWeight: 700, color: '#2563EB' }}>{topSites.reduce((s, t) => s + (t.num_reclamations || 0), 0)}</div>
-              <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>Réclamations (top)</div>
-            </div>
-          </div>
-
-          {/* Quick-view table of network sites (first 15) */}
-          <div className="fade-in chart-card" style={{ animationDelay: '0.3s', ...S.chart, marginBottom: 24 }}>
-            <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <IconSite style={{ width: 16, height: 16 }} />
-              <span style={S.cht}>Sites réseau — vue rapide</span>
-            </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid var(--border-color)', background: 'var(--bg-hover)' }}>
-                    <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted3)', fontSize: 10, textTransform: 'uppercase' }}>Code</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted3)', fontSize: 10, textTransform: 'uppercase' }}>Nom</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted3)', fontSize: 10, textTransform: 'uppercase' }}>Commune</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 600, color: 'var(--text-muted3)', fontSize: 10, textTransform: 'uppercase' }}>Statut</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sites.length === 0 ? (
-                    <tr><td colSpan="4" style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted2)' }}>Aucun site trouvé</td></tr>
-                  ) : sites.slice(0, 15).map((s) => (
-                    <tr key={s.id} style={{ borderBottom: '1px solid var(--border-color)', cursor: 'pointer', transition: 'background 0.1s' }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-hover)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-                      <td style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          {/* Status indicator dot: green for UP, red for DOWN */}
-                          <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, backgroundColor: s.statut === 'UP' ? '#15803D' : '#DC2626', boxShadow: s.statut === 'UP' ? '0 0 6px rgba(5,150,105,0.5)' : '0 0 6px rgba(220,38,38,0.5)' }} />
-                          {s.codeSite}
-                        </div>
-                      </td>
-                      <td style={{ padding: '10px 14px', color: 'var(--text-primary)' }}>{s.nom}</td>
-                      <td style={{ padding: '10px 14px', color: 'var(--text-muted3)' }}>{s.commune}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                        <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 12, fontSize: 10, fontWeight: 700, backgroundColor: s.statut === 'UP' ? '#DCFCE7' : '#FEE2E2', color: s.statut === 'UP' ? '#15803D' : '#DC2626' }}>
-                          {s.statut === 'UP' ? 'Actif' : 'Inactif'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {sites.length > 15 && (
-                <div style={{ padding: '10px', textAlign: 'center', fontSize: 10, color: 'var(--text-muted2)' }}>
-                  +{sites.length - 15} autres sites
-                </div>
-              )}
             </div>
           </div>
 

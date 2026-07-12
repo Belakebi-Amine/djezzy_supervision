@@ -63,7 +63,6 @@ const getHeaders = async () => {
 const checkAuthAndRedirect = (status) => {
     if (status === 401) {
         ['token', 'access_token', 'refresh_token'].forEach(k => localStorage.removeItem(k));
-        window.location.href = '/login';
     }
 };
 
@@ -230,4 +229,25 @@ export const deleteRapportIA = async (id) => {
     });
     checkAuthAndRedirect(response.status);
     if (!response.ok) throw new Error(`Erreur suppression [${response.status}]`);
+};
+
+// ── AI Report Archive (admin only) ──
+
+export const getArchivedRapports = async () => {
+    const response = await fetch(`${API_URL}/dashboard/rapport-ia/archives/`, {
+        method: 'GET',
+        headers: await getHeaders(),
+    });
+    if (!response.ok) throw new Error(`Erreur archives [${response.status}]`);
+    return await response.json();
+};
+
+export const restoreRapportIA = async (id) => {
+    const response = await fetch(`${API_URL}/dashboard/rapport-ia/archives/`, {
+        method: 'POST',
+        headers: await getHeaders(),
+        body: JSON.stringify({ id }),
+    });
+    if (!response.ok) throw new Error(`Erreur restauration [${response.status}]`);
+    return await response.json();
 };

@@ -7,6 +7,7 @@ from django.urls import path
 from .views import (
     statistiques, stats_reporting, liste_sites_carto,
     generer_rapport_ia, liste_rapports_ia, detail_rapport_ia,
+    liste_rapports_archives,
 )
 
 urlpatterns = [
@@ -22,4 +23,6 @@ urlpatterns = [
     path('rapport-ia/', liste_rapports_ia, name='liste-rapports-ia'),
     # View, update, or delete a specific report
     path('rapport-ia/<int:pk>/', detail_rapport_ia, name='detail-rapport-ia'),
+    # Archived reports management (admin only)
+    path('rapport-ia/archives/', liste_rapports_archives, name='liste-rapports-archives'),
 ]

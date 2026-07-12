@@ -92,7 +92,7 @@ export default function Profile() {
     fetch(`${API_URL}/accounts/me/`, { method: 'GET', headers: getHeaders() })
       .then((res) => { if (!res.ok) throw new Error('Non autorise'); return res.json(); })
       .then((data) => { setUser(data); setFormData({ first_name: data.first_name || '', last_name: data.last_name || '', email: data.email || '' }); })
-      .catch(() => navigate('/login'));
+      .catch(() => setMessage({ type: 'error', text: 'Impossible de charger le profil. Vérifiez votre connexion.' }));
   }, [navigate]);
 
   /* Clear all auth tokens from localStorage and redirect to the login page */

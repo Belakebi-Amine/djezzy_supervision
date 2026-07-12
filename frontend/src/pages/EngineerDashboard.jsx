@@ -13,7 +13,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { spawnParticles } from '../hooks/useAnimations';
-import { getTickets, updateTicket, getSites, updateSiteStatus, createSite, archiverSite } from '../api/tickets';
+import { getTickets, updateTicket, getSites, updateSiteStatus, createSite, archiverSite, getTokenRole } from '../api/tickets';
 import MapComponent from '../components/Map';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
@@ -53,6 +53,11 @@ const COLORS = {
 // French month abbreviations for date formatting
 const MOIS_FR = ['JAN', 'FEV', 'MAR', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOU', 'SEP', 'OCT', 'NOV', 'DEC'];
 
+const now = () => {
+  const d = new Date();
+  return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+};
+
 // Format an ISO date string to short French format: "15 JAN"
 const formatDateFr = (isoString) => {
   if (!isoString) return '-';
@@ -86,7 +91,7 @@ const IconSite = (p) => (
   <svg {...iconProps} {...p}><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z" /><circle cx="12" cy="9.5" r="2.3" /></svg>
 );
 const IconMap = (p) => (
-  <svg {...iconProps} {...p}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
+  <svg {...iconProps} {...p}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
 );
 const IconSearch = (p) => (
   <svg {...iconProps} {...p}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
@@ -126,6 +131,19 @@ const getForwardStatuses = (statut) => {
 
 export default function EngineerDashboard() {
   const navigate = useNavigate();
+
+  // Role guard
+  const tokenRole = getTokenRole();
+  const [authChecked, setAuthChecked] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setAuthChecked(true), 100); return () => clearTimeout(t); }, []);
+  useEffect(() => {
+    if (!authChecked) return;
+    if (!tokenRole) { navigate('/login', { replace: true }); return; }
+    if (tokenRole !== 'INGENIEUR_RESEAUX') {
+      const dashMap = { ADMIN: '/admin-dashboard', AGENT_CALL_CENTER: '/call-center-dashboard', SUPERVISEUR: '/supervisor-dashboard' };
+      navigate(dashMap[tokenRole] || '/login', { replace: true });
+    }
+  }, [authChecked, tokenRole, navigate]);
 
   // --- View & Navigation State ---
   const [currentView, setCurrentView] = useState('reclamations'); // 'reclamations' | 'sites' | 'cartographie'
@@ -378,37 +396,20 @@ export default function EngineerDashboard() {
     <div style={styles.appLayout}>
       {/* ===== Sidebar Navigation ===== */}
       <aside style={styles.sidebar}>
-        {/* Brand / logo area */}
-        <div style={styles.brandZone}>
-          <img src={logoDjezzy} alt="Djezzy" style={styles.brandLogo} />
-          <div>
-            <div style={styles.brandName}>Djezzy Hub</div>
-            <div style={styles.brandRole}>Ingénieur Réseau</div>
-          </div>
+        <div style={styles.brand}>
+          <img src={logoDjezzy} alt="" style={styles.brandLogo} />
+          <div><div style={styles.brandName}>Djezzy Hub</div><div style={styles.brandRole}>Ingénieur Réseau</div></div>
         </div>
-
-        {/* Main navigation menu */}
-        <div style={styles.menuSection}>
+        <div style={styles.menu}>
           <span style={styles.sectionLabel}>PRINCIPAL</span>
-          <button style={{ ...styles.menuItem, ...(currentView === 'reclamations' ? styles.menuItemActive : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('reclamations'); }}>
-            <IconTicket style={{ marginRight: '10px', flexShrink: 0 }} /> Reclamations
+          <button style={{ ...styles.navItem, ...(currentView === 'reclamations' ? styles.navItemActive : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('reclamations'); }}>
+            <IconTicket /> Réclamations
           </button>
-          <button style={{ ...styles.menuItem, ...(currentView === 'sites' ? styles.menuItemActive : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('sites'); setSelectedTicket(null); }}>
-            <IconSite style={{ marginRight: '10px', flexShrink: 0 }} /> Sites Reseau
+          <button style={{ ...styles.navItem, ...(currentView === 'sites' ? styles.navItemActive : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('sites'); setSelectedTicket(null); }}>
+            <IconSite /> Sites Réseau
           </button>
-          <button style={{ ...styles.menuItem, ...(currentView === 'cartographie' ? styles.menuItemActive : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('cartographie'); }}>
-            <IconMap style={{ marginRight: '10px', flexShrink: 0 }} /> Cartographie
-          </button>
-        </div>
-
-        {/* Bottom section: profile & logout */}
-        <div style={{ ...styles.menuSection, marginTop: 'auto' }}>
-          <span style={styles.sectionLabel}>PERSONNEL</span>
-          <button style={styles.menuItem} onClick={() => navigate('/profile')}>
-            <IconUser style={{ marginRight: '10px', flexShrink: 0 }} /> Profile
-          </button>
-          <button style={styles.menuItem} onClick={handleLogout}>
-            <IconLogout style={{ marginRight: '10px', flexShrink: 0 }} /> Log out
+          <button style={{ ...styles.navItem, ...(currentView === 'cartographie' ? styles.navItemActive : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('cartographie'); }}>
+            <IconMap /> Cartographie
           </button>
         </div>
       </aside>
@@ -416,21 +417,16 @@ export default function EngineerDashboard() {
       {/* ===== Main Content Area ===== */}
       <div style={{ ...styles.mainContent, backgroundColor: COLORS.mainBg }}>
         {/* Sticky header bar with dynamic title */}
-        <header style={{ ...styles.topHeader, backgroundColor: COLORS.cardBg }}>
-          {currentView === 'sites' && showSiteForm ? (
-            <div>
-              {/* Back navigation when in the "new site" form */}
-              <div style={styles.backNav} onClick={() => setShowSiteForm(false)}>
-                <IconChevronLeft />
-                <span style={{ marginLeft: '8px', fontWeight: 600 }}>Nouveau Site</span>
-              </div>
-              <div style={styles.breadcrumb}>
-                Sites Reseau &gt; <span style={{ color: COLORS.djezzyRed }}>Nouveau Site</span>
-              </div>
+        <header style={{ position: 'sticky', top: 0, height: 51, display: 'flex', alignItems: 'center', padding: '0 27px', background: COLORS.cardBg, borderBottom: `1px solid ${COLORS.border}`, boxShadow: 'var(--shadow-sm)', zIndex: 10 }}>
+          <h1 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-secondary)' }}>{currentView === 'sites' ? 'Sites Réseau' : currentView === 'cartographie' ? 'Cartographie' : 'Réclamations'}</h1>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button onClick={() => { fetchTickets(); if (currentView === 'sites') fetchSitesData(); }} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-toolbar)', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-muted3)' }} title="Actualiser"><IconRefresh style={{ width: 14, height: 14 }} /></button>
+            <span style={{ fontSize: 10, color: 'var(--text-muted2)', fontWeight: 500, padding: '4px 10px', background: 'var(--bg-toolbar)', borderRadius: 4 }}>{now()}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8, paddingLeft: 12, borderLeft: '1px solid var(--border-color)' }}>
+              <button style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FEE2E2', border: 'none', cursor: 'pointer', color: '#E8401A' }} title="Profil" onClick={() => navigate('/profile')}><IconUser style={{ width: 15, height: 15 }} /></button>
+              <button style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FEE2E2', border: 'none', cursor: 'pointer', color: '#E8401A' }} title="Déconnexion" onClick={handleLogout}><IconLogout style={{ width: 15, height: 15 }} /></button>
             </div>
-          ) : (
-            <h1 style={styles.pageTitle}>{currentView === 'sites' ? 'Sites Reseau' : currentView === 'cartographie' ? 'Cartographie' : 'Reclamations'}</h1>
-          )}
+          </div>
         </header>
 
         {/* ===== View Router ===== */}
@@ -927,20 +923,6 @@ export default function EngineerDashboard() {
                 </div>
               )}
 
-              {/* Comments thread */}
-              {selectedTicket.commentaires && selectedTicket.commentaires.length > 0 && (
-                <div style={styles.modalSection}>
-                  <h3 style={styles.modalSectionTitle}>Commentaires ({selectedTicket.commentaires.length})</h3>
-                  {selectedTicket.commentaires.map((c) => (
-                    <div key={c.id} style={styles.comment}>
-                      <strong>{c.auteur?.nom_user || 'Inconnu'}</strong>
-                      <span style={{ color: COLORS.textMuted, fontSize: '11px', marginLeft: '12px' }}>{formatDateTimeFr(c.created_at)}</span>
-                      <p style={{ margin: '4px 0 0', fontSize: '13px' }}>{c.contenu}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-
             </div>
 
             {/* Modal footer with status transition buttons */}
@@ -1115,15 +1097,15 @@ export default function EngineerDashboard() {
  */
 const styles = {
   appLayout: { display: 'flex', minHeight: '100vh', fontFamily: "'Inter', system-ui, sans-serif", width: '100%' },
-  sidebar: { width: '193px', backgroundColor: COLORS.sidebarBg, color: 'var(--text-sidebar)', display: 'flex', flexDirection: 'column', padding: '0', flexShrink: 0, overflow: 'hidden' },
-  brandZone: { height: '82px', display: 'flex', alignItems: 'center', gap: '13px', padding: '0 17px', borderBottom: '1px solid rgba(255,255,255,0.07)' },
-  brandLogo: { width: '34px', height: 'auto', objectFit: 'contain' },
-  brandName: { color: '#FFFFFF', fontWeight: 700, fontSize: '16px' },
-  brandRole: { marginTop: '6px', fontSize: '10px', color: 'var(--text-sidebar)' },
-  menuSection: { display: 'flex', flexDirection: 'column', gap: '5px', padding: '26px 12px 0' },
-  sectionLabel: { margin: '0 5px 10px', fontSize: '6px', fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: '1px' },
-  menuItem: { display: 'flex', alignItems: 'center', background: 'transparent', border: 'none', color: 'var(--text-sidebar)', padding: '0 10px', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', fontSize: '13px', width: '100%', height: '34px', textDecoration: 'none', outline: 'none' },
-  menuItemActive: { background: 'linear-gradient(90deg, #9a0c2d, #710820)', color: '#FFFFFF', fontWeight: 600, position: 'relative' },
+  sidebar: { width: 193, backgroundColor: COLORS.sidebarBg, color: 'var(--text-sidebar)', display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden' },
+  brand: { height: 82, display: 'flex', alignItems: 'center', gap: 13, padding: '0 17px', borderBottom: '1px solid rgba(255,255,255,0.07)' },
+  brandLogo: { width: 34, height: 'auto', objectFit: 'contain' },
+  brandName: { color: '#FFFFFF', fontWeight: 700, fontSize: 16 },
+  brandRole: { marginTop: 6, fontSize: 10, color: 'var(--text-sidebar)' },
+  menu: { display: 'flex', flexDirection: 'column', gap: 5, padding: '26px 12px 0' },
+  sectionLabel: { margin: '0 5px 10px', fontSize: 6, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: '1px' },
+  navItem: { display: 'flex', alignItems: 'center', gap: 9, background: 'transparent', border: 'none', color: 'var(--text-sidebar)', padding: '0 10px', borderRadius: 6, cursor: 'pointer', textAlign: 'left', fontSize: 13, width: '100%', height: 34, textDecoration: 'none', outline: 'none' },
+  navItemActive: { background: 'linear-gradient(90deg, #9a0c2d, #710820)', color: '#FFFFFF', fontWeight: 600 },
   mainContent: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', boxSizing: 'border-box' },
   topHeader: { position: 'sticky', top: 0, height: '51px', display: 'flex', alignItems: 'center', padding: '0 27px', borderBottom: `1px solid ${COLORS.border}`, boxShadow: 'var(--shadow-sm)', zIndex: 10 },
   pageTitle: { margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--text-secondary)' },

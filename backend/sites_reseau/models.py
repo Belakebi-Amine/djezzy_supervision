@@ -72,7 +72,7 @@ class SiteReseau(models.Model):
                         max_num = num
                 except ValueError:
                     continue
-            self.codeSite = f'S{str(max_num + 1).zfill(3)}'
+            self.codeSite = f'S{str(max_num + 1).zfill(6)}'
         super().save(*args, **kwargs)
 
     def ajouterSite(self):
