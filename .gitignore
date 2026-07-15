@@ -24,3 +24,8 @@ db.sqlite3
 node_modules/
 package.json
 package-lock.json
+
+# ── Media / Excel files ─────────────────────────────
+media/
+sites_coordonnees.xlsx
+*.xlsx

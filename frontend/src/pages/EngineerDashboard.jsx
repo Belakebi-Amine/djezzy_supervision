@@ -13,7 +13,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { spawnParticles } from '../hooks/useAnimations';
-import { getTickets, updateTicket, getSites, updateSiteStatus, createSite, archiverSite, getTokenRole } from '../api/tickets';
+import { getTickets, updateTicket, getSites, getAllSites, updateSiteStatus, createSite, archiverSite, restoreSite, getTokenRole } from '../api/tickets';
 import MapComponent from '../components/Map';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
@@ -210,11 +210,11 @@ export default function EngineerDashboard() {
     fetchTickets();
   }, [fetchTickets]);
 
-  // Fetch full sites list (for the Sites management view)
+  // Fetch all sites including archived (for inline grayed-out display)
   const fetchSitesData = useCallback(async () => {
     setSitesLoading(true);
     try {
-      const data = getSites ? await getSites() : [];
+      const data = await getAllSites();
       setSitesList(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Impossible de charger les sites', err);
@@ -250,18 +250,36 @@ export default function EngineerDashboard() {
     }
   }, []);
 
-  // Archive a site – removes it from the visible list
+  // Archive a site – marks it as archived (grayed out in list)
   const handleArchiverSite = useCallback(async (siteId) => {
-    if (!window.confirm('Archiver ce site ? Il sera masqué de la liste principale.')) return;
+    if (!window.confirm('Archiver ce site ? Il sera grisé dans la liste.')) return;
     setTogglingSiteId(siteId);
     try {
       await archiverSite(siteId);
-      // Remove archived site from local state
-      setSitesList((prev) => prev.filter((s) => s.id !== siteId));
-      setSelectedSite(null); // close the modal
+      setSitesList((prev) =>
+        prev.map((s) => (s.id === siteId ? { ...s, archive: true } : s))
+      );
+      setSelectedSite(null);
     } catch (err) {
       console.error(err);
       alert('Erreur lors de l\'archivage.');
+    } finally {
+      setTogglingSiteId(null);
+    }
+  }, []);
+
+  // Restore an archived site – marks it as non-archived
+  const handleRestaurerSite = useCallback(async (siteId) => {
+    setTogglingSiteId(siteId);
+    try {
+      await restoreSite(siteId);
+      setSitesList((prev) =>
+        prev.map((s) => (s.id === siteId ? { ...s, archive: false } : s))
+      );
+      setSelectedSite(null);
+    } catch (err) {
+      console.error(err);
+      alert('Erreur lors de la restauration.');
     } finally {
       setTogglingSiteId(null);
     }
@@ -333,22 +351,23 @@ export default function EngineerDashboard() {
   const getStatutKey = (statut) => statut?.replace('_', ' ').toUpperCase();
 
   // ---- Filtered & sorted sites list ----
+  // Non-archived sites first (sorted by code), then archived sites at the bottom (sorted by code)
   const filteredSites = sitesList.filter((s) => {
-    // Filter by commune (case-insensitive partial match)
     if (siteFilterCommune) {
       if (!s.commune?.toLowerCase().includes(siteFilterCommune.toLowerCase())) return false;
     }
-    // Filter by wilaya
     if (siteFilterWilaya) {
       if (!s.wilaya?.toLowerCase().includes(siteFilterWilaya.toLowerCase())) return false;
     }
-    // Filter by active/inactive status
     if (siteFilterStatut) {
       if (s.statut !== siteFilterStatut) return false;
     }
     return true;
   }).sort((a, b) => {
-    // Sort sites by numeric part of their code (ascending)
+    // Archived sites go to the bottom
+    if (a.archive && !b.archive) return 1;
+    if (!a.archive && b.archive) return -1;
+    // Within same archive group, sort by numeric code
     const numA = parseInt(a.codeSite?.replace(/\D/g, '')) || 0;
     const numB = parseInt(b.codeSite?.replace(/\D/g, '')) || 0;
     return numA - numB;
@@ -458,39 +477,39 @@ export default function EngineerDashboard() {
                 {/* Two-column grid layout for site form fields */}
                 <div style={styles.formGrid}>
                   <div style={styles.inputGroup}>
-                    <label style={styles.label}>NOM</label>
+                    <label style={styles.label}>Nom Site</label>
                     <input type="text" name="nom" value={newSiteForm.nom} onChange={handleSiteFormChange} placeholder="Ex: Alger Centre" style={styles.input} required />
                   </div>
                   <div style={styles.inputGroup}>
-                    <label style={styles.label}>WILAYA</label>
+                    <label style={styles.label}>Wilaya</label>
                     <input type="text" name="wilaya" value={newSiteForm.wilaya} onChange={handleSiteFormChange} placeholder="Ex: Alger" style={styles.input} required />
                   </div>
                   <div style={styles.inputGroup}>
-                    <label style={styles.label}>COMMUNE</label>
+                    <label style={styles.label}>Commune</label>
                     <input type="text" name="commune" value={newSiteForm.commune} onChange={handleSiteFormChange} placeholder="Ex: Hydra" style={styles.input} required />
                   </div>
                   <div style={styles.inputGroup}>
-                    <label style={styles.label}>X (Longitude)</label>
+                    <label style={styles.label}>Coordonnée X</label>
                     <input type="text" name="coordX" value={newSiteForm.coordX} onChange={handleSiteFormChange} placeholder="Ex: 3.058" style={styles.input} />
                   </div>
                   <div style={styles.inputGroup}>
-                    <label style={styles.label}>Y (Latitude)</label>
+                    <label style={styles.label}>Coordonnée Y</label>
                     <input type="text" name="coordY" value={newSiteForm.coordY} onChange={handleSiteFormChange} placeholder="Ex: 36.753" style={styles.input} />
                   </div>
                   {/* Full-width address field */}
                   <div style={{ ...styles.inputGroup, gridColumn: '1 / -1' }}>
-                    <label style={styles.label}>ADRESSE</label>
+                    <label style={styles.label}>Adresse Site</label>
                     <input type="text" name="adresse" value={newSiteForm.adresse} onChange={handleSiteFormChange} placeholder="Adresse complete" style={styles.input} />
                   </div>
                   <div style={styles.inputGroup}>
-                    <label style={styles.label}>STATUT</label>
+                    <label style={styles.label}>Statut</label>
                     <select name="statut" value={newSiteForm.statut} onChange={handleSiteFormChange} style={styles.select}>
                       <option value="UP">Actif</option>
                       <option value="DOWN">Inactif</option>
                     </select>
                   </div>
                   <div style={styles.inputGroup}>
-                    <label style={styles.label}>TECHNOLOGIE</label>
+                    <label style={styles.label}>Technologie</label>
                     <select name="technologie" value={newSiteForm.technologie} onChange={handleSiteFormChange} style={styles.select}>
                       <option value="4G">4G</option>
                       <option value="5G">5G</option>
@@ -517,12 +536,16 @@ export default function EngineerDashboard() {
                 <span style={styles.statLabel}>Total sites</span>
               </div>
               <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#15803D', backgroundColor: COLORS.cardBg, animationDelay: '0.05s' }}>
-                <span style={{ ...styles.statNumber, color: '#15803D' }}>{sitesList.filter((s) => s.statut === 'UP').length}</span>
+                <span style={{ ...styles.statNumber, color: '#15803D' }}>{sitesList.filter((s) => s.statut === 'UP' && !s.archive).length}</span>
                 <span style={styles.statLabel}>Actif</span>
               </div>
               <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#DC2626', backgroundColor: COLORS.cardBg, animationDelay: '0.1s' }}>
-                <span style={{ ...styles.statNumber, color: '#DC2626' }}>{sitesList.filter((s) => s.statut === 'DOWN').length}</span>
+                <span style={{ ...styles.statNumber, color: '#DC2626' }}>{sitesList.filter((s) => s.statut === 'DOWN' && !s.archive).length}</span>
                 <span style={styles.statLabel}>Inactif</span>
+              </div>
+              <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#9CA3AF', backgroundColor: COLORS.cardBg, animationDelay: '0.15s' }}>
+                <span style={{ ...styles.statNumber, color: '#6B7280' }}>{sitesList.filter((s) => s.archive).length}</span>
+                <span style={styles.statLabel}>Archivé</span>
               </div>
             </div>
 
@@ -580,11 +603,11 @@ export default function EngineerDashboard() {
                 <table style={styles.table}>
                   <thead>
                     <tr style={styles.thRow}>
-                      <th style={styles.th}>CODE</th>
-                      <th style={styles.th}>NOM</th>
-                      <th style={styles.th}>WILAYA</th>
-                      <th style={styles.th}>COMMUNE</th>
-                      <th style={{ ...styles.th, textAlign: 'center' }}>ACTION</th>
+                      <th style={styles.th}>Code Site</th>
+                      <th style={styles.th}>Nom Site</th>
+                      <th style={styles.th}>Wilaya</th>
+                      <th style={styles.th}>Commune</th>
+                      <th style={{ ...styles.th, textAlign: 'center' }}>ACTIONS</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -593,53 +616,72 @@ export default function EngineerDashboard() {
                     ) : filteredSites.length === 0 ? (
                       <tr><td colSpan="5" style={styles.emptyCell}>Aucun site trouve.</td></tr>
                     ) : filteredSites.map((site) => {
+                      const isArchived = site.archive;
                       return (
                         <tr
                           key={site.id}
-                          style={{ ...styles.tr, cursor: 'pointer' }}
+                          style={{
+                            ...styles.tr,
+                            cursor: 'pointer',
+                            opacity: isArchived ? 0.45 : 1,
+                            backgroundColor: isArchived ? '#F3F4F6' : undefined,
+                          }}
                           onClick={() => setSelectedSite(site)}
-                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#F8FAFC'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
+                          onMouseEnter={(e) => { if (!isArchived) e.currentTarget.style.backgroundColor = '#F8FAFC'; }}
+                          onMouseLeave={(e) => { if (!isArchived) e.currentTarget.style.backgroundColor = isArchived ? '#F3F4F6' : ''; }}
                         >
                           {/* Code column with colored status indicator dot */}
                           <td style={{ ...styles.td, fontWeight: 600 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <span style={{
                                 width: 10, height: 10, borderRadius: '50%', display: 'inline-block', flexShrink: 0,
-                                backgroundColor: ST[site.statut] || '#64748B',
-                                boxShadow: site.statut === 'UP' ? '0 0 6px rgba(5,150,105,0.6)' : site.statut === 'DOWN' ? '0 0 6px rgba(220,38,38,0.6)' : 'none',
+                                backgroundColor: isArchived ? '#9CA3AF' : (ST[site.statut] || '#64748B'),
+                                boxShadow: isArchived ? 'none' : (site.statut === 'UP' ? '0 0 6px rgba(5,150,105,0.6)' : site.statut === 'DOWN' ? '0 0 6px rgba(220,38,38,0.6)' : 'none'),
                               }} />
                               {site.codeSite}
+                              {isArchived && <span style={{ fontSize: 9, color: '#9CA3AF', fontWeight: 600, backgroundColor: '#E5E7EB', padding: '1px 6px', borderRadius: 4 }}>ARCHIVÉ</span>}
                             </div>
                           </td>
-                          <td style={styles.td}>{site.nom}</td>
-                          <td style={styles.td}>{site.wilaya}</td>
-                          <td style={styles.td}>{site.commune}</td>
-                          {/* Toggle buttons: Actif / Inactif */}
+                          <td style={{ ...styles.td, color: isArchived ? '#9CA3AF' : undefined }}>{site.nom}</td>
+                          <td style={{ ...styles.td, color: isArchived ? '#9CA3AF' : undefined }}>{site.wilaya}</td>
+                          <td style={{ ...styles.td, color: isArchived ? '#9CA3AF' : undefined }}>{site.commune}</td>
+                          {/* Toggle buttons: Actif / Inactif – hidden for archived sites */}
                           <td style={{ ...styles.td, textAlign: 'center' }}>
-                            <div style={styles.statusActions}>
-                              {['UP', 'DOWN'].map((s) => {
-                                const isActive = site.statut === s;
-                                const isTarget = site.statut !== s;
-                                return (
-                                  <button
-                                    key={s}
-                                    disabled={!isTarget || togglingSiteId === site.id}
-                                    onClick={() => handleSiteToggle(site.id, site.statut)}
-                                    style={{
-                                      ...styles.statusBtn,
-                                      backgroundColor: isActive ? (s === 'UP' ? '#059669' : '#DC2626') : (isTarget ? '#FFFFFF' : '#FFFFFF'),
-                                      color: isActive ? '#FFFFFF' : (isTarget ? (s === 'UP' ? '#059669' : '#DC2626') : '#D0D0D0'),
-                                      borderColor: isActive ? (s === 'UP' ? '#059669' : '#DC2626') : (isTarget ? (s === 'UP' ? '#059669' : '#DC2626') : '#E5E5E5'),
-                                      cursor: isTarget && togglingSiteId !== site.id ? 'pointer' : 'not-allowed',
-                                      fontWeight: isActive ? 700 : (isTarget ? 600 : 500),
-                                    }}
-                                  >
-                                    {SITE_LABELS[s]}
-                                  </button>
-                                );
-                              })}
+                            {isArchived ? (
+                              <span style={{ fontSize: 9, color: '#9CA3AF', fontWeight: 600 }}>Archivé</span>
+                            ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
+                              <div style={styles.statusActions}>
+                                {['UP', 'DOWN'].map((s) => {
+                                  const isActive = site.statut === s;
+                                  const isTarget = site.statut !== s;
+                                  return (
+                                    <button
+                                      key={s}
+                                      disabled={!isTarget || togglingSiteId === site.id}
+                                      onClick={() => handleSiteToggle(site.id, site.statut)}
+                                      style={{
+                                        ...styles.statusBtn,
+                                        backgroundColor: isActive ? (s === 'UP' ? '#059669' : '#DC2626') : (isTarget ? '#FFFFFF' : '#FFFFFF'),
+                                        color: isActive ? '#FFFFFF' : (isTarget ? (s === 'UP' ? '#059669' : '#DC2626') : '#D0D0D0'),
+                                        borderColor: isActive ? (s === 'UP' ? '#059669' : '#DC2626') : (isTarget ? (s === 'UP' ? '#059669' : '#DC2626') : '#E5E5E5'),
+                                        cursor: isTarget && togglingSiteId !== site.id ? 'pointer' : 'not-allowed',
+                                        fontWeight: isActive ? 700 : (isTarget ? 600 : 500),
+                                      }}
+                                    >
+                                      {SITE_LABELS[s]}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <button onClick={() => setSelectedSite(site)} title="Modifier" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: '3px 8px', fontSize: 10, fontWeight: 600, borderRadius: 4, border: '1px solid #2563EB33', background: '#2563EB0D', color: '#2563EB', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                                Modifier
+                              </button>
+                              <button onClick={() => handleArchiverSite(site.id)} title="Archiver" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: '3px 8px', fontSize: 10, fontWeight: 600, borderRadius: 4, border: '1px solid #DC262633', background: '#DC26260D', color: '#DC2626', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                                Archiver
+                              </button>
                             </div>
+                            )}
                           </td>
                         </tr>
                       );
@@ -721,15 +763,15 @@ export default function EngineerDashboard() {
             <div style={{ overflowX: 'auto' }}>
               <table style={{ ...styles.table, backgroundColor: COLORS.cardBg }}>
                 <thead>
-                  <tr style={styles.thRow}>
-                    <th style={styles.th}>ID</th>
-                    <th style={styles.th}>TYPE</th>
-                    <th style={styles.th}>SITE</th>
-                    <th style={styles.th}>PRIORITE</th>
-                    <th style={styles.th}>STATUT</th>
-                    <th style={styles.th}>DATE</th>
-                    <th style={{ ...styles.th, textAlign: 'center' }}>ACTION</th>
-                  </tr>
+                    <tr style={styles.thRow}>
+                      <th style={styles.th}>N° Ticket</th>
+                      <th style={styles.th}>Type Client</th>
+                      <th style={styles.th}>Code Site</th>
+                      <th style={styles.th}>Priorité</th>
+                      <th style={styles.th}>Statut</th>
+                      <th style={styles.th}>Date Création</th>
+                      <th style={{ ...styles.th, textAlign: 'center' }}>ACTION</th>
+                    </tr>
                 </thead>
                 <tbody>
                   {loading ? (
@@ -974,7 +1016,7 @@ export default function EngineerDashboard() {
         <div className="fade-in" style={styles.overlay} onClick={() => setSelectedSite(null)}>
           <div className="scale-in" style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>Site {selectedSite.codeSite}</h2>
+              <h2 style={styles.modalTitle}>Site {selectedSite.codeSite} {selectedSite.archive && <span style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 600, backgroundColor: '#F3F4F6', padding: '2px 8px', borderRadius: 4, marginLeft: 8 }}>ARCHIVÉ</span>}</h2>
               <button style={styles.modalClose} onClick={() => setSelectedSite(null)}><IconX /></button>
             </div>
             <div style={styles.modalBody}>
@@ -1047,6 +1089,18 @@ export default function EngineerDashboard() {
             </div>
             {/* Modal footer: toggle status + archive */}
             <div style={styles.modalFooter}>
+              {selectedSite.archive ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    disabled={togglingSiteId === selectedSite.id}
+                    onClick={() => handleRestaurerSite(selectedSite.id)}
+                    style={{ display: 'flex', alignItems: 'center', backgroundColor: '#D1FAE5', color: '#059669', border: '1px solid #A7F3D0', padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '6px' }}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
+                    Restaurer
+                  </button>
+                </div>
+              ) : (
               <div style={styles.statusActions}>
                 {['UP', 'DOWN'].map((s) => {
                   const isActive = selectedSite.statut === s;
@@ -1070,7 +1124,9 @@ export default function EngineerDashboard() {
                   );
                 })}
               </div>
+              )}
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                {!selectedSite.archive && (
                 <button
                   disabled={togglingSiteId === selectedSite.id}
                   onClick={() => handleArchiverSite(selectedSite.id)}
@@ -1079,6 +1135,7 @@ export default function EngineerDashboard() {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '6px' }}><path d="M21 4H3M8 2v2M16 2v2M4 7l1 12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2l1-12M10 11v6M14 11v6" /></svg>
                   Archiver
                 </button>
+                )}
                 <button style={styles.btnCancel} onClick={() => setSelectedSite(null)}>Fermer</button>
               </div>
             </div>

@@ -92,3 +92,11 @@ class SiteReseau(models.Model):
         """
         self.archive = True
         self.save()
+
+    def desarchiverSite(self):
+        """
+        Restores an archived site by setting archive=False.
+        The site reappears in normal queries.
+        """
+        self.archive = False
+        self.save()

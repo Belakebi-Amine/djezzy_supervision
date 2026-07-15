@@ -108,6 +108,9 @@ const IconCheck = (p) => (
 const IconX = (p) => (
   <svg {...iconProps} {...p}><path d="M18 6L6 18M6 6l12 12" /></svg>
 );
+const IconEdit = (p) => (
+  <svg {...iconProps} {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+);
 
 /* Default empty state for the new-ticket form */
 const INITIAL_FORM = {
@@ -292,9 +295,9 @@ export default function CallCenter() {
       {/* ========== MAIN CONTENT AREA ========== */}
       <div style={{ ...styles.mainContent, backgroundColor: COLORS.mainBg }}>
         {/* Top header with page title or back navigation */}
-        <header style={{ position: 'sticky', top: 0, height: 51, display: 'flex', alignItems: 'center', padding: '0 27px', background: COLORS.cardBg, borderBottom: `1px solid ${COLORS.border}`, boxShadow: 'var(--shadow-sm)', zIndex: 10 }}>
+        <header style={styles.topHeader}>
           <h1 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-secondary)' }}>
-            {currentView === 'nouveau-ticket' ? 'Nouveau Ticket' : 'Réclamations'}
+            {currentView === 'nouveau-ticket' ? 'Nouveau Ticket' : currentView === 'traites' ? 'Archives — Tickets Traités' : 'Réclamations — Tickets Non Traités'}
           </h1>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
             <button onClick={fetchTickets} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-toolbar)', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-muted3)' }} title="Actualiser"><IconRefresh style={{ width: 14, height: 14 }} /></button>
@@ -306,6 +309,7 @@ export default function CallCenter() {
           </div>
         </header>
 
+        <div style={styles.pageContent}>
         {currentView === 'nouveau-ticket' ? (
           /* ========== NEW TICKET FORM ========== */
           <div style={styles.tableCard}>
@@ -316,23 +320,23 @@ export default function CallCenter() {
 
             <form onSubmit={handleCreateTicket} style={styles.formBody}>
               {/* Client information section */}
-              <div style={styles.formSectionTitle}>INFORMATIONS CLIENT</div>
+              <div style={styles.formSectionTitle}>Informations Client</div>
 
               <div style={styles.formGrid}>
                 <div style={styles.inputGroup}>
-                  <label style={styles.label}>NOM CLIENT</label>
+                  <label style={styles.label}>Nom Client</label>
                   <input type="text" name="nom_client" value={formData.nom_client} onChange={handleInputChange} placeholder="Nom et prenom" style={styles.input} required />
                 </div>
                 <div style={styles.inputGroup}>
-                  <label style={styles.label}>NUMERO TELEPHONE</label>
+                  <label style={styles.label}>Téléphone</label>
                   <input type="text" name="telephone" value={formData.telephone} onChange={handleInputChange} placeholder="0X XX XX XX XX" style={styles.input} required />
                 </div>
                 <div style={styles.inputGroup}>
-                  <label style={styles.label}>EMAIL</label>
+                  <label style={styles.label}>Email</label>
                   <input type="email" name="email" value={formData.email} onChange={handleInputChange} placeholder="client@gmail.com" style={styles.input} />
                 </div>
                 <div style={styles.inputGroup}>
-                  <label style={styles.label}>TYPE CLIENT</label>
+                  <label style={styles.label}>Type Client</label>
                   <select name="type_client" value={formData.type_client} onChange={handleInputChange} style={styles.select}>
                     <option value="particulier">PARTICULIER</option>
                     <option value="entreprise">ENTREPRISE</option>
@@ -341,11 +345,11 @@ export default function CallCenter() {
               </div>
 
               {/* Complaint / reclamation details section */}
-              <div style={{ ...styles.formSectionTitle, marginTop: '24px' }}>RECLAMATION</div>
+              <div style={{ ...styles.formSectionTitle, marginTop: '24px' }}>Reclamation</div>
 
               <div style={styles.formGrid}>
                 <div style={styles.inputGroup}>
-                  <label style={styles.label}>SITE RESEAU CONCERNE</label>
+                  <label style={styles.label}>Code Site</label>
                   <select name="site_id" value={formData.site_id} onChange={handleInputChange} style={styles.select} required>
                     <option value="">Selectionner un site...</option>
                     {sites.map((site) => (
@@ -354,7 +358,7 @@ export default function CallCenter() {
                   </select>
                 </div>
                 <div style={styles.inputGroup}>
-                  <label style={styles.label}>PRIORITE</label>
+                  <label style={styles.label}>Priorité</label>
                   <select name="priorite" value={formData.priorite} onChange={handleInputChange} style={styles.select}>
                     <option value="basse">BASSE</option>
                     <option value="normale">NORMALE</option>
@@ -364,7 +368,7 @@ export default function CallCenter() {
                 </div>
                 {/* Keywords textarea spans the full grid width */}
                 <div style={{ ...styles.inputGroup, gridColumn: '1 / -1' }}>
-                  <label style={styles.label}>MOTS CLES (notes rapides)</label>
+                  <label style={styles.label}>Mots Clés IA</label>
                   <textarea
                     name="mots_cles_ia"
                     value={formData.mots_cles_ia}
@@ -395,7 +399,7 @@ export default function CallCenter() {
             <div style={styles.toolbar}>
               <div style={styles.toolbarLeft}>
                 <h2 style={styles.tableTitle}>
-                  {currentView === 'non-traites' ? 'Listes des reclamations non-traitees' : 'Listes des reclamations'}
+                  {currentView === 'non-traites' ? 'Réclamations en cours' : 'Réclamations résolues'}
                 </h2>
               </div>
 
@@ -470,13 +474,13 @@ export default function CallCenter() {
               <table style={styles.table}>
                 <thead>
                   <tr style={styles.thRow}>
-                    <th style={{ ...styles.th, paddingLeft: '20px' }}>TICKET</th>
-                    <th style={styles.th}>CLIENT</th>
-                    <th style={styles.th}>TYPE</th>
-                    <th style={styles.th}>SITE</th>
-                    <th style={styles.th}>PRIORITE</th>
-                    <th style={styles.th}>STATUT</th>
-                    <th style={styles.th}>DATE</th>
+                    <th style={{ ...styles.th, paddingLeft: '20px' }}>N° Ticket</th>
+                    <th style={styles.th}>Nom Client</th>
+                    <th style={styles.th}>Type Client</th>
+                    <th style={styles.th}>Code Site</th>
+                    <th style={styles.th}>Priorité</th>
+                    <th style={styles.th}>Statut</th>
+                    <th style={styles.th}>Date Création</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -530,6 +534,7 @@ export default function CallCenter() {
             </div>
           </div>
         )}
+        </div>
       </div>
 
       {/* ========== TICKET DETAIL MODAL ========== */}
@@ -678,12 +683,11 @@ export default function CallCenter() {
 
             </div>
 
-            {/* Modal footer with archive and close buttons */}
+            {/* Modal footer with modify and close buttons */}
             <div style={styles.modalFooter}>
-              {/* Hide archive button if the ticket is already closed */}
               {getStatutKey(selectedTicket.statut) !== 'FERME' && (
-                <button style={styles.btnDanger} onClick={() => handleArchive(selectedTicket)}>
-                  <IconArchive /> Archiver
+                <button style={{ ...styles.btnFilter, backgroundColor: '#2563EB', color: '#fff', display: 'flex', alignItems: 'center', gap: 4 }} onClick={() => {}}>
+                  <IconEdit /> Modifier
                 </button>
               )}
               <button style={styles.btnCancel} onClick={() => setSelectedTicket(null)}>Fermer</button>
@@ -722,8 +726,9 @@ const styles = {
   sectionLabel: { margin: '0 5px 10px', fontSize: 6, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: '1px' },
   navItem: { display: 'flex', alignItems: 'center', gap: 9, background: 'transparent', border: 'none', color: 'var(--text-sidebar)', padding: '0 10px', borderRadius: 6, cursor: 'pointer', textAlign: 'left', fontSize: 13, width: '100%', height: 34, textDecoration: 'none', outline: 'none' },
   navItemActive: { background: 'linear-gradient(90deg, #9a0c2d, #710820)', color: '#FFFFFF', fontWeight: 600 },
-  mainContent: { flex: 1, padding: '30px 40px', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' },
-  topHeader: { marginBottom: '20px' },
+  mainContent: { flex: 1, padding: 0, display: 'flex', flexDirection: 'column', boxSizing: 'border-box' },
+  topHeader: { position: 'sticky', top: 0, height: 51, display: 'flex', alignItems: 'center', padding: '0 27px', background: COLORS.cardBg, borderBottom: `1px solid ${COLORS.border}`, boxShadow: 'var(--shadow-sm)', zIndex: 10 },
+  pageContent: { flex: 1, padding: '20px 27px', overflowY: 'auto' },
   pageTitle: { margin: 0, fontSize: '22px', fontWeight: 700, color: COLORS.textDark },
   backNav: { display: 'flex', alignItems: 'center', fontSize: '16px', color: COLORS.textDark, cursor: 'pointer', marginBottom: '4px' },
   breadcrumb: { fontSize: '12px', color: COLORS.textMuted, fontWeight: 500 },

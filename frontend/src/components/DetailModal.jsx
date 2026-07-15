@@ -471,16 +471,16 @@ export default function DetailModal({ type, data, onClose, stats, reporting }) {
                 ) : items[0]?.codeSite && !items[0]?.numero_ticket ? (
                   <table style={S.table}>
                     <thead><tr>
-                      <th style={S.th}>Code</th><th style={S.th}>Nom</th><th style={S.th}>Statut</th>
-                      <th style={S.th}>Wilaya</th><th style={S.th}>Commune</th><th style={S.th}>Tickets</th><th style={S.th}>Dernière MAJ</th>
+                      <th style={S.th}>codeSite</th><th style={S.th}>nomSite</th><th style={S.th}>statutSite</th>
+                      <th style={S.th}>wilaya</th><th style={S.th}>commune</th><th style={S.th}>Tickets</th><th style={S.th}>Dernière MAJ</th>
                     </tr></thead>
                     <tbody>{items.map((s) => <SiteRow key={s.id || s.codeSite} site={s} onUpdated={handleUpdate} />)}</tbody>
                   </table>
                 ) : (
                   <table style={S.table}>
                     <thead><tr>
-                      <th style={S.th}>Ticket</th><th style={S.th}>Client</th><th style={S.th}>Statut</th>
-                      <th style={S.th}>Priorité</th><th style={S.th}>Site</th><th style={S.th}>Assigné</th><th style={S.th}>Date</th>
+                      <th style={S.th}>numeroTicket</th><th style={S.th}>nomClient</th><th style={S.th}>statutTicket</th>
+                      <th style={S.th}>priorite</th><th style={S.th}>codeSite</th><th style={S.th}>Assigné</th><th style={S.th}>dateCreation</th>
                     </tr></thead>
                     <tbody>{items.map((t) => <TicketRow key={t.id} ticket={t} onUpdated={handleUpdate} />)}</tbody>
                   </table>

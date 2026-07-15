@@ -7,7 +7,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    # List all sites (with optional ?statut= and ?archive= filters)
+    # List all sites (with optional ?statut=, ?archive=, ?archived_only= filters)
     path('', views.liste_sites, name='liste-sites'),
     # Create a new network site
     path('creer/', views.creer_site, name='creer-site'),
@@ -15,4 +15,6 @@ urlpatterns = [
     path('<int:pk>/', views.detail_site, name='detail-site'),
     # Soft-delete: archive a site instead of removing it
     path('<int:pk>/archiver/', views.archiver_site, name='archiver-site'),
+    # Restore an archived site
+    path('<int:pk>/desarchiver/', views.desarchiver_site, name='desarchiver-site'),
 ]

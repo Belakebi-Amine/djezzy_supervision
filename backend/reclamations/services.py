@@ -1,57 +1,232 @@
 # reclamations/services.py
 # ─────────────────────────────────────────────────────────────
 # AI service for automatic incident description generation.
-# Uses Google's Gemini API to transform quick agent notes
+# Uses Ollama (llama3.1:8b) to transform quick agent notes
 # (keywords taken during a phone call) into a structured
 # incident report for the network engineering team.
+#
+# Falls back to local rule-based generation when Ollama
+# is unavailable (service stopped, model not loaded).
 # ─────────────────────────────────────────────────────────────
-import os
+import logging
 from decouple import config
-from google import genai
+
+logger = logging.getLogger(__name__)
+
+OLLAMA_MODEL = config('OLLAMA_MODEL', default='qwen2.5:3b')
+
+# ── Keyword → category mapping ──────────────────────────────
+_CATEGORY_KEYWORDS = {
+    'signal': [
+        'perte signal', 'signal faible', 'signal varie', 'zone morte',
+        'pas de signal', 'aucun reseau', 'couverture', 'antenne',
+    ],
+    'connexion': [
+        'connexion intermitente', 'deconnexion', 'deconnecte',
+        'connexion instable', 'connexion perdue',
+    ],
+    'debit': [
+        'debit lent', 'debit faible', 'lenteur', 'latence',
+        'navigation lente', 'videos bloquent', 'uploads impossible',
+        'debit montant', 'surcharge', 'depassement quota', 'forfait epuise',
+    ],
+    'panne': [
+        'panne totale', 'panne internet', 'panne site', 'panne equipement',
+        'coupure', 'pas de service', 'antenne tombee',
+    ],
+    'appel': [
+        'appel echoue', 'appel rate', 'qualite appel', 'gresillement',
+        'appel coupe', 'voix', 'reseau indisponible', 'appel',
+    ],
+    'sms': [
+        'sms', 'message', 'envoi echoue', 'reception sms',
+    ],
+    'internet': [
+        'internet', '3g', '4g', '4g+', '5g', 'hspa', 'edge',
+        'data', 'mobile data', 'connexion internet',
+    ],
+    'batterie': [
+        'batterie', 'autonomie', 'consommation', 'chauffe',
+    ],
+    'facturation': [
+        'facture', 'facturation', 'prelevement', 'debit',
+        'credit', 'forfait',
+    ],
+    'installation': [
+        'installation', 'raccordement', 'routeur', 'livebox',
+        'decouverte', 'mise en service',
+    ],
+}
+
+_URGENCY_KEYWORDS = {
+    'critique': [
+        'panne totale', 'plus de service', 'aucun reseau', 'panne site',
+        'urgence', 'critique', 'panne internet',
+    ],
+    'haute': [
+        'coupure frequente', 'pas de signal', 'panne', 'instable',
+        'deconnexion repetee', 'appel echoue',
+    ],
+}
+
+_TEMPLATES = {
+    'signal': {
+        'title': 'Perte ou dégradation de signal',
+        'desc': 'Le client signale des problèmes de signal : {keywords}. '
+                'La couverture réseau dans sa zone semble dégradée.',
+        'impact': 'Communication mobile perturbée, appels et data indisponibles ou instables.',
+    },
+    'connexion': {
+        'title': 'Connexion instable / déconnexions répétées',
+        'desc': 'Le client rapporte des déconnexions fréquentes : {keywords}. '
+                'La connexion réseau est instable sur son équipement.',
+        'impact': 'Navigation internet interrompue, applications mobiles inutilisables.',
+    },
+    'debit': {
+        'title': 'Débit insuffisant / lenteur réseau',
+        'desc': 'Le client constate un débit très faible : {keywords}. '
+                'Les performances réseau sont dégradées dans sa zone.',
+        'impact': 'Navigation difficile, streaming impossible, uploads/downloads très lents.',
+    },
+    'panne': {
+        'title': 'Panne réseau ou équipement',
+        'desc': 'Le client rapporte une panne : {keywords}. '
+                'Le service semble totalement ou partiellement indisponible.',
+        'impact': 'Aucun service disponible — urgence opérationnelle.',
+    },
+    'appel': {
+        'title': 'Problème d\'appels vocaux',
+        'desc': 'Le client rencontre des difficultés avec les appels : {keywords}. '
+                'La qualité vocale ou la connectivité appel est dégradée.',
+        'impact': 'Appels échoués ou de mauvaise qualité, communication vocale perturbée.',
+    },
+    'sms': {
+        'title': 'Problème d\'envoi/réception SMS',
+        'desc': 'Le client signale un dysfonctionnement SMS : {keywords}. '
+                'L\'envoi ou la réception de messages est perturbé.',
+        'impact': 'Messages non transmis ou non reçus, communication textuelle indisponible.',
+    },
+    'internet': {
+        'title': 'Connexion internet mobile dégradée',
+        'desc': 'Le client constate des problèmes de connexion data : {keywords}. '
+                'La connectivité internet mobile est dégradée.',
+        'impact': 'Navigation et applications mobiles ralenties ou inutilisables.',
+    },
+    'batterie': {
+        'title': 'Autonomie batterie réduite',
+        'desc': 'Le client signale une consommation excessive de batterie : {keywords}. '
+                'L\'autonomie de l\'appareil est anormalement réduite.',
+        'impact': 'Appareil épuisé rapidement, inutilisable sur la durée.',
+    },
+    'facturation': {
+        'title': 'Réclamation de facturation',
+        'desc': 'Le client conteste un élément de facturation : {keywords}. '
+                'Une vérification du forfait et des prélèvements est nécessaire.',
+        'impact': 'Mécontentement client, besoin de vérification comptable.',
+    },
+    'installation': {
+        'title': 'Problème d\'installation ou raccordement',
+        'desc': 'Le client rencontre un souci lors de l\'installation : {keywords}. '
+                'Le raccordement ou la mise en service n\'a pas été effectué correctement.',
+        'impact': 'Service non disponible malgré la souscription.',
+    },
+}
+
+_URGENCY_TEXT = {
+    'critique': 'CRITIQUE — Panne majeure nécessitant une intervention immédiate.',
+    'haute': 'HAUTE — Problème significatif impactant l\'expérience client.',
+    'normale': 'NORMALE — Problème gérable dans les délais standards.',
+}
+
+
+def _detect_categories(mots_cles: str) -> list:
+    text = mots_cles.lower()
+    found = []
+    for cat, patterns in _CATEGORY_KEYWORDS.items():
+        for kw in patterns:
+            if kw in text:
+                found.append(cat)
+                break
+    return found or ['signal']
+
+
+def _detect_urgency(mots_cles: str) -> str:
+    text = mots_cles.lower()
+    for level in ['critique', 'haute']:
+        for kw in _URGENCY_KEYWORDS[level]:
+            if kw in text:
+                return level
+    return 'normale'
+
+
+def _generer_description_locale(nom_client: str, telephone_client: str, mots_cles: str) -> str:
+    categories = _detect_categories(mots_cles)
+    urgency = _detect_urgency(mots_cles)
+    keywords_list = [k.strip() for k in mots_cles.split(',') if k.strip()]
+
+    lines = [
+        f'Description du problème — {nom_client} ({telephone_client})',
+        '',
+        '1. Description du problème',
+    ]
+
+    for cat in categories:
+        t = _TEMPLATES.get(cat, _TEMPLATES['signal'])
+        desc = t['desc'].format(keywords=mots_cles)
+        lines.append(f'   • {desc}')
+
+    lines.append('')
+    lines.append('2. Impacts')
+    for cat in categories:
+        t = _TEMPLATES.get(cat, _TEMPLATES['signal'])
+        lines.append(f'   • {t["impact"]}')
+
+    lines.append('')
+    lines.append('3. Mots-clés signalés')
+    for kw in keywords_list:
+        lines.append(f'   — {kw}')
+
+    lines.append('')
+    lines.append(f'4. Urgence perçue : {_URGENCY_TEXT.get(urgency, _URGENCY_TEXT["normale"])}')
+
+    lines.append('')
+    lines.append('5. Transmission')
+    lines.append('   Ce ticket est transmis à l\'équipe réseau pour analyse et prise en charge.')
+
+    return '\n'.join(lines)
 
 
 def generer_description_incident_ia(nom_client, telephone_client, mots_cles):
     """
     Transforms quick call center notes into a structured incident report.
-
-    The flow:
-    1. Agent takes brief notes during customer call (mots_cles)
-    2. On ticket save, this function sends those notes to Gemini
-    3. Gemini returns a formatted report with: problem description,
-       impact assessment, perceived urgency, and transmission note
-    4. The report is stored in the ticket's description field
-
-    If the API key is missing or the call fails, falls back to raw notes.
+    Uses Ollama (llama3.1:8b) locally. Falls back to rule-based templates
+    if Ollama is unavailable.
     """
-    api_key = config('GEMINI_API_KEY', default=None)
-
-    if not api_key:
-        return f"[IA non configurée] Notes de l'agent : {mots_cles}"
-
     try:
-        client = genai.Client(api_key=api_key)
+        import ollama as ollama_lib
 
-        prompt = f"""
-        Tu es un assistant IA spécialisé dans la gestion du réseau mobile et internet pour l'opérateur Djezzy en Algérie.
-        Ton rôle est de transformer des notes rapides prises par un agent du Call Center en un rapport d'incident clair, professionnel et structuré.
+        prompt = f"""Tu es un assistant IA spécialisé dans la gestion du réseau mobile et internet pour l'opérateur Djezzy en Algérie.
+Transforme les notes rapides d'un agent du Call Center en un rapport d'incident clair, professionnel et structuré.
 
-        Voici les informations de la réclamation :
-        - Nom du Client : {nom_client}
-        - Téléphone du Client : {telephone_client}
-        - Notes de l'agent (Mots-clés) : {mots_cles}
+Informations :
+- Nom du Client : {nom_client}
+- Téléphone du Client : {telephone_client}
+- Notes de l'agent (Mots-clés) : {mots_cles}
 
-        Consignes de rédaction :
-        - Rédige en français de manière professionnelle et concise.
-        - Structure le texte (ex: Description du problème, Impacts, Urgence perçue).
-        - N'invente pas d'informations techniques qui ne sont pas suggérées dans les mots-clés.
-        - Termine par une conclusion standard sur la transmission du ticket.
-        """
+Consignes :
+- Rédige en français, de manière professionnelle et concise.
+- Structure le texte en sections : Description du problème, Impacts, Mots-clés signalés, Urgence perçue, Transmission.
+- N'invente pas d'informations techniques qui ne sont pas suggérées dans les mots-clés.
+- Sois concis (200-300 mots max)."""
 
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
+        response = ollama_lib.chat(
+            model=OLLAMA_MODEL,
+            messages=[{'role': 'user', 'content': prompt}],
+            options={'temperature': 0.3, 'num_predict': 512},
         )
-        return response.text.strip()
+        return response['message']['content'].strip()
 
     except Exception as e:
-        return f"[Génération IA indisponible] Notes de l'agent : {mots_cles} (Erreur : {str(e)})"
+        logger.warning("Ollama indisponible pour description, fallback local: %s", e)
+
+    return _generer_description_locale(nom_client, telephone_client, mots_cles)

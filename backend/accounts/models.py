@@ -72,7 +72,7 @@ class CustomUser(AbstractUser):
         if not self.code_user:
             import re
             existing = CustomUser.objects.filter(code_user__regex=r'^U\d+$').values_list('code_user', flat=True)
-            max_num = -1
+            max_num = 0
             for code in existing:
                 try:
                     num = int(re.sub(r'\D', '', code))

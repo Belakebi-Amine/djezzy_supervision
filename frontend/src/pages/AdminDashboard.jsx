@@ -19,12 +19,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LineChart, Line, BarChart, Bar, Cell, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from 'recharts';
 import DOMPurify from 'dompurify';
+import html2pdf from 'html2pdf.js';
 import { useCountUp, useRipple, spawnParticles } from '../hooks/useAnimations';
 import {
   getDashboardStats, getDashboardReporting,
   getRapportsIA, deleteRapportIA, getArchivedRapports, restoreRapportIA,
 } from '../api/dashboard';
-import { getSites, getUsers, createUser, getTickets, createTicket, updateTicket, createSite, updateSiteStatus, archiverSite, archiveUser, toggleActiveUser, updateUser, restoreUser, getTokenRole, getArchivedTickets, archiverReclamation, desarchiverReclamation } from '../api/tickets';
+import { getSites, getUsers, createUser, getTickets, createTicket, updateTicket, createSite, updateSiteStatus, archiverSite, archiveUser, toggleActiveUser, updateUser, restoreUser, getTokenRole, getArchivedTickets, archiverReclamation, desarchiverReclamation, getArchivedSites, restoreSite } from '../api/tickets';
 import MapComponent from '../components/Map';
 import DetailModal from '../components/DetailModal';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
@@ -262,11 +263,13 @@ export default function AdminDashboard() {
   const [allRapports, setAllRapports] = useState([]);
   const [selectedRapport, setSelectedRapport] = useState(null);
   const [loadingRapports, setLoadingRapports] = useState(false);
+  const [rapportSearch, setRapportSearch] = useState('');
 
   // Archives state
   const [archiveTab, setArchiveTab] = useState('tickets'); // 'tickets' | 'rapports' | 'users' | 'sites'
   const [archivedTickets, setArchivedTickets] = useState([]);
   const [archivedRapports, setArchivedRapports] = useState([]);
+  const [archivedSites, setArchivedSites] = useState([]);
   const [loadingArchives, setLoadingArchives] = useState(false);
 
   // Performance state
@@ -336,10 +339,11 @@ export default function AdminDashboard() {
   const fetchArchivedData = useCallback(async () => {
     setLoadingArchives(true);
     try {
-      const [t, r] = await Promise.all([getArchivedTickets(), getArchivedRapports()]);
+      const [t, r, s] = await Promise.all([getArchivedTickets(), getArchivedRapports(), getArchivedSites()]);
       setArchivedTickets(Array.isArray(t) ? t : []);
       setArchivedRapports(Array.isArray(r) ? r : []);
-    } catch { setArchivedTickets([]); setArchivedRapports([]); }
+      setArchivedSites(Array.isArray(s) ? s : []);
+    } catch { setArchivedTickets([]); setArchivedRapports([]); setArchivedSites([]); }
     finally { setLoadingArchives(false); }
   }, []);
 
@@ -357,8 +361,7 @@ export default function AdminDashboard() {
   }, [allRapports, selectedRapport]);
 
   // Archive an IA report (admin only)
-  const handleDeleteRapport = useCallback(async (id, e) => {
-    e?.stopPropagation();
+  const handleDeleteRapport = useCallback(async (id) => {
     if (!window.confirm('Archiver ce rapport ?')) return;
     try {
       await deleteRapportIA(id);
@@ -368,12 +371,67 @@ export default function AdminDashboard() {
     } catch (err) { addNotification(err.message, 'error'); }
   }, [selectedRapport, addNotification]);
 
+  // Download a report as PDF from the list
+  const handleDownloadPDFAdmin = useCallback(async (report) => {
+    try {
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = DOMPurify.sanitize(report.contenu);
+      const style = document.createElement('style');
+      style.textContent = `
+        * { page-break-inside: avoid; }
+        table { page-break-inside: avoid; }
+        tr { page-break-inside: avoid; }
+        h1, h2, h3, h4 { page-break-after: avoid; }
+        img { page-break-inside: avoid; max-width: 100%; }
+      `;
+      tempDiv.prepend(style);
+      tempDiv.style.padding = '0';
+      tempDiv.style.fontSize = '13px';
+      tempDiv.style.lineHeight = '1.7';
+      tempDiv.style.fontFamily = "'Inter', system-ui, sans-serif";
+      tempDiv.style.color = '#1E293B';
+      tempDiv.style.background = '#fff';
+      tempDiv.style.width = '100%';
+      tempDiv.style.maxWidth = '750px';
+      tempDiv.style.margin = '0 auto';
+      document.body.appendChild(tempDiv);
+      const opt = {
+        margin: [15, 12, 15, 12],
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false, letterRendering: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+      };
+      const pdfBlob = await html2pdf().set(opt).from(tempDiv).outputPdf('blob');
+      document.body.removeChild(tempDiv);
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${report.titre || 'rapport'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('PDF error:', err);
+      alert('Erreur lors de la génération du PDF.');
+    }
+  }, []);
+
   // ─── Derived / computed data ───
   // Count users per role for the dashboard breakdown
   const roleCounts = {};
   users.forEach((u) => { const r = ROLE_LABELS[u.role_user] || u.role_user || 'INCONNU'; roleCounts[r] = (roleCounts[r] || 0) + 1; });
   const ticketsOuvert = tickets.filter((t) => t.statut === 'ouvert').length;
   const ticketsResolu = tickets.filter((t) => t.statut === 'resolu').length;
+
+  // filteredRapports – search-filtered list of supervisor reports
+  const filteredRapports = allRapports.filter((r) => {
+    if (!rapportSearch.trim()) return true;
+    const q = rapportSearch.toLowerCase();
+    return (r.titre || '').toLowerCase().includes(q)
+      || (r.cree_par?.nom_user || '').toLowerCase().includes(q);
+  });
 
   // ─── Filtered users: search by name/email/code + optional role filter, exclude archived ───
   const filteredUsers = users.filter((u) => {
@@ -487,7 +545,10 @@ export default function AdminDashboard() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await createTicket(ticketForm);
+      await createTicket({
+        ...ticketForm,
+        site_id: ticketForm.site ? Number(ticketForm.site) : null,
+      });
       setShowTicketForm(false);
       setTicketForm({ nom_client: '', telephone_client: '', email_client: '', type_client: 'particulier', site: '', priorite: 'normale', mots_cles_ia: '' });
       fetchTickets();
@@ -560,11 +621,12 @@ export default function AdminDashboard() {
       await archiverSite(id);
       setSites((prev) => prev.filter((s) => s.id !== id));
       setSelectedSite(null);
+      fetchArchivedData();
       addNotification('Site archivé avec succès', 'success');
     }
     catch { addNotification("Erreur d'archivage.", 'error'); }
     finally { setTogglingSiteId(null); }
-  }, [addNotification]);
+  }, [addNotification, fetchArchivedData]);
 
   // Toggle a user's active/inactive status (they stay in the list)
   const handleToggleActive = useCallback(async (user) => {
@@ -601,6 +663,18 @@ export default function AdminDashboard() {
     } catch { addNotification("Erreur lors de la restauration.", 'error'); }
     finally { setUpdatingId(null); }
   }, [addNotification]);
+
+  // Restore an archived site back to active
+  const handleRestoreSite = useCallback(async (site) => {
+    setTogglingSiteId(site.id);
+    try {
+      await restoreSite(site.id);
+      setArchivedSites((prev) => prev.filter((s) => s.id !== site.id));
+      fetchSites();
+      addNotification(`Site ${site.codeSite} restauré`, 'success');
+    } catch { addNotification("Erreur lors de la restauration.", 'error'); }
+    finally { setTogglingSiteId(null); }
+  }, [fetchSites, addNotification]);
 
   // ─── Edit user form state ───
   const [editForm, setEditForm] = useState({ first_name: '', last_name: '', email: '', role: '' });
@@ -686,28 +760,7 @@ export default function AdminDashboard() {
         <AnimatedKpi label="Délai Moyen" value={delaiMoyen} sub="résolution" color="#8B5CF6" />
       </div>
 
-      {/* ── ROW 1 : Tendance ── */}
-      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#3B82F6', marginRight: 6, verticalAlign: 'middle' }} />TENDANCE</span></div>
-      <div style={styles.chartsRow}>
-        <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
-          <div style={styles.ch}><span style={styles.cht}>Évolution des tickets</span><InfoPopup text="Nombre total de tickets créés par jour." /></div>
-          <div style={styles.cb}>
-            {evo.length === 0 ? <div style={styles.empty}>Aucune donnée</div>
-            : <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={evo} margin={{ top: 8, right: 20, left: 0, bottom: 8 }}
-                  onClick={(e) => e?.activePayload && setDetail({ type: 'evolution', data: e.activePayload[0].payload })}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
-                  <XAxis dataKey="jour" tick={{ fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} interval="preserveStartEnd" />
-                  <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} width={25} />
-                  <RechartsTooltip content={<Tip />} />
-                  <Line type="monotone" dataKey="total" stroke={COLORS.accent} strokeWidth={2.5} dot={{ r: 2 }} activeDot={{ r: 6 }} name="Tickets" />
-                </LineChart>
-              </ResponsiveContainer>}
-          </div>
-        </div>
-      </div>
-
-      {/* ── ROW 2 : Activité + Performance (2 graphs side by side) ── */}
+      {/* ── ROW 1 : Activité + Performance (2 graphs side by side) ── */}
       <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#8B5CF6', marginRight: 6, verticalAlign: 'middle' }} />ACTIVITÉ & PERFORMANCE</span></div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
         <AnimatedKpi label="Utilisateurs" value={users.filter((u) => !u.is_archived).length} sub={`${users.filter((u) => u.is_active && !u.is_archived).length} actifs`} color="#2563EB" />
@@ -764,6 +817,27 @@ export default function AdminDashboard() {
                   <Bar dataKey="total_assignes" radius={[4, 4, 0, 0]} fill="#2563EB" name="Assignés" />
                   <Bar dataKey="resolus" radius={[4, 4, 0, 0]} fill="#10B981" name="Résolus" />
                 </BarChart>
+              </ResponsiveContainer>}
+          </div>
+        </div>
+      </div>
+
+      {/* ── ROW 2 : Tendance ── */}
+      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#3B82F6', marginRight: 6, verticalAlign: 'middle' }} />TENDANCE</span></div>
+      <div style={styles.chartsRow}>
+        <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
+          <div style={styles.ch}><span style={styles.cht}>Évolution des tickets</span><InfoPopup text="Nombre total de tickets créés par jour." /></div>
+          <div style={styles.cb}>
+            {evo.length === 0 ? <div style={styles.empty}>Aucune donnée</div>
+            : <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={evo} margin={{ top: 8, right: 20, left: 0, bottom: 8 }}
+                  onClick={(e) => e?.activePayload && setDetail({ type: 'evolution', data: e.activePayload[0].payload })}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
+                  <XAxis dataKey="jour" tick={{ fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} width={25} />
+                  <RechartsTooltip content={<Tip />} />
+                  <Line type="monotone" dataKey="total" stroke={COLORS.accent} strokeWidth={2.5} dot={{ r: 2 }} activeDot={{ r: 6 }} name="Tickets" />
+                </LineChart>
               </ResponsiveContainer>}
           </div>
         </div>
@@ -862,15 +936,15 @@ export default function AdminDashboard() {
       <div style={{ overflowX: 'auto' }}>
         <table style={styles.table}>
           <thead>
-            <tr style={styles.thRow}>
-              <th style={styles.th}>ID</th>
-              <th style={styles.th}>TYPE</th>
-              <th style={styles.th}>SITE</th>
-              <th style={styles.th}>PRIORITÉ</th>
-              <th style={styles.th}>STATUT</th>
-              <th style={styles.th}>DATE</th>
-              <th style={{ ...styles.th, textAlign: 'center' }}>ACTIONS</th>
-            </tr>
+              <tr style={styles.thRow}>
+                <th style={styles.th}>N° Ticket</th>
+                <th style={styles.th}>Type Client</th>
+                <th style={styles.th}>Code Site</th>
+                <th style={styles.th}>Priorité</th>
+                <th style={styles.th}>Statut</th>
+                <th style={styles.th}>Date Création</th>
+                <th style={{ ...styles.th, textAlign: 'center' }}>ACTIONS</th>
+              </tr>
           </thead>
           <tbody>
             {filteredTickets.length === 0 ? (
@@ -990,12 +1064,12 @@ export default function AdminDashboard() {
           <table style={styles.table}>
             <thead>
               <tr style={styles.thRow}>
-                <th style={styles.th}>CODE</th>
-                <th style={styles.th}>NOM</th>
-                <th style={styles.th}>WILAYA</th>
-                <th style={styles.th}>COMMUNE</th>
-                <th style={styles.th}>COORD X</th>
-                <th style={styles.th}>COORD Y</th>
+                <th style={styles.th}>Code Site</th>
+                <th style={styles.th}>Nom Site</th>
+                <th style={styles.th}>wilaya</th>
+                <th style={styles.th}>commune</th>
+                <th style={styles.th}>coordX</th>
+                <th style={styles.th}>coordY</th>
                 <th style={{ ...styles.th, textAlign: 'center' }}>ACTION</th>
               </tr>
             </thead>
@@ -1085,12 +1159,11 @@ export default function AdminDashboard() {
         <table style={styles.table}>
           <thead>
             <tr style={styles.thRow}>
-              <th style={styles.th}>CODE</th>
-              <th style={styles.th}>PRÉNOM</th>
-              <th style={styles.th}>NOM</th>
-              <th style={styles.th}>EMAIL</th>
-              <th style={styles.th}>RÔLE</th>
-              <th style={styles.th}>STATUT</th>
+              <th style={styles.th}>Code User</th>
+              <th style={styles.th}>Nom</th>
+              <th style={styles.th}>Email</th>
+              <th style={styles.th}>Rôle</th>
+              <th style={styles.th}>Actif</th>
               <th style={{ ...styles.th, textAlign: 'center' }}>ACTIONS</th>
             </tr>
           </thead>
@@ -1161,50 +1234,76 @@ export default function AdminDashboard() {
   // Lists all supervisor-submitted reports in a table with view/delete actions
   const reportsView = () => (
     <div style={styles.tableCard}>
-      <div style={{ ...styles.panelHeader, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={styles.panelTitle}><IconReport style={{ width: 15, height: 15 }} /> Rapports des superviseurs</span>
-        <button onClick={fetchRapports} style={styles.textBtn}><IconRefresh style={{ width: 12, height: 12 }} /> Actualiser</button>
+      <div style={{ padding: '16px 20px', borderBottom: `1px solid ${COLORS.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg,#E8401A22,#E8401A0A)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <IconReport style={{ width: 16, height: 16, color: '#E8401A' }} />
+          </span>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: COLORS.textDark }}>Rapports des Superviseurs</h2>
+            <span style={{ fontSize: 10, color: 'var(--text-muted2)' }}>{allRapports.length} rapport{allRapports.length !== 1 ? 's' : ''}</span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <input type="text" placeholder="Rechercher..." value={rapportSearch} onChange={(e) => setRapportSearch(e.target.value)}
+              style={{ padding: '6px 12px 6px 30px', fontSize: 11, borderRadius: 6, border: `1px solid ${COLORS.border}`, fontFamily: 'inherit', outline: 'none', color: 'var(--text-primary)', background: 'var(--bg-input)', width: 200 }} />
+            <svg style={{ position: 'absolute', left: 9, pointerEvents: 'none', color: 'var(--text-muted2)' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+            {rapportSearch && (
+              <button onClick={() => setRapportSearch('')}
+                style={{ position: 'absolute', right: 6, background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted2)', display: 'flex' }}>
+                <IconX style={{ width: 10, height: 10 }} />
+              </button>
+            )}
+          </div>
+          <button onClick={fetchRapports} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-toolbar)', border: 'none', borderRadius: 4, padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-muted3)', fontSize: 11, fontWeight: 600 }}>
+            <IconRefresh style={{ width: 12, height: 12 }} /> Actualiser
+          </button>
+        </div>
       </div>
       {loadingRapports ? (
-        <div style={styles.empty}>Chargement...</div>
+        <div style={{ padding: 50, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>Chargement...</div>
       ) : allRapports.length === 0 ? (
-        <div style={{ ...styles.empty, padding: 40 }}>Aucun rapport disponible.</div>
+        <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>
+          <IconReport style={{ width: 32, height: 32, color: 'var(--text-muted2)', opacity: 0.3, margin: '0 auto 12px' }} />
+          <div style={{ fontWeight: 600 }}>Aucun rapport disponible</div>
+        </div>
+      ) : filteredRapports.length === 0 ? (
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>Aucun résultat pour "{rapportSearch}"</div>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={styles.table}>
-            <thead><tr style={styles.thRow}>
-              <th style={styles.th}>Titre</th>
-              <th style={styles.th}>Auteur</th>
-              <th style={styles.th}>Période</th>
-              <th style={styles.th}>Créé le</th>
-              <th style={styles.th}></th>
-            </tr></thead>
-            <tbody>
-              {allRapports.map((r) => (
-                <tr key={r.id} onClick={() => handleViewRapport(r.id)}
-                  style={{ ...styles.tr, cursor: 'pointer' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}>
-                  <td style={{ ...styles.td, fontWeight: 600, maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.titre}</td>
-                  <td style={styles.td}>{r.cree_par?.nom_user || '—'}</td>
-                  <td style={styles.td}>
-                    {r.date_debut && r.date_fin
-                      ? `${new Date(r.date_debut).toLocaleDateString('fr')} → ${new Date(r.date_fin).toLocaleDateString('fr')}`
-                      : '30 jours'}
-                  </td>
-                  <td style={styles.td}>
-                    {new Date(r.created_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' })}
-                  </td>
-                  <td style={styles.td}>
-                    <button onClick={(e) => handleDeleteRapport(r.id, e)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#DC2626' }} title="Supprimer">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {filteredRapports.map((r) => (
+            <div key={r.id} onClick={() => handleViewRapport(r.id)}
+              style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', borderRadius: 8, border: `1px solid ${COLORS.border}`, background: 'var(--bg-card)', cursor: 'pointer', transition: 'all 0.15s' }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#E8401A44'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(232,64,26,0.06)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = COLORS.border; e.currentTarget.style.boxShadow = 'none'; }}>
+              <div style={{ width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg,#E8401A22,#E8401A0A)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <IconReport style={{ width: 16, height: 16, color: '#E8401A' }} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.titre}</div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>
+                  {r.cree_par?.nom_user || '—'}
+                  {r.date_debut && r.date_fin ? ` · ${new Date(r.date_debut).toLocaleDateString('fr')} → ${new Date(r.date_fin).toLocaleDateString('fr')}` : ''}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0, minWidth: 80 }}>
+                <div style={{ fontSize: 10, color: 'var(--text-muted3)', fontWeight: 500 }}>
+                  {new Date(r.created_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                <button onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); e.preventDefault(); handleDownloadPDFAdmin(r); }}
+                  style={{ background: '#05966918', border: '1px solid #05966933', borderRadius: 4, cursor: 'pointer', padding: '4px 8px', color: '#059669', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }} title="Télécharger PDF">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                </button>
+                <button onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); e.preventDefault(); handleDeleteRapport(r.id); }}
+                  style={{ background: '#DC262618', border: '1px solid #DC262633', borderRadius: 4, cursor: 'pointer', padding: '4px 8px', color: '#DC2626', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }} title="Supprimer">
+                  <IconTrash style={{ width: 12, height: 12 }} />
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -1212,51 +1311,69 @@ export default function AdminDashboard() {
 
   // ─── ARCHIVES VIEW ───
   // Tabbed view for archived tickets, reports, users, and sites
-  const archivesView = () => (
-    <div style={styles.tableCard}>
-      <div style={{ padding: '14px 18px', borderBottom: `1px solid ${COLORS.border}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: COLORS.textDark, display: 'flex', alignItems: 'center', gap: 8 }}><IconArchive /> Archives</h2>
-          <button onClick={fetchArchivedData} style={styles.textBtn}><IconRefresh style={{ width: 12, height: 12 }} /> Actualiser</button>
+  const archivesView = () => {
+    const tabs = [
+      { key: 'tickets', label: 'Réclamations', icon: <IconTicket style={{ width: 13, height: 13 }} />, count: archivedTickets.length },
+      { key: 'rapports', label: 'Rapports IA', icon: <IconReport style={{ width: 13, height: 13 }} />, count: archivedRapports.length },
+      { key: 'users', label: 'Utilisateurs', icon: <IconUsers style={{ width: 13, height: 13 }} />, count: users.filter(u => u.is_archived).length },
+      { key: 'sites', label: 'Sites', icon: <IconSite style={{ width: 13, height: 13 }} />, count: archivedSites.length },
+    ];
+    return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <span style={{ width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg,#64748B22,#64748B0A)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <IconArchive style={{ width: 18, height: 18, color: '#64748B' }} />
+        </span>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Archives</h2>
+          <span style={{ fontSize: 10, color: 'var(--text-muted2)' }}>Éléments archivés du système</span>
         </div>
-        <div style={{ display: 'flex', gap: 4, background: 'var(--bg-toolbar)', borderRadius: 6, padding: 2, width: 'fit-content' }}>
-          {[{ key: 'tickets', label: 'Réclamations', count: archivedTickets.length },
-            { key: 'rapports', label: 'Rapports IA', count: archivedRapports.length },
-            { key: 'users', label: 'Utilisateurs', count: users.filter(u => u.is_archived).length },
-            { key: 'sites', label: 'Sites', count: 0 },
-          ].map((tab) => (
-            <button key={tab.key} onClick={() => setArchiveTab(tab.key)}
-              style={{ padding: '4px 14px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
-                background: archiveTab === tab.key ? 'var(--bg-card)' : 'transparent',
-                color: archiveTab === tab.key ? 'var(--text-primary)' : 'var(--text-muted3)',
-                boxShadow: archiveTab === tab.key ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
-              {tab.label} ({tab.count})
-            </button>
-          ))}
-        </div>
+        <button onClick={fetchArchivedData} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-toolbar)', border: 'none', borderRadius: 4, padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-muted3)', fontSize: 11, fontWeight: 600 }}>
+          <IconRefresh style={{ width: 12, height: 12 }} /> Actualiser
+        </button>
+      </div>
+      {/* Tab bar */}
+      <div style={{ display: 'flex', gap: 6, background: 'var(--bg-toolbar)', borderRadius: 8, padding: 4, marginBottom: 16 }}>
+        {tabs.map((tab) => (
+          <button key={tab.key} onClick={() => setArchiveTab(tab.key)}
+            style={{ padding: '7px 16px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+              background: archiveTab === tab.key ? 'var(--bg-card)' : 'transparent',
+              color: archiveTab === tab.key ? 'var(--text-primary)' : 'var(--text-muted3)',
+              boxShadow: archiveTab === tab.key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none' }}>
+            {tab.icon} {tab.label}
+            <span style={{ fontSize: 9, fontWeight: 700, background: archiveTab === tab.key ? '#E8401A22' : 'var(--bg-hover)', color: archiveTab === tab.key ? '#E8401A' : 'var(--text-muted2)', padding: '1px 6px', borderRadius: 8, lineHeight: '16px' }}>{tab.count}</span>
+          </button>
+        ))}
       </div>
       {loadingArchives ? (
-        <div style={styles.empty}>Chargement...</div>
+        <div style={{ padding: 50, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>Chargement...</div>
       ) : (
+      <div style={styles.tableCard}>
         <div style={{ overflowX: 'auto' }}>
           {archiveTab === 'tickets' && (
             <table style={styles.table}>
               <thead><tr style={styles.thRow}>
-                <th style={styles.th}>Numéro</th><th style={styles.th}>Client</th><th style={styles.th}>Site</th><th style={styles.th}>Priorité</th><th style={styles.th}>Archivé le</th><th style={styles.th}></th>
+                <th style={styles.th}>N° Ticket</th><th style={styles.th}>Client</th><th style={styles.th}>Site</th><th style={styles.th}>Priorité</th><th style={styles.th}>Archivé le</th><th style={{ ...styles.th, textAlign: 'center' }}>Action</th>
               </tr></thead>
               <tbody>
                 {archivedTickets.length === 0 ? (
                   <tr><td colSpan={6} style={styles.emptyCell}>Aucun ticket archivé</td></tr>
                 ) : archivedTickets.map((t) => (
-                  <tr key={t.id} style={styles.tr}>
+                  <tr key={t.id} style={styles.tr}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}>
                     <td style={{ ...styles.td, fontWeight: 600 }}>{t.numero_ticket}</td>
                     <td style={styles.td}>{t.nom_complet_client || t.nom_client}</td>
                     <td style={styles.td}>{t.site?.nom || '-'}</td>
-                    <td style={styles.td}>{t.priorite}</td>
-                    <td style={styles.td}>{t.archived_at ? new Date(t.archived_at).toLocaleDateString('fr') : '-'}</td>
                     <td style={styles.td}>
+                      <span style={{ ...styles.badgeBase, backgroundColor: (COLORS.priorities[t.priorite?.toUpperCase()] || COLORS.priorities.NORMALE).bg, color: (COLORS.priorities[t.priorite?.toUpperCase()] || COLORS.priorites.NORMALE).text }}>
+                        {t.priorite?.toUpperCase()}
+                      </span>
+                    </td>
+                    <td style={{ ...styles.td, color: COLORS.textMuted }}>{t.archived_at ? new Date(t.archived_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</td>
+                    <td style={{ ...styles.td, textAlign: 'center' }}>
                       <button onClick={async () => { await desarchiverReclamation(t.id); fetchArchivedData(); fetchTickets(); }}
-                        style={{ ...styles.statusBtn, color: '#059669', borderColor: '#059669', background: 'transparent' }}>Restaurer</button>
+                        style={{ background: '#05966918', border: '1px solid #05966933', borderRadius: 4, cursor: 'pointer', padding: '4px 10px', color: '#059669', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>Restaurer</button>
                     </td>
                   </tr>
                 ))}
@@ -1266,19 +1383,21 @@ export default function AdminDashboard() {
           {archiveTab === 'rapports' && (
             <table style={styles.table}>
               <thead><tr style={styles.thRow}>
-                <th style={styles.th}>Titre</th><th style={styles.th}>Auteur</th><th style={styles.th}>Archivé le</th><th style={styles.th}></th>
+                <th style={styles.th}>Titre</th><th style={styles.th}>Auteur</th><th style={styles.th}>Archivé le</th><th style={{ ...styles.th, textAlign: 'center' }}>Action</th>
               </tr></thead>
               <tbody>
                 {archivedRapports.length === 0 ? (
                   <tr><td colSpan={4} style={styles.emptyCell}>Aucun rapport archivé</td></tr>
                 ) : archivedRapports.map((r) => (
-                  <tr key={r.id} style={styles.tr}>
+                  <tr key={r.id} style={styles.tr}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}>
                     <td style={{ ...styles.td, fontWeight: 600 }}>{r.titre}</td>
                     <td style={styles.td}>{r.cree_par?.nom_user || '—'}</td>
-                    <td style={styles.td}>{r.archived_at ? new Date(r.archived_at).toLocaleDateString('fr') : '-'}</td>
-                    <td style={styles.td}>
+                    <td style={{ ...styles.td, color: COLORS.textMuted }}>{r.archived_at ? new Date(r.archived_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</td>
+                    <td style={{ ...styles.td, textAlign: 'center' }}>
                       <button onClick={async () => { await restoreRapportIA(r.id); fetchArchivedData(); fetchRapports(); }}
-                        style={{ ...styles.statusBtn, color: '#059669', borderColor: '#059669', background: 'transparent' }}>Restaurer</button>
+                        style={{ background: '#05966918', border: '1px solid #05966933', borderRadius: 4, cursor: 'pointer', padding: '4px 10px', color: '#059669', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>Restaurer</button>
                     </td>
                   </tr>
                 ))}
@@ -1288,20 +1407,22 @@ export default function AdminDashboard() {
           {archiveTab === 'users' && (
             <table style={styles.table}>
               <thead><tr style={styles.thRow}>
-                <th style={styles.th}>Code</th><th style={styles.th}>Nom</th><th style={styles.th}>Email</th><th style={styles.th}>Rôle</th><th style={styles.th}></th>
+                <th style={styles.th}>Code</th><th style={styles.th}>Nom</th><th style={styles.th}>Email</th><th style={styles.th}>Rôle</th><th style={{ ...styles.th, textAlign: 'center' }}>Action</th>
               </tr></thead>
               <tbody>
                 {users.filter(u => u.is_archived).length === 0 ? (
                   <tr><td colSpan={5} style={styles.emptyCell}>Aucun utilisateur archivé</td></tr>
                 ) : users.filter(u => u.is_archived).map((u) => (
-                  <tr key={u.code_user} style={styles.tr}>
+                  <tr key={u.code_user} style={styles.tr}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}>
                     <td style={{ ...styles.td, fontWeight: 600 }}>{u.code_user}</td>
                     <td style={styles.td}>{u.nom_user}</td>
                     <td style={styles.td}>{u.email}</td>
                     <td style={styles.td}>{getRoleBadge(u.role_user)}</td>
-                    <td style={styles.td}>
+                    <td style={{ ...styles.td, textAlign: 'center' }}>
                       <button onClick={() => handleRestoreUser(u)}
-                        style={{ ...styles.statusBtn, color: '#059669', borderColor: '#059669', background: 'transparent' }}>Restaurer</button>
+                        style={{ background: '#05966918', border: '1px solid #05966933', borderRadius: 4, cursor: 'pointer', padding: '4px 10px', color: '#059669', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>Restaurer</button>
                     </td>
                   </tr>
                 ))}
@@ -1309,12 +1430,41 @@ export default function AdminDashboard() {
             </table>
           )}
           {archiveTab === 'sites' && (
-            <div style={styles.empty}>Les sites archivés seront affichés ici.</div>
+            <table style={styles.table}>
+              <thead><tr style={styles.thRow}>
+                <th style={styles.th}>Code</th><th style={styles.th}>Nom</th><th style={styles.th}>Wilaya</th><th style={styles.th}>Commune</th><th style={styles.th}>Statut</th><th style={{ ...styles.th, textAlign: 'center' }}>Action</th>
+              </tr></thead>
+              <tbody>
+                {archivedSites.length === 0 ? (
+                  <tr><td colSpan={6} style={styles.emptyCell}>Aucun site archivé</td></tr>
+                ) : archivedSites.map((s) => (
+                  <tr key={s.id} style={styles.tr}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}>
+                    <td style={{ ...styles.td, fontWeight: 600 }}>{s.codeSite}</td>
+                    <td style={styles.td}>{s.nom}</td>
+                    <td style={styles.td}>{s.wilaya}</td>
+                    <td style={styles.td}>{s.commune}</td>
+                    <td style={styles.td}>
+                      <span style={{ ...styles.badgeBase, backgroundColor: ST_BG[s.statut] || '#F1F5F9', color: ST[s.statut] || '#64748B' }}>
+                        {SITE_LABELS[s.statut] || s.statut}
+                      </span>
+                    </td>
+                    <td style={{ ...styles.td, textAlign: 'center' }}>
+                      <button onClick={() => handleRestoreSite(s)}
+                        style={{ background: '#05966918', border: '1px solid #05966933', borderRadius: 4, cursor: 'pointer', padding: '4px 10px', color: '#059669', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>Restaurer</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
+      </div>
       )}
     </div>
-  );
+    );
+  };
 
   // ─── RAPPORT READING MODAL ───
   // Full-screen-ish modal to display a sanitized HTML report
@@ -1337,11 +1487,18 @@ export default function AdminDashboard() {
                 </div>
               </div>
             </div>
-            <button onClick={() => setSelectedRapport(null)}
-              style={{ width: 28, height: 28, borderRadius: 6, border: `1px solid ${COLORS.border}`, background: 'var(--bg-card)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted3)', flexShrink: 0, marginLeft: 12 }}
-              title="Fermer">
-              <IconX />
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginLeft: 12 }}>
+              <button onClick={() => handleDownloadPDFAdmin(r)}
+                style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${COLORS.border}`, background: '#059669', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, fontFamily: 'inherit' }}
+                title="Télécharger PDF">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg> PDF
+              </button>
+              <button onClick={() => setSelectedRapport(null)}
+                style={{ width: 28, height: 28, borderRadius: 6, border: `1px solid ${COLORS.border}`, background: 'var(--bg-card)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted3)' }}
+                title="Fermer">
+                <IconX />
+              </button>
+            </div>
           </div>
           {/* Render HTML content sanitized with DOMPurify to prevent XSS */}
           <div style={{ padding: '20px 28px', overflowY: 'auto', flex: 1, fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.8 }}
@@ -1462,11 +1619,11 @@ export default function AdminDashboard() {
         <form onSubmit={handleCreateUser} style={styles.formBody}>
           <p style={{ ...styles.modalSectionTitle, marginTop: 0 }}>Informations</p>
           <div style={styles.formGrid}>
-            <div style={styles.inputGroup}><label style={styles.label}>NOM</label><input type="text" placeholder="NOM" value={formData.last_name} onChange={(e) => setFormData({ ...formData, last_name: e.target.value })} style={styles.input} required /></div>
-            <div style={styles.inputGroup}><label style={styles.label}>PRÉNOM</label><input type="text" placeholder="PRÉNOM" value={formData.first_name} onChange={(e) => setFormData({ ...formData, first_name: e.target.value })} style={styles.input} required /></div>
-            <div style={styles.inputGroup}><label style={styles.label}>EMAIL</label><input type="email" placeholder="utilisateur@gmail.com" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} style={styles.input} required /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Nom</label><input type="text" placeholder="Nom" value={formData.last_name} onChange={(e) => setFormData({ ...formData, last_name: e.target.value })} style={styles.input} required /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Prénom</label><input type="text" placeholder="Prénom" value={formData.first_name} onChange={(e) => setFormData({ ...formData, first_name: e.target.value })} style={styles.input} required /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Email</label><input type="email" placeholder="utilisateur@gmail.com" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} style={styles.input} required /></div>
             <div style={styles.inputGroup}>
-              <label style={styles.label}>RÔLE</label>
+              <label style={styles.label}>Rôle</label>
               <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })} style={styles.input}>
                 {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
@@ -1474,8 +1631,8 @@ export default function AdminDashboard() {
           </div>
           <p style={styles.modalSectionTitle}>Sécurité</p>
           <div style={styles.formGrid}>
-            <div style={styles.inputGroup}><label style={styles.label}>MOT DE PASSE</label><input type="password" placeholder="••••••" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} style={styles.input} required /></div>
-            <div style={styles.inputGroup}><label style={styles.label}>CONFIRMATION</label><input type="password" placeholder="••••••" value={formData.password2} onChange={(e) => setFormData({ ...formData, password2: e.target.value })} style={styles.input} required /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Mot de passe</label><input type="password" placeholder="••••••" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} style={styles.input} required /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Confirmation</label><input type="password" placeholder="••••••" value={formData.password2} onChange={(e) => setFormData({ ...formData, password2: e.target.value })} style={styles.input} required /></div>
           </div>
           <div style={styles.formActions}>
             <button type="button" onClick={() => setShowUserForm(false)} style={styles.btnCancel}>Annuler</button>
@@ -1499,11 +1656,11 @@ export default function AdminDashboard() {
         </div>
         <form onSubmit={handleUpdateUser} style={styles.formBody}>
           <div style={styles.formGrid}>
-            <div style={styles.inputGroup}><label style={styles.label}>PRÉNOM</label><input type="text" value={editForm.first_name} onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })} style={styles.input} required /></div>
-            <div style={styles.inputGroup}><label style={styles.label}>NOM</label><input type="text" value={editForm.last_name} onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })} style={styles.input} required /></div>
-            <div style={styles.inputGroup}><label style={styles.label}>EMAIL</label><input type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} style={styles.input} required /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Prénom</label><input type="text" value={editForm.first_name} onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })} style={styles.input} required /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Nom</label><input type="text" value={editForm.last_name} onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })} style={styles.input} required /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Email</label><input type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} style={styles.input} required /></div>
             <div style={styles.inputGroup}>
-              <label style={styles.label}>RÔLE</label>
+              <label style={styles.label}>Rôle</label>
               <select value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })} style={styles.input}>
                 {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
@@ -1531,25 +1688,25 @@ export default function AdminDashboard() {
         </div>
         <form onSubmit={handleCreateTicket} style={styles.formBody}>
           <div style={styles.formGrid}>
-            <div style={styles.inputGroup}><label style={styles.label}>CLIENT</label><input type="text" placeholder="Nom complet" value={ticketForm.nom_client} onChange={(e) => setTicketForm({ ...ticketForm, nom_client: e.target.value })} style={styles.input} required /></div>
-            <div style={styles.inputGroup}><label style={styles.label}>TÉLÉPHONE</label><input type="text" placeholder="0550 00 00 00" value={ticketForm.telephone_client} onChange={(e) => setTicketForm({ ...ticketForm, telephone_client: e.target.value })} style={styles.input} required /></div>
-            <div style={styles.inputGroup}><label style={styles.label}>EMAIL</label><input type="email" placeholder="client@gmail.com" value={ticketForm.email_client} onChange={(e) => setTicketForm({ ...ticketForm, email_client: e.target.value })} style={styles.input} /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Nom Client</label><input type="text" placeholder="Nom complet" value={ticketForm.nom_client} onChange={(e) => setTicketForm({ ...ticketForm, nom_client: e.target.value })} style={styles.input} required /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Téléphone</label><input type="text" placeholder="0550 00 00 00" value={ticketForm.telephone_client} onChange={(e) => setTicketForm({ ...ticketForm, telephone_client: e.target.value })} style={styles.input} required /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Email</label><input type="email" placeholder="client@gmail.com" value={ticketForm.email_client} onChange={(e) => setTicketForm({ ...ticketForm, email_client: e.target.value })} style={styles.input} /></div>
             <div style={styles.inputGroup}>
-              <label style={styles.label}>TYPE</label>
+              <label style={styles.label}>Type Client</label>
               <select value={ticketForm.type_client} onChange={(e) => setTicketForm({ ...ticketForm, type_client: e.target.value })} style={styles.input}>
                 <option value="particulier">Particulier</option>
                 <option value="entreprise">Entreprise</option>
               </select>
             </div>
             <div style={styles.inputGroup}>
-              <label style={styles.label}>SITE</label>
+              <label style={styles.label}>Code Site</label>
               <select value={ticketForm.site} onChange={(e) => setTicketForm({ ...ticketForm, site: e.target.value })} style={styles.input} required>
                 <option value="">Choisir un site...</option>
                 {sites.map((s) => <option key={s.id} value={s.id}>{s.nom || s.codeSite}</option>)}
               </select>
             </div>
             <div style={styles.inputGroup}>
-              <label style={styles.label}>PRIORITÉ</label>
+              <label style={styles.label}>Priorité</label>
               <select value={ticketForm.priorite} onChange={(e) => setTicketForm({ ...ticketForm, priorite: e.target.value })} style={styles.input}>
                 <option value="basse">Basse</option>
                 <option value="normale">Normale</option>
@@ -1559,7 +1716,7 @@ export default function AdminDashboard() {
             </div>
           </div>
           <div style={styles.inputGroup}>
-            <label style={styles.label}>MOTS CLÉS</label>
+            <label style={styles.label}>Mots Clés IA</label>
             <input type="text" placeholder="perte signal, zone rurale" value={ticketForm.mots_cles_ia} onChange={(e) => setTicketForm({ ...ticketForm, mots_cles_ia: e.target.value })} style={styles.input} />
           </div>
           <div style={styles.formActions}>
@@ -1584,21 +1741,21 @@ export default function AdminDashboard() {
         </div>
         <form onSubmit={handleCreateSite} style={styles.formBody}>
           <div style={styles.formGrid}>
-            <div style={styles.inputGroup}><label style={styles.label}>NOM</label><input type="text" name="nom" value={siteForm.nom} onChange={(e) => setSiteForm({ ...siteForm, nom: e.target.value })} placeholder="Ex: Alger Centre" style={styles.input} required /></div>
-            <div style={styles.inputGroup}><label style={styles.label}>WILAYA</label><input type="text" name="wilaya" value={siteForm.wilaya} onChange={(e) => setSiteForm({ ...siteForm, wilaya: e.target.value })} placeholder="Ex: Alger" style={styles.input} required /></div>
-            <div style={styles.inputGroup}><label style={styles.label}>COMMUNE</label><input type="text" name="commune" value={siteForm.commune} onChange={(e) => setSiteForm({ ...siteForm, commune: e.target.value })} placeholder="Ex: Hydra" style={styles.input} required /></div>
-            <div style={styles.inputGroup}><label style={styles.label}>X (Longitude)</label><input type="text" name="coordX" value={siteForm.coordX} onChange={(e) => setSiteForm({ ...siteForm, coordX: e.target.value })} placeholder="Ex: 3.058" style={styles.input} /></div>
-            <div style={styles.inputGroup}><label style={styles.label}>Y (Latitude)</label><input type="text" name="coordY" value={siteForm.coordY} onChange={(e) => setSiteForm({ ...siteForm, coordY: e.target.value })} placeholder="Ex: 36.753" style={styles.input} /></div>
-            <div style={styles.inputGroup}><label style={styles.label}>ADRESSE</label><input type="text" name="adresse" value={siteForm.adresse} onChange={(e) => setSiteForm({ ...siteForm, adresse: e.target.value })} placeholder="Adresse complète" style={styles.input} /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Nom Site</label><input type="text" name="nom" value={siteForm.nom} onChange={(e) => setSiteForm({ ...siteForm, nom: e.target.value })} placeholder="Ex: Alger Centre" style={styles.input} required /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Wilaya</label><input type="text" name="wilaya" value={siteForm.wilaya} onChange={(e) => setSiteForm({ ...siteForm, wilaya: e.target.value })} placeholder="Ex: Alger" style={styles.input} required /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Commune</label><input type="text" name="commune" value={siteForm.commune} onChange={(e) => setSiteForm({ ...siteForm, commune: e.target.value })} placeholder="Ex: Hydra" style={styles.input} required /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Coordonnée X</label><input type="text" name="coordX" value={siteForm.coordX} onChange={(e) => setSiteForm({ ...siteForm, coordX: e.target.value })} placeholder="Ex: 3.058" style={styles.input} /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Coordonnée Y</label><input type="text" name="coordY" value={siteForm.coordY} onChange={(e) => setSiteForm({ ...siteForm, coordY: e.target.value })} placeholder="Ex: 36.753" style={styles.input} /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Adresse Site</label><input type="text" name="adresse" value={siteForm.adresse} onChange={(e) => setSiteForm({ ...siteForm, adresse: e.target.value })} placeholder="Adresse complète" style={styles.input} /></div>
             <div style={styles.inputGroup}>
-              <label style={styles.label}>STATUT</label>
+              <label style={styles.label}>Statut</label>
               <select name="statut" value={siteForm.statut} onChange={(e) => setSiteForm({ ...siteForm, statut: e.target.value })} style={styles.input}>
                 <option value="UP">Actif</option>
                 <option value="DOWN">Inactif</option>
               </select>
             </div>
             <div style={styles.inputGroup}>
-              <label style={styles.label}>TECHNOLOGIE</label>
+              <label style={styles.label}>Technologie</label>
               <select name="technologie" value={siteForm.technologie || '5G'} onChange={(e) => setSiteForm({ ...siteForm, technologie: e.target.value })} style={styles.input}>
                 <option value="4G">4G</option>
                 <option value="5G">5G</option>
@@ -1856,7 +2013,7 @@ export default function AdminDashboard() {
             {/* Period toggle (only visible on dashboard view) */}
             {currentView === 'dashboard' && (
               <div style={styles.toggle}>
-                {[{ l: '7j', v: 7 }, { l: '30j', v: 30 }, { l: '90j', v: 90 }].map((p) => (
+                {[{ l: '7j', v: 7 }, { l: '30j', v: 30 }, { l: '60j', v: 60 }, { l: '90j', v: 90 }, { l: 'Tout', v: 3650 }].map((p) => (
                   <button key={p.v} onClick={() => setPeriod(p.v)} style={{ ...styles.togBtn, ...(period === p.v ? styles.togOn : {}) }}>{p.l}</button>
                 ))}
               </div>

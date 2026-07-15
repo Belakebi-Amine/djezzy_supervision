@@ -170,6 +170,37 @@ export const getSites = async () => {
     return await response.json();
 };
 
+/** Fetches ALL sites including archived ones (for engineer inline view) */
+export const getAllSites = async () => {
+    const response = await fetch(`${API_URL}/sites/?archive=true`, { method: 'GET', headers: await getHeaders() });
+    if (!response.ok) {
+        throw new Error(`Erreur serveur [${response.status}]`);
+    }
+    return await response.json();
+};
+
+/** Fetches only archived sites (for admin archives tab) */
+export const getArchivedSites = async () => {
+    const response = await fetch(`${API_URL}/sites/?archived_only=true`, { method: 'GET', headers: await getHeaders() });
+    if (!response.ok) {
+        throw new Error(`Erreur serveur [${response.status}]`);
+    }
+    return await response.json();
+};
+
+/** Restores an archived site (sets archive=False) */
+export const restoreSite = async (id) => {
+    const response = await fetch(`${API_URL}/sites/${id}/desarchiver/`, {
+        method: 'PUT',
+        headers: await getHeaders(),
+    });
+    checkAuthAndRedirect(response.status);
+    if (!response.ok) {
+        throw new Error(`Erreur serveur [${response.status}]`);
+    }
+    return response.json();
+};
+
 /** Updates a site's status or details */
 export const updateSiteStatus = async (id, data) => {
     const response = await fetch(`${API_URL}/sites/${id}/`, {

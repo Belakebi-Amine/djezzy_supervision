@@ -443,6 +443,12 @@ def generer_rapport_ia(request):
 
     try:
         contenu = gemini_generate(prompt, date_debut, date_fin)
+        # If the service returned an HTML error page, treat it as a generation failure
+        if contenu.startswith('<div') and 'Erreur' in contenu and len(contenu) < 500:
+            return Response(
+                {'error': 'Échec de la génération. Vérifiez la clé API Gemini dans .env et réessayez.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         return Response({'contenu': contenu, 'prompt': prompt})
     except Exception as e:
         return Response(
@@ -461,11 +467,11 @@ def liste_rapports_ia(request):
     from .serializers import RapportIASerializer
 
     if request.method == 'GET':
-        # Admin can see all reports, other roles only see their own. Excludes archived.
-        if request.user.role == 'ADMIN':
-            rapports = RapportIA.objects.filter(is_archived=False)
+        # Admin and supervisors can see all reports; other roles only see their own. Excludes archived.
+        if request.user.role in ('ADMIN', 'SUPERVISEUR'):
+            rapports = RapportIA.objects.filter(is_archived=False).select_related('cree_par')
         else:
-            rapports = RapportIA.objects.filter(cree_par=request.user, is_archived=False)
+            rapports = RapportIA.objects.filter(cree_par=request.user, is_archived=False).select_related('cree_par')
         serializer = RapportIASerializer(rapports, many=True)
         return Response(serializer.data)
 
@@ -488,11 +494,11 @@ def detail_rapport_ia(request, pk):
     from .serializers import RapportIASerializer
 
     try:
-        # Admin can access any report, others only their own
-        if request.user.role == 'ADMIN':
-            rapport = RapportIA.objects.get(pk=pk)
+        # Admin and supervisors can access any report, others only their own
+        if request.user.role in ('ADMIN', 'SUPERVISEUR'):
+            rapport = RapportIA.objects.select_related('cree_par').get(pk=pk)
         else:
-            rapport = RapportIA.objects.get(pk=pk, cree_par=request.user)
+            rapport = RapportIA.objects.select_related('cree_par').get(pk=pk, cree_par=request.user)
     except RapportIA.DoesNotExist:
         return Response({'error': 'Rapport introuvable'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -508,8 +514,8 @@ def detail_rapport_ia(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     if request.method == 'DELETE':
-        if request.user.role != 'ADMIN':
-            return Response({'error': 'Seul l\'admin peut supprimer.'}, status=status.HTTP_403_FORBIDDEN)
+        if request.user.role not in ('ADMIN', 'SUPERVISEUR'):
+            return Response({'error': 'Permission refusée.'}, status=status.HTTP_403_FORBIDDEN)
         rapport.is_archived = True
         rapport.archived_at = timezone.now()
         rapport.archived_by = request.user

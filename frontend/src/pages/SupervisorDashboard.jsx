@@ -142,6 +142,33 @@ export default function SupervisorDashboard() {
   const [prompt, setPrompt] = useState('');               // user prompt for report generation
   const [dateDebut, setDateDebut] = useState('');         // start date filter for report scope
   const [dateFin, setDateFin] = useState('');             // end date filter
+  const [datesFromPrompt, setDatesFromPrompt] = useState(false); // flag: dates were auto-extracted from prompt
+
+  // Auto-extract dates from prompt text (DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD)
+  const extractDatesFromPrompt = useCallback((text) => {
+    const dates = [];
+    // Match DD/MM/YYYY or DD-MM-YYYY
+    const dmy = text.matchAll(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/g);
+    for (const m of dmy) {
+      const [, d, mo, y] = m;
+      dates.push(`${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`);
+    }
+    // Match YYYY-MM-DD
+    const ymd = text.matchAll(/(\d{4})-(\d{1,2})-(\d{1,2})/g);
+    for (const m of ymd) {
+      const [, y, mo, d] = m;
+      dates.push(`${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`);
+    }
+    // Match "DD mois YYYY" (written French dates)
+    const moisMap = { janvier:'01', fevrier:'02', mars:'03', avril:'04', mai:'05', juin:'06', juillet:'07', aout:'08', aout:'08', septembre:'09', octobre:'10', novembre:'11', decembre:'12' };
+    const fr = text.matchAll(/(\d{1,2})\s+(janvier|fevrier|mars|avril|mai|juin|juillet|aout|aout|septembre|octobre|novembre|decembre)\s+(\d{4})/gi);
+    for (const m of fr) {
+      const [, d, mo, y] = m;
+      const moNum = moisMap[mo.toLowerCase()];
+      if (moNum) dates.push(`${y}-${moNum}-${d.padStart(2, '0')}`);
+    }
+    return dates;
+  }, []);
   const [generatedContent, setGeneratedContent] = useState(null);  // HTML content returned by the AI
   const [generating, setGenerating] = useState(false);    // loading flag during generation
   const [savedReports, setSavedReports] = useState([]);   // list of previously saved reports
@@ -153,6 +180,7 @@ export default function SupervisorDashboard() {
   const [editContent, setEditContent] = useState('');
   const [rapportView, setRapportView] = useState('create'); // sub-view: 'create' | 'list'
   const [viewRapport, setViewRapport] = useState(null); // rapport to view in popup
+  const [rapportSearch, setRapportSearch] = useState('');
   const resultRef = useRef(null);  // ref used to auto-scroll to the generated report
 
   /* ── Performance view state ── */
@@ -212,14 +240,31 @@ export default function SupervisorDashboard() {
   // handleGenerate – sends prompt + date range to the backend AI service
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) return;
+    // Auto-extract dates from prompt if date fields are empty
+    let dd = dateDebut, df = dateFin;
+    if (!dd && !df) {
+      const found = extractDatesFromPrompt(prompt);
+      if (found.length >= 2) {
+        dd = found[0];
+        df = found[1];
+        setDateDebut(dd);
+        setDateFin(df);
+        setDatesFromPrompt(true);
+      } else if (found.length === 1) {
+        dd = found[0];
+        df = found[0];
+        setDateDebut(dd);
+        setDateFin(df);
+        setDatesFromPrompt(true);
+      }
+    }
     setGenerating(true);
     setGeneratedContent(null);
     setSelectedReportId(null);
     try {
-      const result = await genererRapportIA(prompt.trim(), dateDebut || null, dateFin || null);
+      const result = await genererRapportIA(prompt.trim(), dd || null, df || null);
       setGeneratedContent(result.contenu);
       setSavedName(prompt.trim().slice(0, 80));
-      // Scroll to the result section after a short delay so the DOM has time to render
       setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
     } catch (err) {
       alert(err.message);
@@ -230,11 +275,13 @@ export default function SupervisorDashboard() {
 
   // handleSave – persists the generated report to the backend
   const handleSave = useCallback(async () => {
-    if (!generatedContent || !savedName.trim()) return;
+    if (!generatedContent) return;
+    const titre = window.prompt('Donnez un titre au rapport :', savedName || prompt.slice(0, 80));
+    if (!titre || !titre.trim()) return;
     setSaving(true);
     try {
-      const report = await sauvegarderRapportIA(savedName.trim(), prompt, generatedContent, dateDebut || null, dateFin || null);
-      // Prepend the new report to the list
+      const report = await sauvegarderRapportIA(titre.trim(), prompt, generatedContent, dateDebut || null, dateFin || null);
+      setSavedName(titre.trim());
       setSavedReports((prev) => [report, ...prev]);
       setSelectedReportId(report.id);
       alert('Rapport sauvegardé !');
@@ -265,13 +312,11 @@ export default function SupervisorDashboard() {
   }, [savedReports]);
 
   // handleDeleteReport – removes a report from the backend and the local list
-  const handleDeleteReport = useCallback(async (id, e) => {
-    e.stopPropagation();
+  const handleDeleteReport = useCallback(async (id) => {
     if (!window.confirm('Supprimer ce rapport ?')) return;
     try {
       await deleteRapportIA(id);
       setSavedReports((prev) => prev.filter(r => r.id !== id));
-      // If the deleted report was the active one, clear the editor
       if (selectedReportId === id) {
         setSelectedReportId(null);
         setGeneratedContent(null);
@@ -297,17 +342,45 @@ export default function SupervisorDashboard() {
   }, [selectedReportId, editTitle, editContent]);
 
   // handleDownloadPDF – exports the report content as a PDF using html2pdf.js
-  const handleDownloadPDF = useCallback(() => {
+  const handleDownloadPDF = useCallback(async () => {
     const element = document.getElementById('rapport-content');
     if (!element) return;
-    const opt = {
-      margin: 10,
-      filename: `${savedName || 'rapport'}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    };
-    html2pdf().set(opt).from(element).save();
+    try {
+      const clone = element.cloneNode(true);
+      const style = document.createElement('style');
+      style.textContent = `
+        * { page-break-inside: avoid; }
+        table { page-break-inside: avoid; }
+        tr { page-break-inside: avoid; }
+        h1, h2, h3, h4 { page-break-after: avoid; }
+        img { page-break-inside: avoid; max-width: 100%; }
+      `;
+      clone.prepend(style);
+      clone.style.width = '100%';
+      clone.style.maxWidth = '750px';
+      clone.style.margin = '0 auto';
+      document.body.appendChild(clone);
+      const opt = {
+        margin: [15, 12, 15, 12],
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false, letterRendering: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+      };
+      const pdfBlob = await html2pdf().set(opt).from(clone).outputPdf('blob');
+      document.body.removeChild(clone);
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${savedName || 'rapport'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('PDF error:', err);
+      alert('Erreur lors de la génération du PDF.');
+    }
   }, [savedName]);
 
   // handleTitleChange – updates the report title and auto-saves if a report is selected
@@ -317,6 +390,53 @@ export default function SupervisorDashboard() {
       updateRapportIA(selectedReportId, { titre: newTitle.trim() }).catch(() => {});
     }
   }, [selectedReportId]);
+
+  // handleViewReportPDF – loads a report from the list and downloads it as PDF directly
+  const handleViewReportPDF = useCallback(async (report) => {
+    try {
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = DOMPurify.sanitize(report.contenu);
+      const style = document.createElement('style');
+      style.textContent = `
+        * { page-break-inside: avoid; }
+        table { page-break-inside: avoid; }
+        tr { page-break-inside: avoid; }
+        h1, h2, h3, h4 { page-break-after: avoid; }
+        img { page-break-inside: avoid; max-width: 100%; }
+      `;
+      tempDiv.prepend(style);
+      tempDiv.style.padding = '0';
+      tempDiv.style.fontSize = '13px';
+      tempDiv.style.lineHeight = '1.7';
+      tempDiv.style.fontFamily = "'Inter', system-ui, sans-serif";
+      tempDiv.style.color = '#1E293B';
+      tempDiv.style.background = '#fff';
+      tempDiv.style.width = '100%';
+      tempDiv.style.maxWidth = '750px';
+      tempDiv.style.margin = '0 auto';
+      document.body.appendChild(tempDiv);
+      const opt = {
+        margin: [15, 12, 15, 12],
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false, letterRendering: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+      };
+      const pdfBlob = await html2pdf().set(opt).from(tempDiv).outputPdf('blob');
+      document.body.removeChild(tempDiv);
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${report.titre || 'rapport'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('PDF error:', err);
+      alert('Erreur lors de la génération du PDF.');
+    }
+  }, []);
 
   /* ── Sites data: only needed for the map and dashboard views ── */
   useEffect(() => {
@@ -339,6 +459,15 @@ export default function SupervisorDashboard() {
   const evo = (stats?.graphiques?.evolution_tickets ?? []).map((d) => {
     const dd = new Date(d.jour);
     return { ...d, _raw: d.jour, jour: isNaN(dd.getTime()) ? d.jour : dd.toLocaleDateString('fr', { day: '2-digit', month: 'short' }) };
+  });
+
+  // filteredReports – search-filtered list of saved reports
+  const filteredReports = savedReports.filter((r) => {
+    if (!rapportSearch.trim()) return true;
+    const q = rapportSearch.toLowerCase();
+    return (r.titre || '').toLowerCase().includes(q)
+      || (r.prompt || '').toLowerCase().includes(q)
+      || (r.cree_par?.nom_user || '').toLowerCase().includes(q);
   });
 
   // Performance data for engineers and call center agents
@@ -401,11 +530,18 @@ export default function SupervisorDashboard() {
                   </div>
                 </div>
               </div>
-              <button onClick={() => setViewRapport(null)}
-                style={{ width: 28, height: 28, borderRadius: 6, border: `1px solid ${C.border}`, background: 'var(--bg-card)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted3)', flexShrink: 0, marginLeft: 12 }}
-                title="Fermer">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginLeft: 12 }}>
+                <button onClick={() => handleViewReportPDF(viewRapport)}
+                  style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${C.border}`, background: '#059669', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, fontFamily: 'inherit' }}
+                  title="Télécharger PDF">
+                  <IconDownload style={{ width: 12, height: 12 }} /> PDF
+                </button>
+                <button onClick={() => setViewRapport(null)}
+                  style={{ width: 28, height: 28, borderRadius: 6, border: `1px solid ${C.border}`, background: 'var(--bg-card)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted3)' }}
+                  title="Fermer">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                </button>
+              </div>
             </div>
             <div style={{ padding: '20px 28px', overflowY: 'auto', flex: 1, fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.8 }}
               dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(viewRapport.contenu) }} />
@@ -591,57 +727,67 @@ export default function SupervisorDashboard() {
             {/* ── LIST VIEW: table of all saved reports ── */}
             {rapportView === 'list' ? (
               <div style={S.chartBordered}>
-                <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <IconFile style={{ width: 14, height: 14, color: '#7C3AED' }} />
-                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>Mes rapports sauvegardés</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>Rapports sauvegardés</span>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted2)' }}>({savedReports.length})</span>
                   </div>
-                  <span style={{ fontSize: 10, color: 'var(--text-muted2)' }}>({savedReports.length})</span>
+                  {/* Search bar */}
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input type="text" placeholder="Rechercher un rapport..." value={rapportSearch} onChange={(e) => setRapportSearch(e.target.value)}
+                      style={{ padding: '5px 10px 5px 28px', fontSize: 11, borderRadius: 6, border: '1px solid var(--border-color)', fontFamily: 'inherit', outline: 'none', color: 'var(--text-primary)', background: 'var(--bg-input)', width: 220 }} />
+                    <svg style={{ position: 'absolute', left: 8, pointerEvents: 'none', color: 'var(--text-muted2)' }} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                    {rapportSearch && (
+                      <button onClick={() => setRapportSearch('')}
+                        style={{ position: 'absolute', right: 6, background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted2)', display: 'flex' }}>
+                        <IconX style={{ width: 10, height: 10 }} />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {savedReports.length === 0 ? (
-                  <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>
-                    Aucun rapport sauvegardé. <button onClick={() => setRapportView('create')} style={{ background: 'none', border: 'none', color: '#E8401A', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, textDecoration: 'underline', fontSize: 12 }}>Créer le premier rapport</button>
+                  <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>
+                    <svg style={{ margin: '0 auto 12px', opacity: 0.3 }} width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                    <div style={{ marginBottom: 8, fontWeight: 600 }}>Aucun rapport sauvegardé</div>
+                    <button onClick={() => setRapportView('create')} style={{ background: '#E8401A', border: 'none', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 11, padding: '6px 16px', borderRadius: 6 }}>Créer le premier rapport</button>
                   </div>
                 ) : (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                      <thead>
-                        <tr style={{ borderBottom: '2px solid var(--border-color)', background: 'var(--bg-hover)' }}>
-                          <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted3)', fontSize: 10, textTransform: 'uppercase' }}>Titre</th>
-                          <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted3)', fontSize: 10, textTransform: 'uppercase' }}>Prompt</th>
-                          <th style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 600, color: 'var(--text-muted3)', fontSize: 10, textTransform: 'uppercase' }}>Période</th>
-                          <th style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 600, color: 'var(--text-muted3)', fontSize: 10, textTransform: 'uppercase' }}>Date</th>
-                          <th style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 600, color: 'var(--text-muted3)', fontSize: 10, textTransform: 'uppercase' }}>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {savedReports.map((r) => (
-                          // Clicking a row loads the report into the editor
-                          <tr key={r.id} onClick={() => setViewRapport(r)}
-                            style={{ borderBottom: '1px solid var(--border-color)', cursor: 'pointer', transition: 'background 0.1s' }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-hover)'}
-                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-                            <td style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--text-primary)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.titre}</td>
-                            <td style={{ padding: '10px 14px', color: 'var(--text-muted3)', maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.prompt}</td>
-                            <td style={{ padding: '10px 14px', textAlign: 'center', color: 'var(--text-muted3)', fontSize: 11 }}>
-                              {r.date_debut && r.date_fin
-                                ? `${new Date(r.date_debut).toLocaleDateString('fr')} → ${new Date(r.date_fin).toLocaleDateString('fr')}`
-                                : '30 jours'}
-                            </td>
-                            <td style={{ padding: '10px 14px', textAlign: 'center', color: 'var(--text-muted3)', fontSize: 11 }}>
-                              {new Date(r.created_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' })}
-                            </td>
-                            <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                              {/* Delete button – stopPropagation prevents the row click from firing */}
-                              <button onClick={(e) => { e.stopPropagation(); handleDeleteReport(r.id, e); }}
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#DC2626', fontSize: 11 }} title="Supprimer">
-                                <IconTrash style={{ width: 13, height: 13 }} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 4px' }}>
+                    {filteredReports.length === 0 ? (
+                      <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>Aucun résultat pour "{rapportSearch}"</div>
+                    ) : filteredReports.map((r) => (
+                      <div key={r.id} onClick={() => setViewRapport(r)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-card)', cursor: 'pointer', transition: 'all 0.15s' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#E8401A44'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(232,64,26,0.06)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; e.currentTarget.style.boxShadow = 'none'; }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg,#E8401A22,#E8401A0A)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <IconFile style={{ width: 16, height: 16, color: '#E8401A' }} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.titre}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.prompt}</div>
+                        </div>
+                        <div style={{ textAlign: 'right', flexShrink: 0, minWidth: 90 }}>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted3)', fontWeight: 500 }}>
+                            {r.cree_par?.nom_user || '—'}
+                          </div>
+                          <div style={{ fontSize: 9, color: 'var(--text-muted2)', marginTop: 2 }}>
+                            {new Date(r.created_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                          <button onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); e.preventDefault(); handleViewReportPDF(r); }}
+                            style={{ background: '#05966918', border: '1px solid #05966933', borderRadius: 4, cursor: 'pointer', padding: '4px 8px', color: '#059669', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }} title="Télécharger PDF">
+                            <IconDownload style={{ width: 12, height: 12 }} />
+                          </button>
+                          <button onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); e.preventDefault(); handleDeleteReport(r.id); }}
+                            style={{ background: '#DC262618', border: '1px solid #DC262633', borderRadius: 4, cursor: 'pointer', padding: '4px 8px', color: '#DC2626', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }} title="Supprimer">
+                            <IconTrash style={{ width: 12, height: 12 }} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -654,16 +800,21 @@ export default function SupervisorDashboard() {
                   <div style={S.chartBordered}>
                     <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
                       <span style={{ fontSize: 11, fontWeight: 700, color: '#E8401A', textTransform: 'uppercase', letterSpacing: 0.3 }}>Nouveau rapport</span>
-                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                         {/* Date range inputs */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 140 }}>
                           <label style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted3)' }}>Du</label>
-                          <input type="date" value={dateDebut} onChange={(e) => setDateDebut(e.target.value)} style={S.inp} />
+                          <input type="date" value={dateDebut} onChange={(e) => { setDateDebut(e.target.value); setDatesFromPrompt(false); }} style={S.inp} />
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 140 }}>
                           <label style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted3)' }}>Au</label>
-                          <input type="date" value={dateFin} onChange={(e) => setDateFin(e.target.value)} style={S.inp} />
+                          <input type="date" value={dateFin} onChange={(e) => { setDateFin(e.target.value); setDatesFromPrompt(false); }} style={S.inp} />
                         </div>
+                        {datesFromPrompt && (
+                          <span style={{ fontSize: 10, color: '#2563EB', fontWeight: 600, whiteSpace: 'nowrap', paddingBottom: 2 }}>
+                            Extracted from prompt
+                          </span>
+                        )}
                       </div>
                       {/* Prompt textarea for the AI report — larger, with suggestion chips */}
                       <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)}
@@ -698,7 +849,7 @@ export default function SupervisorDashboard() {
                     <div style={S.chartBordered}>
                       {/* Toolbar: back button, editable title, action buttons */}
                       <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <button onClick={() => { setGeneratedContent(null); setSelectedReportId(null); }}
+                        <button onClick={() => { if (generatedContent && !window.confirm('Retourner sans sauvegarder ? Le contenu généré sera supprimé.')) return; setGeneratedContent(null); setSelectedReportId(null); setSavedName(''); }}
                           style={{ background: 'var(--bg-toolbar)', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', color: 'var(--text-muted3)', display: 'flex', alignItems: 'center', gap: 4 }}
                           title="Retour">← Retour</button>
                         <IconFile style={{ width: 13, height: 13, color: '#E8401A', flexShrink: 0 }} />
@@ -722,9 +873,15 @@ export default function SupervisorDashboard() {
                             </>
                           ) : (
                             <>
+                              {/* Accepter = save the generated report */}
                               <button onClick={handleSave} disabled={saving || !generatedContent}
                                 style={{ ...S.btnSm, background: saving ? 'var(--text-muted2)' : '#7C3AED', color: '#fff' }}>
-                                {saving ? '...' : <><IconSave style={{ width: 12, height: 12 }} /> Sauvegarder</>}
+                                {saving ? '...' : <><IconSave style={{ width: 12, height: 12 }} /> Accepter</>}
+                              </button>
+                              {/* Rejeter = discard without saving */}
+                              <button onClick={() => { if (window.confirm('Rejeter ce rapport ? Le contenu généré sera supprimé.')) { setGeneratedContent(null); setSelectedReportId(null); setSavedName(''); } }}
+                                style={{ ...S.btnSm, background: '#DC2626', color: '#fff' }}>
+                                <IconX style={{ width: 12, height: 12 }} /> Rejeter
                               </button>
                               {selectedReportId && (
                                 <button onClick={() => { setEditMode(true); setEditTitle(savedName); setEditContent(generatedContent); }}
