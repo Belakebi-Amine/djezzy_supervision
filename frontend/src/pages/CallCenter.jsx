@@ -11,7 +11,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { spawnParticles } from '../hooks/useAnimations';
-import { getTickets, createTicket, updateTicket, getSites, getTokenRole } from '../api/tickets';
+import { getTickets, createTicket, updateTicket, getSites, getTokenRole, getKeywords } from '../api/tickets';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
 /* Color palette and badge styles used across the UI */
@@ -96,9 +96,6 @@ const IconChevronLeft = (p) => (
 const IconSearch = (p) => (
   <svg {...iconProps} {...p}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
 );
-const IconRefresh = (p) => (
-  <svg {...iconProps} {...p}><path d="M3 12a9 9 0 0 1 15.5-6.3M21 12a9 9 0 0 1-15.5 6.3" /><path d="M3 4v5h5M21 20v-5h-5" /></svg>
-);
 const IconPlus = (p) => (
   <svg {...iconProps} {...p}><path d="M12 5v14M5 12h14" /></svg>
 );
@@ -155,6 +152,8 @@ export default function CallCenter() {
   /* --- New ticket form state --- */
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [sites, setSites] = useState([]);
+  const [keywordsData, setKeywordsData] = useState({});
+  const [selectedKeywords, setSelectedKeywords] = useState([]);
 
   /* --- Modal / tooltip helpers --- */
   // expandedField tracks which user info card (cree_par / assigne_a) is expanded in the modal
@@ -165,7 +164,39 @@ export default function CallCenter() {
   /* Load the list of network sites once on mount (used in the form and filters) */
   useEffect(() => {
     getSites().then(setSites).catch(() => setSites([]));
+    getKeywords().then(setKeywordsData).catch(() => setKeywordsData({}));
   }, []);
+
+  /* Calculate priority from selected keywords */
+  const calcScore = (keywords) => {
+    return keywords.reduce((sum, key) => {
+      for (const cat of Object.values(keywordsData)) {
+        const found = cat.keywords.find(k => k.key === key);
+        if (found) return sum + found.score;
+      }
+      return sum;
+    }, 0);
+  };
+
+  const calcPriorite = (score) => {
+    if (score >= 100) return 'critique';
+    if (score >= 60) return 'haute';
+    if (score >= 30) return 'normale';
+    return 'basse';
+  };
+
+  const prioriteColor = (p) => {
+    const colors = { basse: '#10B981', normale: '#2563EB', haute: '#F59E0B', critique: '#DC2626' };
+    return colors[p] || '#64748B';
+  };
+
+  const toggleKeyword = (key) => {
+    setSelectedKeywords(prev => {
+      const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
+      setFormData(f => ({ ...f, mots_cles_ia: next.join(', ') }));
+      return next;
+    });
+  };
 
   /* Fetch tickets from the API based on the current view tab */
   const fetchTickets = useCallback(async () => {
@@ -191,6 +222,14 @@ export default function CallCenter() {
     }
   }, [currentView, fetchTickets]);
 
+  // ─── Auto-refresh every 5 seconds ───
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchTickets();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [fetchTickets]);
+
   /* Submit the new ticket form to the API */
   const handleCreateTicket = async (e) => {
     e.preventDefault();
@@ -202,11 +241,11 @@ export default function CallCenter() {
         email_client: formData.email,
         type_client: formData.type_client,
         site_id: formData.site_id ? Number(formData.site_id) : null,
-        priorite: formData.priorite,
         mots_cles_ia: formData.mots_cles_ia,
       });
       // Reset form and go back to the active tickets list
       setFormData(INITIAL_FORM);
+      setSelectedKeywords([]);
       setCurrentView('non-traites');
     } catch (err) {
       console.error(err);
@@ -300,7 +339,6 @@ export default function CallCenter() {
             {currentView === 'nouveau-ticket' ? 'Nouveau Ticket' : currentView === 'traites' ? 'Archives — Tickets Traités' : 'Réclamations — Tickets Non Traités'}
           </h1>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button onClick={fetchTickets} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-toolbar)', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-muted3)' }} title="Actualiser"><IconRefresh style={{ width: 14, height: 14 }} /></button>
             <span style={{ fontSize: 10, color: 'var(--text-muted2)', fontWeight: 500, padding: '4px 10px', background: 'var(--bg-toolbar)', borderRadius: 4 }}>{now()}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8, paddingLeft: 12, borderLeft: '1px solid var(--border-color)' }}>
               <button onClick={() => navigate('/profile')} title="Profil" style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FEE2E2', border: 'none', cursor: 'pointer', color: '#E8401A' }}><IconUser style={{ width: 15, height: 15 }} /></button>
@@ -357,28 +395,61 @@ export default function CallCenter() {
                     ))}
                   </select>
                 </div>
+                {/* Auto-calculated priority display */}
                 <div style={styles.inputGroup}>
-                  <label style={styles.label}>Priorité</label>
-                  <select name="priorite" value={formData.priorite} onChange={handleInputChange} style={styles.select}>
-                    <option value="basse">BASSE</option>
-                    <option value="normale">NORMALE</option>
-                    <option value="haute">HAUTE</option>
-                    <option value="critique">CRITIQUE</option>
-                  </select>
+                  <label style={styles.label}>Priorité (auto)</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bg-hover)', borderRadius: 8, border: '1px solid var(--border-color)', minHeight: 38 }}>
+                    {selectedKeywords.length > 0 ? (
+                      <>
+                        <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: prioriteColor(calcPriorite(calcScore(selectedKeywords))) }} />
+                        <span style={{ fontWeight: 700, fontSize: 12, textTransform: 'uppercase', color: prioriteColor(calcPriorite(calcScore(selectedKeywords))) }}>
+                          {calcPriorite(calcScore(selectedKeywords))}
+                        </span>
+                        <span style={{ fontSize: 10, color: 'var(--text-muted3)', marginLeft: 4 }}>
+                          (score: {calcScore(selectedKeywords)})
+                        </span>
+                      </>
+                    ) : (
+                      <span style={{ fontSize: 11, color: 'var(--text-muted3)' }}>Selectionnez des mots-clés</span>
+                    )}
+                  </div>
                 </div>
-                {/* Keywords textarea spans the full grid width */}
+                {/* Keywords chip selector */}
                 <div style={{ ...styles.inputGroup, gridColumn: '1 / -1' }}>
                   <label style={styles.label}>Mots Clés IA</label>
-                  <textarea
-                    name="mots_cles_ia"
-                    value={formData.mots_cles_ia}
-                    onChange={handleInputChange}
-                    placeholder="Saisissez les mots-cles de la reclamation... (ex: perte signal, zone rurale, coupure frequente)"
-                    style={styles.textarea}
-                    rows={3}
-                  />
+                  {Object.keys(keywordsData).length === 0 ? (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted3)' }}>Chargement des mots-clés...</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 240, overflowY: 'auto', padding: '4px 0' }}>
+                      {Object.entries(keywordsData).map(([catKey, cat]) => (
+                        <div key={catKey}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{cat.label}</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                            {cat.keywords.map((kw) => {
+                              const isSelected = selectedKeywords.includes(kw.key);
+                              const scoreColor = kw.score >= 60 ? '#DC2626' : kw.score >= 30 ? '#F59E0B' : kw.score >= 15 ? '#2563EB' : '#10B981';
+                              return (
+                                <button key={kw.key} type="button" onClick={() => toggleKeyword(kw.key)}
+                                  style={{
+                                    fontSize: 10, padding: '4px 10px', borderRadius: 14, cursor: 'pointer', fontWeight: 500, fontFamily: 'inherit',
+                                    border: `1px solid ${isSelected ? scoreColor : 'var(--border-color)'}`,
+                                    background: isSelected ? scoreColor : 'var(--bg-hover)',
+                                    color: isSelected ? '#fff' : 'var(--text-muted3)',
+                                    transition: 'all 0.15s',
+                                    display: 'flex', alignItems: 'center', gap: 4,
+                                  }}>
+                                  {kw.label}
+                                  <span style={{ fontSize: 8, opacity: 0.8, fontWeight: 700 }}>×{kw.score}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div style={{ fontSize: '11px', color: COLORS.textMuted, marginTop: '4px' }}>
-                    Une description detaillee sera automatiquement generee pour les ingenieurs.
+                    Cliquez sur les mots-clés. La priorité est calculée automatiquement.
                   </div>
                 </div>
               </div>
@@ -404,9 +475,6 @@ export default function CallCenter() {
               </div>
 
               <div style={styles.toolbarActions}>
-                <button onClick={fetchTickets} style={styles.btnFilter}>
-                  <IconRefresh style={{ marginRight: '6px' }} /> Actualiser
-                </button>
                 <button onClick={() => setShowFilters(!showFilters)} style={styles.btnFilter}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ marginRight: '6px' }}><path d="M4 5h16l-6 7v6l-4 1v-7L4 5Z" /></svg> Filtrer
                 </button>
@@ -685,11 +753,6 @@ export default function CallCenter() {
 
             {/* Modal footer with modify and close buttons */}
             <div style={styles.modalFooter}>
-              {getStatutKey(selectedTicket.statut) !== 'FERME' && (
-                <button style={{ ...styles.btnFilter, backgroundColor: '#2563EB', color: '#fff', display: 'flex', alignItems: 'center', gap: 4 }} onClick={() => {}}>
-                  <IconEdit /> Modifier
-                </button>
-              )}
               <button style={styles.btnCancel} onClick={() => setSelectedTicket(null)}>Fermer</button>
             </div>
           </div>

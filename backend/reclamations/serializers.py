@@ -54,7 +54,7 @@ class ReclamationSerializer(serializers.ModelSerializer):
             'statut', 'cree_par', 'assigne_a', 'assigne_a_id', 'assigne_a_display',
             'commentaires', 'created_at', 'updated_at', 'resolu_le',
         ]
-        read_only_fields = ['numero_ticket', 'cree_par', 'created_at', 'updated_at', 'resolu_le', 'description']
+        read_only_fields = ['numero_ticket', 'cree_par', 'created_at', 'updated_at', 'resolu_le', 'description', 'priorite']
 
     def get_assigne_a_display(self, obj):
         """Returns the assignee's code_user or '-' if unassigned."""

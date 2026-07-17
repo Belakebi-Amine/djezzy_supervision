@@ -116,18 +116,27 @@ class Reclamation(models.Model):
     def save(self, *args, **kwargs):
         """
         Custom save logic:
-        1. Auto-generates description via AI if mots_cles_ia is set
-        2. Generates unique ticket number (TK001, TK002...)
-        3. Tracks resolution timestamp
+        1. Auto-calculates priority from selected keywords
+        2. Auto-generates description via AI if mots_cles_ia is set
+        3. Generates unique ticket number (TK001, TK002...)
+        4. Tracks resolution timestamp
         """
-        # Step 1: AI description generation from agent keywords
+        # Step 1: Auto-priority from keywords
+        if self.mots_cles_ia:
+            from keywords_config import calculer_priorite
+            self.priorite = calculer_priorite(self.mots_cles_ia)
+
+        # Step 2: AI description generation from agent keywords
         if self.mots_cles_ia and not self.description:
-            from .services import generer_description_incident_ia
-            self.description = generer_description_incident_ia(
-                nom_client=self.nom_client,
-                telephone_client=self.telephone_client,
-                mots_cles=self.mots_cles_ia,
-            )
+            try:
+                from .services import generer_description_incident_ia
+                self.description = generer_description_incident_ia(
+                    nom_client=self.nom_client,
+                    telephone_client=self.telephone_client,
+                    mots_cles=self.mots_cles_ia,
+                )
+            except Exception:
+                self.description = f"Incident signalé par {self.nom_client}: {self.mots_cles_ia}"
 
         # Step 2: Auto-generate unique ticket number
         if not self.numero_ticket:

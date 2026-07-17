@@ -3,24 +3,25 @@
 # Report generation service. Collects real-time network data
 # and produces professional HTML reports with analysis,
 # trends, and recommendations.
-# Uses Ollama (llama3.1:8b) for AI-powered report generation.
-# Falls back to local rule-based generation if Ollama unavailable.
+# Uses Mistral API (cloud) for AI-powered report generation.
+# Falls back to local rule-based generation if Mistral unavailable.
 # ─────────────────────────────────────────────────────────────
 import logging
 from datetime import timedelta
 from django.utils import timezone
 from django.db import models
-from django.db.models import Count, Q, Avg, F, Value, CharField
-from django.db.models.functions import TruncDate, Coalesce
+from django.db.models import Count, Q, Avg, F
+from django.db.models.functions import TruncDate
 from decouple import config
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_MODEL = config('OLLAMA_MODEL', default='qwen2.5:3b')
+MISTRAL_API_KEY = config('MISTRAL_API_KEY', default='')
+MISTRAL_MODEL = config('MISTRAL_MODEL', default='mistral-small-latest')
 
 from reclamations.models import Reclamation
 from sites_reseau.models import SiteReseau
-from accounts.models import CustomUser, Role
+from accounts.models import Role
 
 
 # ── CSS shared across all reports ──────────────────────────
@@ -556,32 +557,38 @@ def generer_rapport_ia(prompt_utilisateur, date_debut=None, date_fin=None):
     """
     Generates a professional HTML report from real database data.
     Analyzes the user prompt to include relevant sections.
-    Uses Ollama (llama3.1:8b) locally. Falls back to local generation
-    if Ollama is unavailable.
+    Uses Mistral API (cloud). Falls back to local generation
+    if Mistral is unavailable.
     """
     donnees = _collecter_donnees(date_debut, date_fin)
 
-    # Try Ollama first
-    try:
-        import ollama as ollama_lib
+    # Try Mistral first
+    if MISTRAL_API_KEY:
+        try:
+            from openai import OpenAI
 
-        # Summarize data for Ollama to keep prompt small and fast
-        resume = (
-            f"Periode: {donnees['periode']['debut']} - {donnees['periode']['fin']}\n"
-            f"Reseau: {donnees['reseau']['total_sites']} sites, "
-            f"{donnees['reseau']['sites_up']} UP, {donnees['reseau']['sites_down']} DOWN, "
-            f"Disponibilite: {donnees['reseau']['disponibilite']}%\n"
-            f"Tickets: {donnees['tickets']['total']} total, "
-            f"{donnees['tickets']['ouverts']} ouverts, {donnees['tickets']['resolus']} resolus, "
-            f"{donnees['tickets']['fermes']} fermes, {donnees['tickets']['critiques']} critiques, "
-            f"Taux resolution: {donnees['tickets']['taux_resolution']}%, Delai moyen: {donnees['tickets']['delai_moyen']}\n"
-            f"Priorites: {donnees['priorites']}\n"
-            f"Top wilayas: {', '.join(w['wilaya'] + '(' + str(w['nb']) + ')' for w in donnees['top_wilayas'][:5])}\n"
-            f"Ingenieurs: {', '.join(i['nom'] + ':' + str(i['total']) + ' tickets/' + str(i['resolus']) + ' resolus' for i in donnees['ingenieurs'])}\n"
-            f"Top mots-cles: {', '.join(k['mots_cles_ia'] + '(' + str(k['nb']) + ')' for k in donnees['top_keywords'][:7])}\n"
-        )
+            client = OpenAI(
+                api_key=MISTRAL_API_KEY,
+                base_url='https://api.mistral.ai/v1',
+            )
 
-        prompt = f"""Tu es un analyste reseau expert pour Djezzy, operateur mobile en Algerie.
+            # Summarize data for Mistral to keep prompt small and fast
+            resume = (
+                f"Periode: {donnees['periode']['debut']} - {donnees['periode']['fin']}\n"
+                f"Reseau: {donnees['reseau']['total_sites']} sites, "
+                f"{donnees['reseau']['sites_up']} UP, {donnees['reseau']['sites_down']} DOWN, "
+                f"Disponibilite: {donnees['reseau']['disponibilite']}%\n"
+                f"Tickets: {donnees['tickets']['total']} total, "
+                f"{donnees['tickets']['ouverts']} ouverts, {donnees['tickets']['resolus']} resolus, "
+                f"{donnees['tickets']['fermes']} fermes, {donnees['tickets']['critiques']} critiques, "
+                f"Taux resolution: {donnees['tickets']['taux_resolution']}%, Delai moyen: {donnees['tickets']['delai_moyen']}\n"
+                f"Priorites: {donnees['priorites']}\n"
+                f"Top wilayas: {', '.join(w['wilaya'] + '(' + str(w['nb']) + ')' for w in donnees['top_wilayas'][:5])}\n"
+                f"Ingenieurs: {', '.join(i['nom'] + ':' + str(i['total']) + ' tickets/' + str(i['resolus']) + ' resolus' for i in donnees['ingenieurs'])}\n"
+                f"Top mots-cles: {', '.join(k['mots_cles_ia'] + '(' + str(k['nb']) + ')' for k in donnees['top_keywords'][:7])}\n"
+            )
+
+            prompt = f"""Tu es un analyste reseau expert pour Djezzy, operateur mobile en Algerie.
 Redige un rapport professionnel en francais en HTML.
 
 Donnees :
@@ -594,20 +601,21 @@ Consignes :
 - Sections: KPI, etat reseau, tickets, recommandations.
 - Concis, 1 page A4."""
 
-        response = ollama_lib.chat(
-            model=OLLAMA_MODEL,
-            messages=[{'role': 'user', 'content': prompt}],
-            options={'temperature': 0.3, 'num_predict': 1024},
-        )
-        html = response['message']['content'].strip()
-        if html.startswith('```html'):
-            html = html[7:]
-        if html.endswith('```'):
-            html = html[:-3]
-        return html.strip()
+            response = client.chat.completions.create(
+                model=MISTRAL_MODEL,
+                messages=[{'role': 'user', 'content': prompt}],
+                temperature=0.3,
+                max_tokens=1024,
+            )
+            html = response.choices[0].message.content.strip()
+            if html.startswith('```html'):
+                html = html[7:]
+            if html.endswith('```'):
+                html = html[:-3]
+            return html.strip()
 
-    except Exception as e:
-        logger.warning("Ollama indisponible pour rapport, generation locale: %s", e)
+        except Exception as e:
+            logger.warning("Mistral indisponible pour rapport, generation locale: %s", e)
 
     # Local generation: analyze prompt and build report from real data
     sections = _detecter_sections(prompt_utilisateur)

@@ -6,15 +6,16 @@
 # ─────────────────────────────────────────────────────────────
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .models import SiteReseau
 from .serializers import SiteReseauSerializer
 from accounts.models import Role
+from accounts.permissions import IsEngineerOrAdmin, IsAdminEngineerOrSupervisor
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def liste_sites(request):
     """
     Lists all non-archived network sites. Supports query params:
@@ -46,12 +47,9 @@ def liste_sites(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsEngineerOrAdmin])
 def creer_site(request):
     """Creates a new network site. Only admins and engineers allowed."""
-    if request.user.role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX]:
-        return Response({'error': 'Accès réservé aux ingénieurs réseau'}, status=status.HTTP_403_FORBIDDEN)
-
     serializer = SiteReseauSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save()
@@ -95,7 +93,7 @@ def detail_site(request, pk):
 
 
 @api_view(['PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsAdminEngineerOrSupervisor])
 def archiver_site(request, pk):
     """
     Soft-deletes a site by setting archive=True.
@@ -106,16 +104,13 @@ def archiver_site(request, pk):
     except SiteReseau.DoesNotExist:
         return Response({'error': 'Site introuvable'}, status=status.HTTP_404_NOT_FOUND)
 
-    if request.user.role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX, Role.SUPERVISEUR]:
-        return Response({'error': 'Permission refusée'}, status=status.HTTP_403_FORBIDDEN)
-
     site.archiverSite()
     serializer = SiteReseauSerializer(site)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 @api_view(['PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsEngineerOrAdmin])
 def desarchiver_site(request, pk):
     """
     Restores an archived site by setting archive=False.
@@ -125,9 +120,6 @@ def desarchiver_site(request, pk):
         site = SiteReseau.objects.get(pk=pk)
     except SiteReseau.DoesNotExist:
         return Response({'error': 'Site introuvable'}, status=status.HTTP_404_NOT_FOUND)
-
-    if request.user.role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX]:
-        return Response({'error': 'Permission refusée'}, status=status.HTTP_403_FORBIDDEN)
 
     site.desarchiverSite()
     serializer = SiteReseauSerializer(site)

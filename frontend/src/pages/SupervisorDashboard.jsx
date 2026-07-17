@@ -16,7 +16,7 @@ import { useNavigate } from 'react-router-dom';
 import { spawnParticles } from '../hooks/useAnimations';
 import {
   LineChart, Line, BarChart, Bar, Cell,
-  PieChart, Pie, Sector,
+  PieChart, Pie,
   ResponsiveContainer, XAxis, YAxis, CartesianGrid,
   Tooltip,
 } from 'recharts';
@@ -44,7 +44,6 @@ const IconD = (p) => <svg {...iconProps} {...p}><rect x="3" y="3" width="7" heig
 const IconU = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="8" r="3.2" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /></svg>;
 const IconL = (p) => <svg {...iconProps} {...p}><path d="M15 16l4-4-4-4" /><path d="M19 12H8" /><path d="M12 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6" /></svg>;
 const IconI = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>;
-const IconRefresh = (p) => <svg {...iconProps} {...p}><path d="M3 12a9 9 0 0 1 15.5-6.3M21 12a9 9 0 0 1-15.5 6.3" /><path d="M3 4v5h5M21 20v-5h-5" /></svg>;
 const IconMap = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>;
 const IconFile = (p) => <svg {...iconProps} {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>;
 const IconTrash = (p) => <svg {...iconProps} {...p}><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
@@ -195,14 +194,6 @@ export default function SupervisorDashboard() {
 
   /* ── Data fetching ── */
 
-  // refresh – lightweight re-fetch without resetting loading state (used after closing detail modal)
-  const refresh = useCallback(async () => {
-    try {
-      const [a, b] = await Promise.all([getDashboardStats(period), getDashboardReporting(period)]);
-      setStats(a); setReporting(b);
-    } catch (err) { setError(err.message || 'Erreur.'); }
-  }, [period]);
-
   // fetchData – full load with loading & error states
   const fetchData = useCallback(async () => {
     setLoading(true); setError(null);
@@ -215,6 +206,20 @@ export default function SupervisorDashboard() {
 
   // Initial fetch whenever the selected period changes
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // ─── Auto-refresh every 5 seconds ───
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const refresh = async () => {
+        try {
+          const [a, b] = await Promise.all([getDashboardStats(period), getDashboardReporting(period)]);
+          setStats(a); setReporting(b);
+        } catch {}
+      };
+      refresh();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [period]);
 
   // Clear the detail modal whenever the period changes
   useEffect(() => { setDetail(null); }, [period]);
@@ -509,7 +514,7 @@ export default function SupervisorDashboard() {
   return (
     <div style={S.app}>
       {/* Detail modal – shown when the user clicks on a chart element */}
-      {detail && <DetailModal type={detail.type} data={detail.data} stats={stats} reporting={reporting} onClose={() => { setDetail(null); refresh(); }} />}
+      {detail && <DetailModal type={detail.type} data={detail.data} stats={stats} reporting={reporting} onClose={() => setDetail(null)} />}
 
       {/* ── RAPPORT VIEW POPUP ── */}
       {viewRapport && (
@@ -685,7 +690,6 @@ export default function SupervisorDashboard() {
                 <button key={p.v} onClick={() => setPeriod(p.v)} style={{ ...S.togBtn, ...(period === p.v ? S.togOn : {}) }}>{p.l}</button>
               ))}
             </div>
-            <button onClick={fetchData} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-toolbar)', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-muted3)' }} title="Actualiser"><IconRefresh style={{ width: 14, height: 14 }} /></button>
             <span style={S.date}>{now()}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8, paddingLeft: 12, borderLeft: '1px solid var(--border-color)' }}>
               <button onClick={() => navigate('/profile')} style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FEE2E2', border: 'none', cursor: 'pointer', color: '#E8401A' }} title="Profil"><IconU style={{ width: 15, height: 15 }} /></button>
@@ -816,23 +820,29 @@ export default function SupervisorDashboard() {
                           </span>
                         )}
                       </div>
-                      {/* Prompt textarea for the AI report — larger, with suggestion chips */}
-                      <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)}
-                        placeholder={"Exemples :\n• Rapport synthétique des 90 derniers jours avec KPI principaux\n• Analyse des sites les plus impactés et recommandations\n• Évolution des réclamations par commune avec tendances"}
-                        style={{ ...S.inp, minHeight: 110, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6, whiteSpace: 'pre-wrap' }} />
-                      {/* Quick suggestion chips */}
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {[
-                          'Synthèse 90j avec KPI',
-                          'Sites les plus impactés',
-                          'Analyse par commune',
-                          'Tendances et recommandations',
-                        ].map((s) => (
-                          <button key={s} onClick={() => setPrompt(s)} style={{ fontSize: 10, padding: '4px 10px', borderRadius: 12, border: '1px solid var(--border-color)', background: 'var(--bg-hover)', color: 'var(--text-muted3)', cursor: 'pointer', fontWeight: 500, transition: 'all 0.15s', fontFamily: 'inherit' }}>
-                            {s}
-                          </button>
-                        ))}
+                      {/* Pre-made prompt buttons */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted3)' }}>Choisir un type de rapport :</span>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {[
+                            { label: 'Synthèse 90j avec KPI', prompt: 'Rapport synthétique des 90 derniers jours avec KPI principaux' },
+                            { label: 'Sites les plus impactés', prompt: 'Analyse des sites les plus impactés et recommandations' },
+                            { label: 'Analyse par commune', prompt: 'Évolution des réclamations par commune avec tendances' },
+                            { label: 'Tendances et recommandations', prompt: 'Tendances des réclamations et recommandations d\'amélioration' },
+                            { label: 'Évolution mensuelle', prompt: 'Évolution mensuelle des réclamations avec comparaison' },
+                            { label: 'Bilan par wilaya', prompt: 'Bilan des réclamations par wilaya avec top 10 des zones' },
+                          ].map((s) => (
+                            <button key={s.label} onClick={() => setPrompt(s.prompt)}
+                              style={{ fontSize: 11, padding: '6px 14px', borderRadius: 14, border: prompt === s.prompt ? '2px solid #E8401A' : '1px solid var(--border-color)', background: prompt === s.prompt ? 'rgba(232,64,26,0.1)' : 'var(--bg-hover)', color: prompt === s.prompt ? '#E8401A' : 'var(--text-muted3)', cursor: 'pointer', fontWeight: 600, transition: 'all 0.15s', fontFamily: 'inherit' }}>
+                              {s.label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
+                      {/* Editable prompt textarea */}
+                      <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)}
+                        placeholder={"Ou décrivez votre rapport personnalisé..."}
+                        style={{ ...S.inp, minHeight: 80, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6, whiteSpace: 'pre-wrap' }} />
                       <button onClick={handleGenerate} disabled={generating || !prompt.trim()}
                         style={{ ...S.btn, opacity: generating || !prompt.trim() ? 0.6 : 1, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
                         {generating ? (

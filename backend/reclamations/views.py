@@ -6,12 +6,14 @@
 # ─────────────────────────────────────────────────────────────
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.utils import timezone
 from .models import Reclamation
 from .serializers import ReclamationSerializer, CommentaireSerializer
 from accounts.models import Role
+from accounts.permissions import IsAgentOrAdmin, IsAdminEngineerOrSupervisor
+from keywords_config import get_all_keywords, calculer_score
 
 # Valid status values that match the database choices
 STATUTS_VALIDES = {'ouvert', 'resolu', 'ferme'}
@@ -40,7 +42,7 @@ def _statuts_depuis_param(statut_filter):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def liste_reclamations(request):
     """
     Lists all reclamation tickets with optional status filtering.
@@ -69,29 +71,21 @@ def liste_reclamations(request):
 
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated, IsAgentOrAdmin])
 def creer_reclamation(request):
     """
     Creates a new complaint ticket. Only admin and call center agents
     can create tickets. The AI description is auto-generated on save.
     """
-    if request.user and request.user.is_authenticated:
-        role = request.user.role.upper() if request.user.role else ''
-        if role not in [Role.ADMIN, Role.AGENT_CALL_CENTER]:
-            return Response({'error': 'Permission refusée.'}, status=status.HTTP_403_FORBIDDEN)
-
     serializer = ReclamationSerializer(data=request.data)
     if serializer.is_valid():
-        if request.user and request.user.is_authenticated:
-            serializer.save(cree_par=request.user)
-        else:
-            serializer.save()
+        serializer.save(cree_par=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['GET', 'PUT'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def detail_reclamation(request, pk):
     """
     GET: Returns full ticket details including comments and site info.
@@ -108,11 +102,9 @@ def detail_reclamation(request, pk):
         return Response(serializer.data)
 
     if request.method == 'PUT':
-        # Permission check for update
-        if request.user and request.user.is_authenticated:
-            role = request.user.role.upper() if request.user.role else ''
-            if role not in [Role.ADMIN, Role.AGENT_CALL_CENTER, Role.INGENIEUR_RESEAUX, Role.SUPERVISEUR]:
-                return Response({'error': 'Permission refusée'}, status=status.HTTP_403_FORBIDDEN)
+        # Allow call center agents to update tickets too
+        if request.user.role not in [Role.ADMIN, Role.AGENT_CALL_CENTER, Role.INGENIEUR_RESEAUX, Role.SUPERVISEUR]:
+            return Response({'error': 'Permission refusée'}, status=status.HTTP_403_FORBIDDEN)
 
         old_statut = reclamation.statut
         serializer = ReclamationSerializer(reclamation, data=request.data, partial=True)
@@ -126,7 +118,6 @@ def detail_reclamation(request, pk):
 
             # Auto-assign: the user who reopens becomes the assignee
             if (old_statut == 'ferme' and reclamation.statut == 'ouvert'
-                    and request.user and request.user.is_authenticated
                     and not reclamation.assigne_a):
                 reclamation.assigne_a = request.user
                 reclamation.save()
@@ -136,7 +127,7 @@ def detail_reclamation(request, pk):
 
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated, IsAdminEngineerOrSupervisor])
 def ajouter_commentaire(request, pk):
     """
     Adds a comment to a ticket. Only engineers and admins can comment
@@ -147,17 +138,9 @@ def ajouter_commentaire(request, pk):
     except Reclamation.DoesNotExist:
         return Response({'error': 'Ticket introuvable'}, status=status.HTTP_404_NOT_FOUND)
 
-    if request.user and request.user.is_authenticated:
-        role = (request.user.role or '').upper()
-        if role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX, Role.SUPERVISEUR]:
-            return Response({'error': 'Seuls les ingénieurs peuvent ajouter des commentaires.'}, status=status.HTTP_403_FORBIDDEN)
-
     serializer = CommentaireSerializer(data=request.data)
     if serializer.is_valid():
-        if request.user and request.user.is_authenticated:
-            serializer.save(reclamation=reclamation, auteur=request.user)
-        else:
-            serializer.save(reclamation=reclamation)
+        serializer.save(reclamation=reclamation, auteur=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -194,3 +177,21 @@ def desarchiver_reclamation(request, pk):
     reclamation.archived_by = None
     reclamation.save()
     return Response({'message': 'Ticket désarchivé', 'id': pk})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def liste_keywords(request):
+    """Returns all telecom keywords organized by category with scores."""
+    return Response(get_all_keywords())
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def preview_priorite(request):
+    """Returns the auto-calculated priority for a set of keywords (live preview)."""
+    mots_cles = request.data.get('mots_cles', '')
+    score = calculer_score(mots_cles)
+    from keywords_config import calculer_priorite
+    priorite = calculer_priorite(mots_cles)
+    return Response({'score': score, 'priorite': priorite})

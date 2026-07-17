@@ -22,11 +22,15 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         # Add custom claims to the JWT payload
         token['code_user'] = user.code_user
         token['role'] = getattr(user, 'role', 'aucun')
-        token['is_active'] = user.is_active
         return token
 
     def validate(self, attrs):
         data = super().validate(attrs)
+        # Block login if user account is deactivated
+        if not self.user.is_active:
+            raise serializers.ValidationError(
+                {'detail': 'Ce compte est désactivé. Contactez un administrateur.'}
+            )
         # Also include full user data in the response body for the frontend
         data['user'] = UserSerializer(self.user).data
         return data

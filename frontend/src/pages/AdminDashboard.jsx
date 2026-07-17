@@ -25,7 +25,7 @@ import {
   getDashboardStats, getDashboardReporting,
   getRapportsIA, deleteRapportIA, getArchivedRapports, restoreRapportIA,
 } from '../api/dashboard';
-import { getSites, getUsers, createUser, getTickets, createTicket, updateTicket, createSite, updateSiteStatus, archiverSite, archiveUser, toggleActiveUser, updateUser, restoreUser, getTokenRole, getArchivedTickets, archiverReclamation, desarchiverReclamation, getArchivedSites, restoreSite } from '../api/tickets';
+import { getSites, getUsers, createUser, getTickets, createTicket, updateTicket, createSite, updateSiteStatus, archiverSite, archiveUser, toggleActiveUser, updateUser, restoreUser, getTokenRole, getArchivedTickets, archiverReclamation, desarchiverReclamation, getArchivedSites, restoreSite, getKeywords } from '../api/tickets';
 import MapComponent from '../components/Map';
 import DetailModal from '../components/DetailModal';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
@@ -112,7 +112,6 @@ const IconX = (p) => <svg {...iconProps} {...p}><path d="M18 6L6 18M6 6l12 12" /
 const IconLogout = (p) => <svg {...iconProps} {...p}><path d="M15 16l4-4-4-4" /><path d="M19 12H8" /><path d="M12 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6" /></svg>;
 const IconSearch = (p) => <svg {...iconProps} {...p}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>;
 const IconPlus = (p) => <svg {...iconProps} {...p}><path d="M12 5v14M5 12h14" /></svg>;
-const IconRefresh = (p) => <svg {...iconProps} {...p}><path d="M3 12a9 9 0 0 1 15.5-6.3M21 12a9 9 0 0 1-15.5 6.3" /><path d="M3 4v5h5M21 20v-5h-5" /></svg>;
 const IconFilter = (p) => <svg {...iconProps} {...p}><path d="M4 5h16l-6 7v6l-4 1v-7L4 5Z" /></svg>;
 const IconCheck = (p) => <svg {...iconProps} {...p}><path d="M4 12l5 5 11-11" /></svg>;
 const IconInfo = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>;
@@ -295,8 +294,10 @@ export default function AdminDashboard() {
   });
   const [ticketForm, setTicketForm] = useState({
     nom_client: '', telephone_client: '', email_client: '', type_client: 'particulier',
-    site: '', priorite: 'normale', mots_cles_ia: '',
+    site: '', mots_cles_ia: '',
   });
+  const [ticketKeywordsData, setTicketKeywordsData] = useState({});
+  const [ticketSelectedKeywords, setTicketSelectedKeywords] = useState([]);
   const [siteForm, setSiteForm] = useState({
     nom: '', wilaya: '', commune: '', coordX: '', coordY: '', adresse: '', statut: 'UP', technologie: '5G',
   });
@@ -328,7 +329,17 @@ export default function AdminDashboard() {
   // ─── Initial data load on mount and when period changes ───
   useEffect(() => {
     fetchStats(); fetchSites(); fetchUsers(); fetchTickets();
+    getKeywords().then(setTicketKeywordsData).catch(() => setTicketKeywordsData({}));
   }, [fetchStats, fetchSites, fetchUsers, fetchTickets]);
+
+  // ─── Auto-refresh every 5 seconds ───
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchStats(); fetchSites(); fetchTickets();
+      if (currentView === 'reports') fetchRapports();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [fetchStats, fetchSites, fetchTickets, fetchRapports, currentView]);
 
   // Load supervisor reports only when the reports view is active
   useEffect(() => {
@@ -350,9 +361,6 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (currentView === 'archives') fetchArchivedData();
   }, [currentView, fetchArchivedData]);
-
-  // Convenience: refresh stats + sites + tickets together
-  const refreshAll = () => { fetchStats(); fetchSites(); fetchTickets(); };
 
   // Toggle report detail view (click same report to collapse)
   const handleViewRapport = useCallback((id) => {
@@ -550,10 +558,39 @@ export default function AdminDashboard() {
         site_id: ticketForm.site ? Number(ticketForm.site) : null,
       });
       setShowTicketForm(false);
-      setTicketForm({ nom_client: '', telephone_client: '', email_client: '', type_client: 'particulier', site: '', priorite: 'normale', mots_cles_ia: '' });
+      setTicketForm({ nom_client: '', telephone_client: '', email_client: '', type_client: 'particulier', site: '', mots_cles_ia: '' });
+      setTicketSelectedKeywords([]);
       fetchTickets();
       addNotification('Ticket créé avec succès', 'success');
     } catch { addNotification('Erreur création ticket.', 'error'); } finally { setSubmitting(false); }
+  };
+
+  // ─── Keywords scoring helpers ───
+  const calcScore = (keywords) => {
+    return keywords.reduce((sum, key) => {
+      for (const cat of Object.values(ticketKeywordsData)) {
+        const found = cat.keywords.find(k => k.key === key);
+        if (found) return sum + found.score;
+      }
+      return sum;
+    }, 0);
+  };
+  const calcPriorite = (score) => {
+    if (score >= 100) return 'critique';
+    if (score >= 60) return 'haute';
+    if (score >= 30) return 'normale';
+    return 'basse';
+  };
+  const prioriteColor = (p) => {
+    const colors = { basse: '#10B981', normale: '#2563EB', haute: '#F59E0B', critique: '#DC2626' };
+    return colors[p] || '#64748B';
+  };
+  const toggleTicketKeyword = (key) => {
+    setTicketSelectedKeywords(prev => {
+      const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
+      setTicketForm(f => ({ ...f, mots_cles_ia: next.join(', ') }));
+      return next;
+    });
   };
 
   // Create a new network site
@@ -902,7 +939,6 @@ export default function AdminDashboard() {
       <div style={{ ...styles.toolbar, borderBottom: `1px solid ${COLORS.border}` }}>
         <div style={styles.toolbarLeft}><h2 style={styles.tableTitle}><IconTicket /> Réclamations</h2></div>
         <div style={styles.toolbarActions}>
-          <button onClick={fetchTickets} style={styles.btnFilter}><IconRefresh /> Actualiser</button>
           <button onClick={() => setShowFilters(!showFilters)} style={styles.btnFilter}><IconFilter /> Filtrer</button>
           <div style={styles.searchWrapper}>
             <IconSearch style={styles.searchIcon} />
@@ -1044,7 +1080,6 @@ export default function AdminDashboard() {
         <div style={{ ...styles.toolbar, borderBottom: `1px solid ${COLORS.border}` }}>
           <div style={styles.toolbarLeft}><h2 style={styles.tableTitle}><IconSite /> Sites réseau 5G</h2></div>
           <div style={styles.toolbarActions}>
-            <button onClick={fetchSites} style={styles.btnFilter}><IconRefresh /> Actualiser</button>
             <button onClick={() => setShowSiteFilters(!showSiteFilters)} style={styles.btnFilter}><IconFilter /> Filtrer</button>
           </div>
         </div>
@@ -1256,9 +1291,6 @@ export default function AdminDashboard() {
               </button>
             )}
           </div>
-          <button onClick={fetchRapports} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-toolbar)', border: 'none', borderRadius: 4, padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-muted3)', fontSize: 11, fontWeight: 600 }}>
-            <IconRefresh style={{ width: 12, height: 12 }} /> Actualiser
-          </button>
         </div>
       </div>
       {loadingRapports ? (
@@ -1328,9 +1360,6 @@ export default function AdminDashboard() {
           <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Archives</h2>
           <span style={{ fontSize: 10, color: 'var(--text-muted2)' }}>Éléments archivés du système</span>
         </div>
-        <button onClick={fetchArchivedData} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-toolbar)', border: 'none', borderRadius: 4, padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-muted3)', fontSize: 11, fontWeight: 600 }}>
-          <IconRefresh style={{ width: 12, height: 12 }} /> Actualiser
-        </button>
       </div>
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: 6, background: 'var(--bg-toolbar)', borderRadius: 8, padding: 4, marginBottom: 16 }}>
@@ -1705,20 +1734,42 @@ export default function AdminDashboard() {
                 {sites.map((s) => <option key={s.id} value={s.id}>{s.nom || s.codeSite}</option>)}
               </select>
             </div>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Priorité</label>
-              <select value={ticketForm.priorite} onChange={(e) => setTicketForm({ ...ticketForm, priorite: e.target.value })} style={styles.input}>
-                <option value="basse">Basse</option>
-                <option value="normale">Normale</option>
-                <option value="haute">Haute</option>
-                <option value="critique">Critique</option>
-              </select>
-            </div>
           </div>
-          <div style={styles.inputGroup}>
+          {/* Keyword chips by category */}
+          <div style={{ marginBottom: 12 }}>
             <label style={styles.label}>Mots Clés IA</label>
-            <input type="text" placeholder="perte signal, zone rurale" value={ticketForm.mots_cles_ia} onChange={(e) => setTicketForm({ ...ticketForm, mots_cles_ia: e.target.value })} style={styles.input} />
+            {Object.entries(ticketKeywordsData).map(([cat, { label: catLabel, keywords }]) => (
+              <div key={cat} style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{catLabel}</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {keywords.map((kw) => {
+                    const selected = ticketSelectedKeywords.includes(kw.key);
+                    return (
+                      <button key={kw.key} type="button" onClick={() => toggleTicketKeyword(kw.key)}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 14, fontSize: 12, fontWeight: 500, cursor: 'pointer', border: 'none',
+                          background: selected ? '#3B82F6' : 'rgba(255,255,255,0.06)', color: selected ? '#fff' : '#CBD5E1', transition: 'all 0.15s' }}>
+                        {kw.label} <span style={{ fontSize: 10, opacity: 0.7 }}>+{kw.score}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
+          {/* Auto-calculated priority display */}
+          {ticketSelectedKeywords.length > 0 && (() => {
+            const score = calcScore(ticketSelectedKeywords);
+            const priorite = calcPriorite(score);
+            return (
+              <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div style={{ fontSize: 12, color: '#94A3B8', marginBottom: 4 }}>Priorité automatique</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ padding: '3px 10px', borderRadius: 12, fontSize: 13, fontWeight: 600, background: prioriteColor(priorite), color: '#fff' }}>{priorite.charAt(0).toUpperCase() + priorite.slice(1)}</span>
+                  <span style={{ fontSize: 12, color: '#94A3B8' }}>Score : {score}</span>
+                </div>
+              </div>
+            );
+          })()}
           <div style={styles.formActions}>
             <button type="button" onClick={() => setShowTicketForm(false)} style={styles.btnCancel}>Annuler</button>
             <button type="submit" disabled={submitting} style={styles.btnSubmit}>
@@ -2004,7 +2055,7 @@ export default function AdminDashboard() {
   // ─── MAIN RENDER ───
   return (
     <div style={styles.appLayout}>
-      {detail && <DetailModal type={detail.type} data={detail.data} stats={stats} reporting={reporting} onClose={() => { setDetail(null); refreshAll(); }} />}
+      {detail && <DetailModal type={detail.type} data={detail.data} stats={stats} reporting={reporting} onClose={() => setDetail(null)} />}
       {sidebar()}
       <main style={styles.mainContent}>
         <header style={styles.topHeader}>
@@ -2018,7 +2069,6 @@ export default function AdminDashboard() {
                 ))}
               </div>
             )}
-            <button onClick={refreshAll} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-toolbar)', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-muted3)' }} title="Actualiser"><IconRefresh style={{ width: 14, height: 14 }} /></button>
             <span style={styles.date}>{now()}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8, paddingLeft: 12, borderLeft: '1px solid var(--border-color)' }}>
               <button onClick={() => navigate('/profile')} title="Profil" style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FEE2E2', border: 'none', cursor: 'pointer', color: COLORS.accent }}><IconUser style={{ width: 15, height: 15 }} /></button>

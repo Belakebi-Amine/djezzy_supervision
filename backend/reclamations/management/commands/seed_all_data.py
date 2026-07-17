@@ -3,31 +3,30 @@ from datetime import timedelta
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.contrib.auth import get_user_model
-from django.contrib.auth.hashers import make_password
+from decouple import config
 from reclamations.models import Reclamation, CommentaireTicket
 from dashboard.models import RapportIA
 from sites_reseau.models import SiteReseau
-from accounts.models import Role
 
 User = get_user_model()
 
-# ─── USER DEFINITIONS ───
+# ─── USER DEFINITIONS (placeholder data — ne pas utiliser en prod) ───
 USERS = [
-    ("amine", "belakebi", "ADMIN"),
-    ("amel", "bouachach", "SUPERVISEUR"),
-    ("amir", "bitam", "INGENIEUR_RESEAUX"),
-    ("soundous", "benalia", "INGENIEUR_RESEAUX"),
-    ("abdelah bouamran", "rofaida", "INGENIEUR_RESEAUX"),
-    ("bouchra", "faci", "INGENIEUR_RESEAUX"),
-    ("younes", "benamour", "INGENIEUR_RESEAUX"),
-    ("yacine", "ihdaden", "AGENT_CALL_CENTER"),
-    ("racha", "makhmokh", "AGENT_CALL_CENTER"),
-    ("malak", "zerrok", "AGENT_CALL_CENTER"),
-    ("zakaria", "aithamodi", "AGENT_CALL_CENTER"),
-    ("manel", "gridi", "AGENT_CALL_CENTER"),
+    ("admin", "systeme", "ADMIN"),
+    ("superviseur", "un", "SUPERVISEUR"),
+    ("ingenieur", "alpha", "INGENIEUR_RESEAUX"),
+    ("ingenieur", "beta", "INGENIEUR_RESEAUX"),
+    ("ingenieur", "gamma", "INGENIEUR_RESEAUX"),
+    ("ingenieur", "delta", "INGENIEUR_RESEAUX"),
+    ("ingenieur", "epsilon", "INGENIEUR_RESEAUX"),
+    ("agent", "alpha", "AGENT_CALL_CENTER"),
+    ("agent", "beta", "AGENT_CALL_CENTER"),
+    ("agent", "gamma", "AGENT_CALL_CENTER"),
+    ("agent", "delta", "AGENT_CALL_CENTER"),
+    ("agent", "epsilon", "AGENT_CALL_CENTER"),
 ]
 
-COMMON_PASSWORD = "djezzy@123"
+COMMON_PASSWORD = config('SEED_PASSWORD', default='change-me')
 
 # ─── 80 CLIENT NAMES ───
 NOMS_CLIENTS = [
@@ -171,7 +170,7 @@ class Command(BaseCommand):
         from django.db import connection
 
         admin_first, admin_last, admin_role = USERS[0]
-        admin_email = "amine.belakebi@gmail.com"
+        admin_email = "admin@exemple.com"
         admin_user = User.objects.create_superuser(
             username=admin_email, email=admin_email, password=COMMON_PASSWORD,
             first_name=' '.join(w.capitalize() for w in admin_first.split()),
@@ -189,7 +188,7 @@ class Command(BaseCommand):
         for first_name, last_name, role in USERS[1:]:
             first_clean = first_name.split()[0].lower()
             last_clean = last_name.lower()
-            email = f"{first_clean}.{last_clean}@gmail.com" if last_clean else f"{first_clean}@gmail.com"
+            email = f"{first_clean}.{last_clean}@exemple.com" if last_clean else f"{first_clean}@exemple.com"
             user = User.objects.create_user(
                 username=email, email=email, password=COMMON_PASSWORD,
                 first_name=' '.join(w.capitalize() for w in first_name.split()),

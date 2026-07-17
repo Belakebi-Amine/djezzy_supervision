@@ -18,4 +18,7 @@ urlpatterns = [
     # Archive/unarchive a ticket (admin only)
     path('<int:pk>/archiver/', views.archiver_reclamation, name='archiver-reclamation'),
     path('<int:pk>/desarchiver/', views.desarchiver_reclamation, name='desarchiver-reclamation'),
+    # Keywords system
+    path('keywords/', views.liste_keywords, name='liste-keywords'),
+    path('keywords/preview/', views.preview_priorite, name='preview-priorite'),
 ]

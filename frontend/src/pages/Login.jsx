@@ -50,7 +50,7 @@ const Login = () => {
         }
 
         try {
-            const response = await axios.post('http://127.0.0.1:8000/api/token/', {
+            const response = await axios.post(`${process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api'}/token/`, {
                 email: email,
                 password: password
             });
@@ -74,7 +74,7 @@ const Login = () => {
 
             if (!userRole && response.data.access) {
                 try {
-                    const meResp = await axios.get('http://127.0.0.1:8000/api/accounts/me/', {
+                    const meResp = await axios.get(`${process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api'}/accounts/me/`, {
                         headers: { Authorization: 'Bearer ' + response.data.access }
                     });
                     userRole = meResp.data?.role_user || meResp.data?.role;

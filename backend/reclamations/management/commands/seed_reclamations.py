@@ -6,7 +6,6 @@ from django.contrib.auth import get_user_model
 from reclamations.models import Reclamation, CommentaireTicket
 from sites_reseau.models import SiteReseau
 from accounts.models import Role
-from django.db.models import F
 
 User = get_user_model()
 

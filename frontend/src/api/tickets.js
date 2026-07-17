@@ -4,7 +4,7 @@
 // reclamation tickets, network sites, and user management.
 // Includes JWT token handling for authenticated requests.
 // ─────────────────────────────────────────────────────────────
-const API_URL = "http://127.0.0.1:8000/api";
+const API_URL = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000/api";
 
 // Extract user role from the JWT token payload
 export const getTokenRole = () => {
@@ -100,8 +100,6 @@ export const createTicket = async (ticketData) => {
     });
     if (!response.ok) {
         const textBody = await response.text().catch(() => '');
-        console.error('Statut HTTP:', response.status);
-        console.error('Corps brut de la réponse:', textBody);
         let errorData;
         try { errorData = JSON.parse(textBody); } catch { errorData = textBody; }
         throw new Error('[' + response.status + '] ' + JSON.stringify(errorData));
@@ -121,7 +119,6 @@ export const updateTicket = async (id, ticketData) => {
     checkAuthAndRedirect(response.status);
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error('Détails rejet API Django:', errorData);
         throw new Error('Erreur lors de la mise à jour du ticket');
     }
     return response.json();
@@ -353,6 +350,29 @@ export const getArchivedTickets = async () => {
     const response = await fetch(`${API_URL}/reclamations/?archived=true`, {
         method: 'GET',
         headers: await getHeaders(),
+    });
+    if (!response.ok) throw new Error(`Erreur serveur [${response.status}]`);
+    return await response.json();
+};
+
+// ── Keywords System ──
+
+/** Fetches all telecom keywords organized by category with scores */
+export const getKeywords = async () => {
+    const response = await fetch(`${API_URL}/reclamations/keywords/`, {
+        method: 'GET',
+        headers: await getHeaders(),
+    });
+    if (!response.ok) throw new Error(`Erreur serveur [${response.status}]`);
+    return await response.json();
+};
+
+/** Preview priority from selected keywords (live calculation) */
+export const previewPriorite = async (motsCles) => {
+    const response = await fetch(`${API_URL}/reclamations/keywords/preview/`, {
+        method: 'POST',
+        headers: await getHeaders(),
+        body: JSON.stringify({ mots_cles: motsCles }),
     });
     if (!response.ok) throw new Error(`Erreur serveur [${response.status}]`);
     return await response.json();

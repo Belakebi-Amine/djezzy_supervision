@@ -96,9 +96,6 @@ const IconMap = (p) => (
 const IconSearch = (p) => (
   <svg {...iconProps} {...p}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
 );
-const IconRefresh = (p) => (
-  <svg {...iconProps} {...p}><path d="M3 12a9 9 0 0 1 15.5-6.3M21 12a9 9 0 0 1-15.5 6.3" /><path d="M3 4v5h5M21 20v-5h-5" /></svg>
-);
 const IconFilter = (p) => (
   <svg {...iconProps} {...p}><path d="M4 5h16l-6 7v6l-4 1v-7L4 5Z" /></svg>
 );
@@ -208,6 +205,14 @@ export default function EngineerDashboard() {
   // Load tickets on mount
   useEffect(() => {
     fetchTickets();
+  }, [fetchTickets]);
+
+  // ─── Auto-refresh every 5 seconds ───
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchTickets();
+    }, 5000);
+    return () => clearInterval(interval);
   }, [fetchTickets]);
 
   // Fetch all sites including archived (for inline grayed-out display)
@@ -439,7 +444,6 @@ export default function EngineerDashboard() {
         <header style={{ position: 'sticky', top: 0, height: 51, display: 'flex', alignItems: 'center', padding: '0 27px', background: COLORS.cardBg, borderBottom: `1px solid ${COLORS.border}`, boxShadow: 'var(--shadow-sm)', zIndex: 10 }}>
           <h1 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-secondary)' }}>{currentView === 'sites' ? 'Sites Réseau' : currentView === 'cartographie' ? 'Cartographie' : 'Réclamations'}</h1>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button onClick={() => { fetchTickets(); if (currentView === 'sites') fetchSitesData(); }} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-toolbar)', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--text-muted3)' }} title="Actualiser"><IconRefresh style={{ width: 14, height: 14 }} /></button>
             <span style={{ fontSize: 10, color: 'var(--text-muted2)', fontWeight: 500, padding: '4px 10px', background: 'var(--bg-toolbar)', borderRadius: 4 }}>{now()}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8, paddingLeft: 12, borderLeft: '1px solid var(--border-color)' }}>
               <button style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FEE2E2', border: 'none', cursor: 'pointer', color: '#E8401A' }} title="Profil" onClick={() => navigate('/profile')}><IconUser style={{ width: 15, height: 15 }} /></button>
@@ -557,9 +561,6 @@ export default function EngineerDashboard() {
                   <h2 style={{ ...styles.tableTitle, color: '#181c24' }}>Liste des sites reseau</h2>
                 </div>
                 <div style={styles.toolbarActions}>
-                  <button onClick={fetchSitesData} style={styles.btnFilter}>
-                    <IconRefresh style={{ marginRight: '6px' }} /> Actualiser
-                  </button>
                   <button onClick={() => setShowSiteFilters(!showSiteFilters)} style={styles.btnFilter}>
                     <IconFilter style={{ marginRight: '6px' }} /> Filtrer
                   </button>
@@ -702,9 +703,6 @@ export default function EngineerDashboard() {
               </div>
 
               <div style={styles.toolbarActions}>
-                <button onClick={fetchTickets} style={{ ...styles.btnFilter, backgroundColor: COLORS.cardBg, color: '#3a404a', border: `1px solid ${COLORS.border}` }}>
-                  <IconRefresh style={{ marginRight: '6px' }} /> Actualiser
-                </button>
                 <button onClick={() => setShowFilters(!showFilters)} style={{ ...styles.btnFilter, backgroundColor: COLORS.cardBg, color: '#3a404a', border: `1px solid ${COLORS.border}` }}>
                   <IconFilter style={{ marginRight: '6px' }} /> Filtrer
                 </button>

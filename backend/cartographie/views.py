@@ -4,7 +4,6 @@
 # Returns site locations with coordinates for rendering markers
 # on the interactive map.
 # ─────────────────────────────────────────────────────────────
-from django.shortcuts import render
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -20,25 +19,25 @@ def carte_sites(request):
     Filters out sites without coordinates to avoid map errors.
     """
     sites_valides = SiteReseau.objects.exclude(
-        latitude=None
+        coordY=None
     ).exclude(
-        longitude=None
+        coordX=None
     ).exclude(
-        latitude=""
+        coordY=""
     ).exclude(
-        longitude=""
+        coordX=""
     )
 
     # Extract only the fields needed for map rendering (lightweight query)
     data = list(sites_valides.values(
         'id',
-        'code_site',
-        'nom_site',
+        'codeSite',
+        'nom',
         'wilaya',
         'statut',
         'technologie',
-        'latitude',
-        'longitude'
+        'coordX',
+        'coordY'
     ))
 
     return Response(data)

@@ -84,14 +84,6 @@ class CustomUser(AbstractUser):
             self.username = self.code_user
         super().save(*args, **kwargs)
 
-    def sAuthentifier(self) -> bool:
-        """Checks if the account is active and can log in."""
-        return self.is_active
-
-    def deconnecter(self) -> None:
-        """Placeholder for logout logic (handled at view level with JWT)."""
-        pass
-
     def modifierMotDePasse(self, ancien: str, nouveau: str) -> bool:
         """
         Changes password after verifying the old one.

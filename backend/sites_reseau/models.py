@@ -75,16 +75,6 @@ class SiteReseau(models.Model):
             self.codeSite = f'S{str(max_num + 1).zfill(6)}'
         super().save(*args, **kwargs)
 
-    def ajouterSite(self):
-        """Persists a new site to the database."""
-        self.save()
-
-    def modifierSite(self, data):
-        """Updates site attributes from a dict and saves."""
-        for key, value in data.items():
-            setattr(self, key, value)
-        self.save()
-
     def archiverSite(self):
         """
         Soft-deletes the site by setting archive=True.

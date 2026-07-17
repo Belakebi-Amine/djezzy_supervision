@@ -6,7 +6,7 @@
 // dashboard-related API calls: stats, reporting, sites, tickets,
 // comments, and AI report generation.
 // ─────────────────────────────────────────────────────────────
-const API_URL = "http://127.0.0.1:8000/api";
+const API_URL = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000/api";
 
 // Decode JWT payload to check expiration
 const decodePayload = (token) => {

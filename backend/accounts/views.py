@@ -4,13 +4,15 @@
 # password changes, and admin CRUD operations on users.
 # ─────────────────────────────────────────────────────────────
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from django.contrib.auth import logout
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import CustomUser, Role
+from .permissions import IsAdmin
 from .serializers import (
     UserSerializer,
     RegisterSerializer,
@@ -36,7 +38,14 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
-    """Server-side logout. Client should also clear tokens from localStorage."""
+    """Blacklists the refresh token so it can no longer be used."""
+    try:
+        refresh_token = request.data.get('refresh')
+        if refresh_token:
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+    except Exception:
+        pass
     logout(request)
     return Response({'message': 'Déconnexion réussie'})
 
@@ -92,23 +101,17 @@ def update_profile_view(request):
 # ── Admin: User Management ─────────────────────────────────
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsAdmin])
 def list_users_view(request):
     """Returns all users. Admin-only endpoint for user management panel."""
-    if request.user.role != Role.ADMIN:
-        return Response({'error': "Accès réservé à l'administrateur"}, status=status.HTTP_403_FORBIDDEN)
-
     users = CustomUser.objects.all().order_by('id')
     return Response(UserSerializer(users, many=True).data)
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsAdmin])
 def register_view(request):
     """Creates a new user account. Admin-only."""
-    if request.user.role != Role.ADMIN:
-        return Response({'error': "Accès réservé à l'administrateur"}, status=status.HTTP_403_FORBIDDEN)
-
     serializer = RegisterSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
@@ -122,7 +125,7 @@ def register_view(request):
 # ── Dropdown Lists (for ticket assignment, filtering) ──────
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def liste_agents_cc(request):
     """Returns all active Call Center agents. Used in ticket creation forms."""
     agents = CustomUser.objects.filter(role=Role.AGENT_CALL_CENTER).order_by('id')
@@ -130,7 +133,7 @@ def liste_agents_cc(request):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def liste_ingenieurs(request):
     """Returns all network engineers. Used for ticket assignment dropdowns."""
     ingenieurs = CustomUser.objects.filter(role=Role.INGENIEUR_RESEAUX).order_by('id')
@@ -140,15 +143,12 @@ def liste_ingenieurs(request):
 # ── Admin: Archive / Restore / Delete Users ────────────────
 
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsAdmin])
 def archive_user_view(request, code_user):
     """
     Archives a user by setting is_archived=True.
     The user disappears from the UI and goes to the archives tab.
     """
-    if request.user.role != Role.ADMIN:
-        return Response({'error': "Accès réservé à l'administrateur"}, status=status.HTTP_403_FORBIDDEN)
-
     try:
         user = CustomUser.objects.get(code_user=code_user)
         user.is_archived = True
@@ -159,15 +159,12 @@ def archive_user_view(request, code_user):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsAdmin])
 def toggle_active_view(request, code_user):
     """
     Toggles a user's is_active status.
     Inactive users stay visible in the list but can't log in.
     """
-    if request.user.role != Role.ADMIN:
-        return Response({'error': "Accès réservé à l'administrateur"}, status=status.HTTP_403_FORBIDDEN)
-
     try:
         user = CustomUser.objects.get(code_user=code_user)
         user.is_active = not user.is_active
@@ -183,14 +180,11 @@ def toggle_active_view(request, code_user):
 
 
 @api_view(['PUT', 'PATCH'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsAdmin])
 def update_user_view(request, code_user):
     """
     Admin endpoint to modify another user's info (name, email, role).
     """
-    if request.user.role != Role.ADMIN:
-        return Response({'error': "Accès réservé à l'administrateur"}, status=status.HTTP_403_FORBIDDEN)
-
     try:
         user = CustomUser.objects.get(code_user=code_user)
     except CustomUser.DoesNotExist:
@@ -207,12 +201,9 @@ def update_user_view(request, code_user):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsAdmin])
 def restore_user_view(request, code_user):
     """Restores an archived user by setting is_archived=False."""
-    if request.user.role != Role.ADMIN:
-        return Response({'error': "Accès réservé à l'administrateur"}, status=status.HTTP_403_FORBIDDEN)
-
     try:
         user = CustomUser.objects.get(code_user=code_user)
         user.is_archived = False
@@ -226,15 +217,12 @@ def restore_user_view(request, code_user):
 
 
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsAdmin])
 def delete_user_view(request, code_user):
     """
     Permanently deletes a user from the database.
     Prevents self-deletion for safety.
     """
-    if request.user.role != Role.ADMIN:
-        return Response({'error': "Accès réservé à l'administrateur"}, status=status.HTTP_403_FORBIDDEN)
-
     try:
         user = CustomUser.objects.get(code_user=code_user)
         if user == request.user:

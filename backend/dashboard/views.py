@@ -5,11 +5,10 @@
 # and network sites to power all the charts and stats on the
 # admin, call center, and supervisor dashboards.
 # ─────────────────────────────────────────────────────────────
-from django.shortcuts import render
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django.db.models import Count, Q, Avg, F, Value, CharField
+from django.db.models import Count, Q, Avg, F
 from django.db.models.functions import TruncDay, ExtractWeekDay
 from django.utils import timezone
 from datetime import timedelta
@@ -21,7 +20,7 @@ from accounts.models import CustomUser, Role
 from .models import RapportIA
 
 # French day names for the weekly ticket distribution chart
-JOURS_SEMAINE = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
+JOURS_SEMAINE = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']
 
 
 def _format_duree(duree):
@@ -44,6 +43,7 @@ def _format_duree(duree):
 # - Employee performance (engineer and agent stats)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def statistiques(request):
     # Parse the day range parameter (default: last 30 days)
     jours_param = request.query_params.get('jours', '30')
@@ -233,6 +233,7 @@ def statistiques(request):
 # and resolution delays. Used by the supervisor reporting view.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def stats_reporting(request):
     jours_param = request.query_params.get('jours', '30')
     try:
@@ -392,6 +393,7 @@ def stats_reporting(request):
 # coordinates and open ticket count for each site marker.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def liste_sites_carto(request):
     """
     Returns all sites with their coordinates and the count of

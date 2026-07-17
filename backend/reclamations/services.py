@@ -1,19 +1,20 @@
 # reclamations/services.py
 # ─────────────────────────────────────────────────────────────
 # AI service for automatic incident description generation.
-# Uses Ollama (llama3.1:8b) to transform quick agent notes
+# Uses Mistral API (cloud) to transform quick agent notes
 # (keywords taken during a phone call) into a structured
 # incident report for the network engineering team.
 #
-# Falls back to local rule-based generation when Ollama
-# is unavailable (service stopped, model not loaded).
+# Falls back to local rule-based generation when Mistral
+# is unavailable (API error, network issue).
 # ─────────────────────────────────────────────────────────────
 import logging
 from decouple import config
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_MODEL = config('OLLAMA_MODEL', default='qwen2.5:3b')
+MISTRAL_API_KEY = config('MISTRAL_API_KEY', default='')
+MISTRAL_MODEL = config('MISTRAL_MODEL', default='mistral-small-latest')
 
 # ── Keyword → category mapping ──────────────────────────────
 _CATEGORY_KEYWORDS = {
@@ -199,13 +200,19 @@ def _generer_description_locale(nom_client: str, telephone_client: str, mots_cle
 def generer_description_incident_ia(nom_client, telephone_client, mots_cles):
     """
     Transforms quick call center notes into a structured incident report.
-    Uses Ollama (llama3.1:8b) locally. Falls back to rule-based templates
-    if Ollama is unavailable.
+    Uses Mistral API (cloud) to generate professional descriptions.
+    Falls back to rule-based templates if Mistral is unavailable.
     """
-    try:
-        import ollama as ollama_lib
+    if MISTRAL_API_KEY:
+        try:
+            from openai import OpenAI
 
-        prompt = f"""Tu es un assistant IA spécialisé dans la gestion du réseau mobile et internet pour l'opérateur Djezzy en Algérie.
+            client = OpenAI(
+                api_key=MISTRAL_API_KEY,
+                base_url='https://api.mistral.ai/v1',
+            )
+
+            prompt = f"""Tu es un assistant IA spécialisé dans la gestion du réseau mobile et internet pour l'opérateur Djezzy en Algérie.
 Transforme les notes rapides d'un agent du Call Center en un rapport d'incident clair, professionnel et structuré.
 
 Informations :
@@ -219,14 +226,15 @@ Consignes :
 - N'invente pas d'informations techniques qui ne sont pas suggérées dans les mots-clés.
 - Sois concis (200-300 mots max)."""
 
-        response = ollama_lib.chat(
-            model=OLLAMA_MODEL,
-            messages=[{'role': 'user', 'content': prompt}],
-            options={'temperature': 0.3, 'num_predict': 512},
-        )
-        return response['message']['content'].strip()
+            response = client.chat.completions.create(
+                model=MISTRAL_MODEL,
+                messages=[{'role': 'user', 'content': prompt}],
+                temperature=0.3,
+                max_tokens=512,
+            )
+            return response.choices[0].message.content.strip()
 
-    except Exception as e:
-        logger.warning("Ollama indisponible pour description, fallback local: %s", e)
+        except Exception as e:
+            logger.warning("Mistral indisponible pour description, fallback local: %s", e)
 
     return _generer_description_locale(nom_client, telephone_client, mots_cles)

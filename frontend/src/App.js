@@ -8,6 +8,7 @@ import EngineerDashboard from './pages/EngineerDashboard';
 import SupervisorDashboard from './pages/SupervisorDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import Profile from './pages/Profile';
+import PrivateRoute from './components/PrivateRoute';
 
 const ROLE_ICONS = {
   ADMIN: '/Icon/Admin-M.png',
@@ -53,11 +54,11 @@ function AppContent() {
       <Routes>
         <Route path="/" element={<Navigate to="/login" />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/call-center-dashboard" element={<CallCenter />} />
-        <Route path="/admin-dashboard" element={<AdminDashboard />} />
-        <Route path="/engineer-dashboard" element={<EngineerDashboard />} />
-        <Route path="/supervisor-dashboard" element={<SupervisorDashboard />} />
-        <Route path="/profile" element={<Profile />} />
+        <Route path="/call-center-dashboard" element={<PrivateRoute><CallCenter /></PrivateRoute>} />
+        <Route path="/admin-dashboard" element={<PrivateRoute requiredRole="ADMIN"><AdminDashboard /></PrivateRoute>} />
+        <Route path="/engineer-dashboard" element={<PrivateRoute><EngineerDashboard /></PrivateRoute>} />
+        <Route path="/supervisor-dashboard" element={<PrivateRoute><SupervisorDashboard /></PrivateRoute>} />
+        <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
       </Routes>
     </div>
   );

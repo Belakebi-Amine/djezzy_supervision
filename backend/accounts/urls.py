@@ -23,8 +23,7 @@ from .views import (
 )
 
 urlpatterns = [
-    # ── Authentication ──
-    path('token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    # ── Auth ──
     path('logout/', logout_view, name='logout'),
 
     # ── Profile ──
