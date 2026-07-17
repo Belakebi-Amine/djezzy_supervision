@@ -3,7 +3,7 @@ Auto-archive management command.
 
 Rules:
 - Réclamations: archived 1 month after resolution (resolu_le)
-- Rapports IA: archived 6 months after creation (created_at)
+- Rapports IA: archived 3 months after creation (created_at)
 
 Usage:
     python manage.py auto_archive

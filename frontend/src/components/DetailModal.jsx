@@ -5,6 +5,7 @@ import {
   ResponsiveContainer, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend,
 } from 'recharts';
+import { useNotification } from '../context/NotificationContext';
 import { getReclamationsList, updateSite } from '../api/dashboard';
 
 const S = {
@@ -135,13 +136,14 @@ function SiteRow({ site, onUpdated }) {
   const [editing, setEditing] = useState(false);
   const [statut, setStatut] = useState(site.statut || site.statut_site || '');
   const [saving, setSaving] = useState(false);
+  const { addNotification } = useNotification();
 
   useEffect(() => { setStatut(site.statut || site.statut_site || ''); }, [site.statut, site.statut_site]);
 
   const handleSave = async () => {
     setSaving(true);
     try { const u = await updateSite(site.id, { statut }); onUpdated(u); setEditing(false); }
-    catch (e) { alert('Erreur: ' + e.message); } finally { setSaving(false); }
+    catch (e) { addNotification('Erreur: ' + e.message, 'error'); } finally { setSaving(false); }
   };
 
   return (
@@ -184,6 +186,7 @@ function parseEvoDate(jourStr) {
 }
 
 export default function DetailModal({ type, data, onClose, stats, reporting }) {
+  const { addNotification } = useNotification();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [title, setTitle] = useState('');
@@ -292,7 +295,7 @@ export default function DetailModal({ type, data, onClose, stats, reporting }) {
         default: break;
       }
       setItems(Array.isArray(result) ? result : [result].filter(Boolean));
-    } catch (e) { console.error(e); setItems([]); }
+    } catch (e) { addNotification('Erreur lors du chargement des données.', 'error'); setItems([]); }
     finally { setLoading(false); }
   }, [type, data, filterPrio]);
 

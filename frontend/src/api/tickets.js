@@ -118,7 +118,6 @@ export const updateTicket = async (id, ticketData) => {
     });
     checkAuthAndRedirect(response.status);
     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
         throw new Error('Erreur lors de la mise à jour du ticket');
     }
     return response.json();
@@ -352,6 +351,85 @@ export const getArchivedTickets = async () => {
         headers: await getHeaders(),
     });
     if (!response.ok) throw new Error(`Erreur serveur [${response.status}]`);
+    return await response.json();
+};
+
+// ── GroupeTicket Operations ──
+
+/**
+ * Fetches grouped tickets with optional filtering.
+ */
+export const getGroupeTickets = async (filters = {}) => {
+    const params = new URLSearchParams();
+    if (filters.statut) params.append('statut', filters.statut);
+    if (filters.site_id) params.append('site_id', filters.site_id);
+    if (filters.search) params.append('search', filters.search);
+    if (filters.archived) params.append('archived', filters.archived);
+
+    const qs = params.toString();
+    const url = `${API_URL}/reclamations/groupes/${qs ? '?' + qs : ''}`;
+
+    const response = await fetch(url, { method: 'GET', headers: await getHeaders() });
+    if (!response.ok) throw new Error(`Erreur serveur [${response.status}]`);
+    return await response.json();
+};
+
+/**
+ * Fetches stats for grouped tickets.
+ */
+export const getGroupeTicketStats = async () => {
+    const response = await fetch(`${API_URL}/reclamations/groupes/stats/`, {
+        method: 'GET', headers: await getHeaders()
+    });
+    if (!response.ok) throw new Error(`Erreur serveur [${response.status}]`);
+    return await response.json();
+};
+
+/**
+ * Fetches a single grouped ticket detail with all its reclamations.
+ */
+export const getGroupeTicketDetail = async (id) => {
+    const response = await fetch(`${API_URL}/reclamations/groupes/${id}/`, {
+        method: 'GET', headers: await getHeaders()
+    });
+    if (!response.ok) throw new Error(`Erreur serveur [${response.status}]`);
+    return await response.json();
+};
+
+/**
+ * Updates a grouped ticket (status, assignment, priority, etc.)
+ */
+export const updateGroupeTicket = async (id, data) => {
+    const response = await fetch(`${API_URL}/reclamations/groupes/${id}/modifier/`, {
+        method: 'PUT', headers: await getHeaders(),
+        body: JSON.stringify(data)
+    });
+    checkAuthAndRedirect(response.status);
+    if (!response.ok) throw new Error('Erreur lors de la mise à jour du ticket groupé');
+    return await response.json();
+};
+
+/**
+ * Resolves a grouped ticket and all its child reclamations.
+ */
+export const resoudreGroupeTicket = async (id) => {
+    const response = await fetch(`${API_URL}/reclamations/groupes/${id}/resoudre/`, {
+        method: 'POST', headers: await getHeaders()
+    });
+    checkAuthAndRedirect(response.status);
+    if (!response.ok) throw new Error('Erreur lors de la résolution du ticket groupé');
+    return await response.json();
+};
+
+/**
+ * Assigns the current user to a grouped ticket and all its reclamations.
+ */
+export const assignerGroupeTicket = async (id) => {
+    const response = await fetch(`${API_URL}/reclamations/groupes/${id}/assigner/`, {
+        method: 'POST', headers: await getHeaders()
+    });
+    checkAuthAndRedirect(response.status);
+    if (!response.ok) throw new Error("Erreur lors de l'assignation du ticket groupé");
     return await response.json();
 };
 

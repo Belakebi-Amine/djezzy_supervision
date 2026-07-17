@@ -21,9 +21,10 @@ import { LineChart, Line, BarChart, Bar, Cell, ResponsiveContainer, XAxis, YAxis
 import DOMPurify from 'dompurify';
 import html2pdf from 'html2pdf.js';
 import { useCountUp, useRipple, spawnParticles } from '../hooks/useAnimations';
+import { useNotification } from '../context/NotificationContext';
 import {
   getDashboardStats, getDashboardReporting,
-  getRapportsIA, deleteRapportIA, getArchivedRapports, restoreRapportIA,
+  getRapportsIA, getArchivedRapports, restoreRapportIA,
 } from '../api/dashboard';
 import { getSites, getUsers, createUser, getTickets, createTicket, updateTicket, createSite, updateSiteStatus, archiverSite, archiveUser, toggleActiveUser, updateUser, restoreUser, getTokenRole, getArchivedTickets, archiverReclamation, desarchiverReclamation, getArchivedSites, restoreSite, getKeywords } from '../api/tickets';
 import MapComponent from '../components/Map';
@@ -199,6 +200,7 @@ function AnimatedKpi({ label, value, sub, color, accent }) {
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
+  const { addNotification } = useNotification();
 
   // ─── Role-based access guard: only admins can access this page ───
   const [authChecked, setAuthChecked] = useState(false);
@@ -250,14 +252,6 @@ export default function AdminDashboard() {
   const [hoveredUser, setHoveredUser] = useState(null); // user tooltip in ticket detail
   const [submitting, setSubmitting] = useState(false);
 
-  // ─── Toast notification system ───
-  // Notifications auto-dismiss after 3.5 seconds
-  const [notifications, setNotifications] = useState([]);
-  const addNotification = useCallback((message, type = 'success') => {
-    const id = Date.now();
-    setNotifications((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => setNotifications((prev) => prev.filter((n) => n.id !== id)), 3500);
-  }, []);
   // Rapport IA state
   const [allRapports, setAllRapports] = useState([]);
   const [selectedRapport, setSelectedRapport] = useState(null);
@@ -277,13 +271,7 @@ export default function AdminDashboard() {
   const [perfUser, setPerfUser] = useState(null);
 
   // ─── Filter visibility and filter values ───
-  const [showFilters, setShowFilters] = useState(false);
   const [showSiteFilters, setShowSiteFilters] = useState(false);
-  const [filterStatut, setFilterStatut] = useState('');
-  const [filterPriorite, setFilterPriorite] = useState('');
-  const [filterType, setFilterType] = useState('');
-  const [filterDate, setFilterDate] = useState('');
-  const [filterSiteId, setFilterSiteId] = useState('');
   const [siteFilterWilaya, setSiteFilterWilaya] = useState('');
   const [siteFilterCommune, setSiteFilterCommune] = useState('');
   const [siteFilterStatut, setSiteFilterStatut] = useState('');
@@ -336,15 +324,9 @@ export default function AdminDashboard() {
   useEffect(() => {
     const interval = setInterval(() => {
       fetchStats(); fetchSites(); fetchTickets();
-      if (currentView === 'reports') fetchRapports();
     }, 5000);
     return () => clearInterval(interval);
-  }, [fetchStats, fetchSites, fetchTickets, fetchRapports, currentView]);
-
-  // Load supervisor reports only when the reports view is active
-  useEffect(() => {
-    if (currentView === 'reports') fetchRapports();
-  }, [currentView, fetchRapports]);
+  }, [fetchStats, fetchSites, fetchTickets]);
 
   // Load archived data when archive view is active
   const fetchArchivedData = useCallback(async () => {
@@ -367,17 +349,6 @@ export default function AdminDashboard() {
     const r = allRapports.find((x) => x.id === id);
     if (r) setSelectedRapport(selectedRapport?.id === id ? null : r);
   }, [allRapports, selectedRapport]);
-
-  // Archive an IA report (admin only)
-  const handleDeleteRapport = useCallback(async (id) => {
-    if (!window.confirm('Archiver ce rapport ?')) return;
-    try {
-      await deleteRapportIA(id);
-      setAllRapports((prev) => prev.filter((r) => r.id !== id));
-      if (selectedRapport?.id === id) setSelectedRapport(null);
-      addNotification('Rapport archivé', 'success');
-    } catch (err) { addNotification(err.message, 'error'); }
-  }, [selectedRapport, addNotification]);
 
   // Download a report as PDF from the list
   const handleDownloadPDFAdmin = useCallback(async (report) => {
@@ -421,8 +392,7 @@ export default function AdminDashboard() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('PDF error:', err);
-      alert('Erreur lors de la génération du PDF.');
+      addNotification('Erreur lors de la génération du PDF.', 'error');
     }
   }, []);
 
@@ -448,22 +418,6 @@ export default function AdminDashboard() {
     const matchSearch = (u.nom_user || '').toLowerCase().includes(t) || (u.email || '').toLowerCase().includes(t) || (u.code_user || '').toLowerCase().includes(t);
     const matchRole = !userRoleFilter || u.role_user === userRoleFilter;
     return matchSearch && matchRole;
-  });
-
-  // ─── Filtered tickets: multi-criteria filtering (search, status, priority, type, date, site) ───
-  const filteredTickets = tickets.filter((t) => {
-    const term = searchTerm.toLowerCase();
-    if (term && !t.nom_client?.toLowerCase().includes(term) && !t.numero_ticket?.toLowerCase().includes(term) &&
-        !t.description?.toLowerCase().includes(term)) return false;
-    if (filterStatut && t.statut !== filterStatut) return false;
-    if (filterPriorite) { if ((t.priorite || '').toUpperCase() !== filterPriorite.toUpperCase()) return false; }
-    if (filterType) { if ((t.type_client || '').toUpperCase() !== filterType.toUpperCase()) return false; }
-    if (filterDate) { const d = new Date(t.created_at); if (d.toISOString().slice(0, 10) !== filterDate) return false; }
-    if (filterSiteId) {
-      const sid = t.site?.id || t.site;
-      if (String(sid) !== String(filterSiteId)) return false;
-    }
-    return true;
   });
 
   // ─── Filtered sites: search by wilaya/commune + status filter, sorted by code number ───
@@ -714,12 +668,12 @@ export default function AdminDashboard() {
   }, [fetchSites, addNotification]);
 
   // ─── Edit user form state ───
-  const [editForm, setEditForm] = useState({ first_name: '', last_name: '', email: '', role: '' });
+  const [editForm, setEditForm] = useState({ first_name: '', last_name: '', email: '', role: '', password: '' });
 
   // Populate edit form with existing user data and open modal
   const openEditUser = (u) => {
     setEditingUser(u);
-    setEditForm({ first_name: u.first_name || '', last_name: u.last_name || '', email: u.email || '', role: u.role_user || 'AGENT_CALL_CENTER' });
+    setEditForm({ first_name: u.first_name || '', last_name: u.last_name || '', email: u.email || '', role: u.role_user || 'AGENT_CALL_CENTER', password: '' });
     setShowEditUserForm(true);
   };
 
@@ -729,7 +683,9 @@ export default function AdminDashboard() {
     if (!editingUser) return;
     setSubmitting(true);
     try {
-      await updateUser(editingUser.code_user, editForm);
+      const payload = { ...editForm };
+      if (!payload.password) delete payload.password;
+      await updateUser(editingUser.code_user, payload);
       setUsers((prev) => prev.map((u) => u.code_user === editingUser.code_user ? { ...u, ...editForm, role_user: editForm.role } : u));
       setShowEditUserForm(false);
       setEditingUser(null);
@@ -762,7 +718,6 @@ export default function AdminDashboard() {
         <span style={styles.sectionLabel}>PRINCIPAL</span>
         {[
           { key: 'dashboard', label: 'Dashboard', icon: IconDashboard },
-          { key: 'tickets', label: 'Réclamations', icon: IconTicket },
           { key: 'sites', label: 'Sites Réseau', icon: IconSite },
           { key: 'users', label: 'Utilisateurs', icon: IconUsers },
         ].map(({ key, label, icon: Icon }) => (
@@ -771,9 +726,8 @@ export default function AdminDashboard() {
             <Icon /> {label}
           </button>
         ))}
-      <span style={{ ...styles.sectionLabel, marginTop: 16 }}>ANALYTICS</span>
+      <span style={{ ...styles.sectionLabel, marginTop: 16 }}>ARCHIVES</span>
       {[
-        { key: 'reports', label: 'Rapports (SV)', icon: IconReport },
         { key: 'archives', label: 'Archives', icon: IconArchive },
       ].map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView(key); }}
@@ -932,131 +886,6 @@ export default function AdminDashboard() {
     </>
   );
 
-  // ─── TICKETS VIEW ───
-  // Displays the ticket management table with toolbar, filters, and status actions
-  const ticketsView = () => (
-    <div style={styles.tableCard}>
-      <div style={{ ...styles.toolbar, borderBottom: `1px solid ${COLORS.border}` }}>
-        <div style={styles.toolbarLeft}><h2 style={styles.tableTitle}><IconTicket /> Réclamations</h2></div>
-        <div style={styles.toolbarActions}>
-          <button onClick={() => setShowFilters(!showFilters)} style={styles.btnFilter}><IconFilter /> Filtrer</button>
-          <div style={styles.searchWrapper}>
-            <IconSearch style={styles.searchIcon} />
-            <input type="text" placeholder="Rechercher..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={styles.searchInput} />
-          </div>
-        </div>
-      </div>
-      {/* Collapsible filter bar with date, status, site, priority, and type filters */}
-      {showFilters && (
-        <div style={styles.filterArea}>
-          <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} style={styles.filterSelect} />
-          <select value={filterStatut} onChange={(e) => setFilterStatut(e.target.value)} style={styles.filterSelect}>
-            <option value="">Tous statuts</option>
-            {ALL_STATUSES.map((s) => <option key={s} value={s}>{s.toUpperCase()}</option>)}
-          </select>
-          <select value={filterSiteId} onChange={(e) => setFilterSiteId(e.target.value)} style={styles.filterSelect}>
-            <option value="">Tous les sites</option>
-            {sites.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
-          </select>
-          <select value={filterPriorite} onChange={(e) => setFilterPriorite(e.target.value)} style={styles.filterSelect}>
-            <option value="">Toutes priorités</option>
-            {['critique', 'haute', 'normale', 'basse'].map((p) => <option key={p} value={p.toUpperCase()}>{p}</option>)}
-          </select>
-          <select value={filterType} onChange={(e) => setFilterType(e.target.value)} style={styles.filterSelect}>
-            <option value="">Tous types</option>
-            <option value="PARTICULIER">Particulier</option>
-            <option value="ENTREPRISE">Entreprise</option>
-          </select>
-        </div>
-      )}
-      <div style={{ overflowX: 'auto' }}>
-        <table style={styles.table}>
-          <thead>
-              <tr style={styles.thRow}>
-                <th style={styles.th}>N° Ticket</th>
-                <th style={styles.th}>Type Client</th>
-                <th style={styles.th}>Code Site</th>
-                <th style={styles.th}>Priorité</th>
-                <th style={styles.th}>Statut</th>
-                <th style={styles.th}>Date Création</th>
-                <th style={{ ...styles.th, textAlign: 'center' }}>ACTIONS</th>
-              </tr>
-          </thead>
-          <tbody>
-            {filteredTickets.length === 0 ? (
-              <tr><td colSpan="7" style={styles.emptyCell}>Aucune réclamation trouvée.</td></tr>
-            ) : filteredTickets.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((ticket) => {
-              const prio = COLORS.priorities[ticket.priorite?.toUpperCase()] || COLORS.priorities.NORMALE;
-              const typ = COLORS.types[ticket.type_client?.toUpperCase()] || COLORS.types.PARTICULIER;
-              const statutKey = getStatutKey(ticket.statut);
-              const stat = COLORS.status[statutKey] || COLORS.status.FERME;
-              // Get allowed next statuses based on current status
-              const forward = STATUS_FLOW[ticket.statut] || [];
-              return (
-                <tr key={ticket.id} style={styles.tr}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}>
-                  <td style={{ ...styles.td, borderLeft: `4px solid ${prio.side}`, fontWeight: 600, cursor: 'pointer' }}
-                    onClick={() => setSelectedTicket(ticket)}>
-                    {ticket.numero_ticket}
-                  </td>
-                  <td style={styles.td}>
-                    <span style={{ ...styles.badgeBase, backgroundColor: typ.bg, color: typ.text, border: `1px solid ${typ.border}` }}>
-                      {ticket.type_client?.toUpperCase()}
-                    </span>
-                  </td>
-                  <td style={styles.td}>{siteDisplay(ticket)}</td>
-                  <td style={styles.td}>
-                    <span style={{ ...styles.badgeBase, backgroundColor: prio.bg, color: prio.text }}>
-                      {ticket.priorite?.toUpperCase()}
-                    </span>
-                  </td>
-                  <td style={styles.td}>
-                    <span style={{ ...styles.badgeBase, backgroundColor: stat.bg, color: stat.text }}>
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: stat.dot, marginRight: 6, display: 'inline-block' }} />
-                      {statutKey}
-                    </span>
-                  </td>
-                  <td style={{ ...styles.td, color: COLORS.textMuted }}>{formatDateFr(ticket.created_at)}</td>
-                  <td style={{ ...styles.td, textAlign: 'center' }}>
-                    <div style={styles.statusActions}>
-                      {/* Render status transition buttons based on the STATUS_FLOW */}
-                      {ALL_STATUSES.map((s) => {
-                        const sk = getStatutKey(s);
-                        const sc = COLORS.status[sk] || COLORS.status.OUVERT;
-                        const isCurrent = ticket.statut === s;
-                        const canGo = forward.includes(s);
-                        return (
-                          <button key={s} disabled={!canGo || updatingId === ticket.id}
-                            onClick={(e) => { e.stopPropagation(); handleTicketStatus(ticket.id, s, ticket.statut); }}
-                            style={{
-                              ...styles.statusBtn,
-                              backgroundColor: isCurrent ? sc.bg : (canGo ? 'var(--bg-card)' : 'var(--bg-card)'),
-                              color: isCurrent ? '#FFFFFF' : (canGo ? sc.text : '#D0D0D0'),
-                              borderColor: isCurrent ? sc.bg : (canGo ? sc.text : '#E5E5E5'),
-                              cursor: canGo && updatingId !== ticket.id ? 'pointer' : 'not-allowed',
-                              fontWeight: isCurrent ? 700 : (canGo ? 600 : 500),
-                            }}>
-                            {s.charAt(0).toUpperCase() + s.slice(1, 2)}
-                          </button>
-                        );
-                      })}
-                      <button onClick={(e) => { e.stopPropagation(); handleArchiveTicket(ticket); }}
-                        style={{ ...styles.statusBtn, backgroundColor: '#FEE2E2', color: '#DC2626', borderColor: '#FECACA', cursor: 'pointer', marginLeft: 4 }}
-                        title="Archiver (fermer)">
-                        <IconArchive style={{ width: 10, height: 10 }} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-
   // ─── SITES VIEW ───
   // Displays network site management with summary cards, filters, and toggle/archive actions
   const sitesView = () => (
@@ -1081,6 +910,9 @@ export default function AdminDashboard() {
           <div style={styles.toolbarLeft}><h2 style={styles.tableTitle}><IconSite /> Sites réseau 5G</h2></div>
           <div style={styles.toolbarActions}>
             <button onClick={() => setShowSiteFilters(!showSiteFilters)} style={styles.btnFilter}><IconFilter /> Filtrer</button>
+            <button onClick={() => { setShowSiteForm(true); setSelectedSite(null); }} style={styles.btnNew}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '6px' }}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Nouveau Site
+            </button>
           </div>
         </div>
         {/* Site filters: wilaya, commune, and status */}
@@ -1265,88 +1097,10 @@ export default function AdminDashboard() {
     </div>
   );
 
-  // ─── REPORTS VIEW ───
-  // Lists all supervisor-submitted reports in a table with view/delete actions
-  const reportsView = () => (
-    <div style={styles.tableCard}>
-      <div style={{ padding: '16px 20px', borderBottom: `1px solid ${COLORS.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg,#E8401A22,#E8401A0A)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <IconReport style={{ width: 16, height: 16, color: '#E8401A' }} />
-          </span>
-          <div>
-            <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: COLORS.textDark }}>Rapports des Superviseurs</h2>
-            <span style={{ fontSize: 10, color: 'var(--text-muted2)' }}>{allRapports.length} rapport{allRapports.length !== 1 ? 's' : ''}</span>
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <input type="text" placeholder="Rechercher..." value={rapportSearch} onChange={(e) => setRapportSearch(e.target.value)}
-              style={{ padding: '6px 12px 6px 30px', fontSize: 11, borderRadius: 6, border: `1px solid ${COLORS.border}`, fontFamily: 'inherit', outline: 'none', color: 'var(--text-primary)', background: 'var(--bg-input)', width: 200 }} />
-            <svg style={{ position: 'absolute', left: 9, pointerEvents: 'none', color: 'var(--text-muted2)' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            {rapportSearch && (
-              <button onClick={() => setRapportSearch('')}
-                style={{ position: 'absolute', right: 6, background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted2)', display: 'flex' }}>
-                <IconX style={{ width: 10, height: 10 }} />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-      {loadingRapports ? (
-        <div style={{ padding: 50, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>Chargement...</div>
-      ) : allRapports.length === 0 ? (
-        <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>
-          <IconReport style={{ width: 32, height: 32, color: 'var(--text-muted2)', opacity: 0.3, margin: '0 auto 12px' }} />
-          <div style={{ fontWeight: 600 }}>Aucun rapport disponible</div>
-        </div>
-      ) : filteredRapports.length === 0 ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>Aucun résultat pour "{rapportSearch}"</div>
-      ) : (
-        <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {filteredRapports.map((r) => (
-            <div key={r.id} onClick={() => handleViewRapport(r.id)}
-              style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', borderRadius: 8, border: `1px solid ${COLORS.border}`, background: 'var(--bg-card)', cursor: 'pointer', transition: 'all 0.15s' }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#E8401A44'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(232,64,26,0.06)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = COLORS.border; e.currentTarget.style.boxShadow = 'none'; }}>
-              <div style={{ width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg,#E8401A22,#E8401A0A)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <IconReport style={{ width: 16, height: 16, color: '#E8401A' }} />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.titre}</div>
-                <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>
-                  {r.cree_par?.nom_user || '—'}
-                  {r.date_debut && r.date_fin ? ` · ${new Date(r.date_debut).toLocaleDateString('fr')} → ${new Date(r.date_fin).toLocaleDateString('fr')}` : ''}
-                </div>
-              </div>
-              <div style={{ textAlign: 'right', flexShrink: 0, minWidth: 80 }}>
-                <div style={{ fontSize: 10, color: 'var(--text-muted3)', fontWeight: 500 }}>
-                  {new Date(r.created_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' })}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                <button onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); e.preventDefault(); handleDownloadPDFAdmin(r); }}
-                  style={{ background: '#05966918', border: '1px solid #05966933', borderRadius: 4, cursor: 'pointer', padding: '4px 8px', color: '#059669', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }} title="Télécharger PDF">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                </button>
-                <button onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); e.preventDefault(); handleDeleteRapport(r.id); }}
-                  style={{ background: '#DC262618', border: '1px solid #DC262633', borderRadius: 4, cursor: 'pointer', padding: '4px 8px', color: '#DC2626', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }} title="Supprimer">
-                  <IconTrash style={{ width: 12, height: 12 }} />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-
   // ─── ARCHIVES VIEW ───
-  // Tabbed view for archived tickets, reports, users, and sites
+  // Tabbed view for archived users and sites
   const archivesView = () => {
     const tabs = [
-      { key: 'tickets', label: 'Réclamations', icon: <IconTicket style={{ width: 13, height: 13 }} />, count: archivedTickets.length },
-      { key: 'rapports', label: 'Rapports IA', icon: <IconReport style={{ width: 13, height: 13 }} />, count: archivedRapports.length },
       { key: 'users', label: 'Utilisateurs', icon: <IconUsers style={{ width: 13, height: 13 }} />, count: users.filter(u => u.is_archived).length },
       { key: 'sites', label: 'Sites', icon: <IconSite style={{ width: 13, height: 13 }} />, count: archivedSites.length },
     ];
@@ -1379,60 +1133,6 @@ export default function AdminDashboard() {
       ) : (
       <div style={styles.tableCard}>
         <div style={{ overflowX: 'auto' }}>
-          {archiveTab === 'tickets' && (
-            <table style={styles.table}>
-              <thead><tr style={styles.thRow}>
-                <th style={styles.th}>N° Ticket</th><th style={styles.th}>Client</th><th style={styles.th}>Site</th><th style={styles.th}>Priorité</th><th style={styles.th}>Archivé le</th><th style={{ ...styles.th, textAlign: 'center' }}>Action</th>
-              </tr></thead>
-              <tbody>
-                {archivedTickets.length === 0 ? (
-                  <tr><td colSpan={6} style={styles.emptyCell}>Aucun ticket archivé</td></tr>
-                ) : archivedTickets.map((t) => (
-                  <tr key={t.id} style={styles.tr}
-                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}>
-                    <td style={{ ...styles.td, fontWeight: 600 }}>{t.numero_ticket}</td>
-                    <td style={styles.td}>{t.nom_complet_client || t.nom_client}</td>
-                    <td style={styles.td}>{t.site?.nom || '-'}</td>
-                    <td style={styles.td}>
-                      <span style={{ ...styles.badgeBase, backgroundColor: (COLORS.priorities[t.priorite?.toUpperCase()] || COLORS.priorities.NORMALE).bg, color: (COLORS.priorities[t.priorite?.toUpperCase()] || COLORS.priorites.NORMALE).text }}>
-                        {t.priorite?.toUpperCase()}
-                      </span>
-                    </td>
-                    <td style={{ ...styles.td, color: COLORS.textMuted }}>{t.archived_at ? new Date(t.archived_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</td>
-                    <td style={{ ...styles.td, textAlign: 'center' }}>
-                      <button onClick={async () => { await desarchiverReclamation(t.id); fetchArchivedData(); fetchTickets(); }}
-                        style={{ background: '#05966918', border: '1px solid #05966933', borderRadius: 4, cursor: 'pointer', padding: '4px 10px', color: '#059669', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>Restaurer</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          {archiveTab === 'rapports' && (
-            <table style={styles.table}>
-              <thead><tr style={styles.thRow}>
-                <th style={styles.th}>Titre</th><th style={styles.th}>Auteur</th><th style={styles.th}>Archivé le</th><th style={{ ...styles.th, textAlign: 'center' }}>Action</th>
-              </tr></thead>
-              <tbody>
-                {archivedRapports.length === 0 ? (
-                  <tr><td colSpan={4} style={styles.emptyCell}>Aucun rapport archivé</td></tr>
-                ) : archivedRapports.map((r) => (
-                  <tr key={r.id} style={styles.tr}
-                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}>
-                    <td style={{ ...styles.td, fontWeight: 600 }}>{r.titre}</td>
-                    <td style={styles.td}>{r.cree_par?.nom_user || '—'}</td>
-                    <td style={{ ...styles.td, color: COLORS.textMuted }}>{r.archived_at ? new Date(r.archived_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</td>
-                    <td style={{ ...styles.td, textAlign: 'center' }}>
-                      <button onClick={async () => { await restoreRapportIA(r.id); fetchArchivedData(); fetchRapports(); }}
-                        style={{ background: '#05966918', border: '1px solid #05966933', borderRadius: 4, cursor: 'pointer', padding: '4px 10px', color: '#059669', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>Restaurer</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
           {archiveTab === 'users' && (
             <table style={styles.table}>
               <thead><tr style={styles.thRow}>
@@ -1693,6 +1393,10 @@ export default function AdminDashboard() {
               <select value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })} style={styles.input}>
                 {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
+            </div>
+            <div style={{ ...styles.inputGroup, gridColumn: '1 / -1' }}>
+              <label style={styles.label}>Nouveau mot de passe (laisser vide pour garder l'actuel)</label>
+              <input type="password" value={editForm.password || ''} onChange={(e) => setEditForm({ ...editForm, password: e.target.value })} style={styles.input} placeholder="••••••••" />
             </div>
           </div>
           <div style={styles.formActions}>
@@ -2022,29 +1726,6 @@ export default function AdminDashboard() {
     );
   };
 
-  // ─── Toast notification component ───
-  // Fixed bottom-right stack of auto-dismissing notifications
-  const NotificationToast = () => (
-    <div style={{
-      position: 'fixed', bottom: 24, right: 24, zIndex: 99999,
-      display: 'flex', flexDirection: 'column', gap: 8,
-    }}>
-      {notifications.map((n) => (
-        <div key={n.id} className="fade-in" style={{
-          background: n.type === 'success' ? '#059669' : n.type === 'error' ? '#DC2626' : '#2563EB',
-          color: '#FFF', padding: '12px 20px', borderRadius: 8,
-          fontSize: 13, fontWeight: 600, boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-          display: 'flex', alignItems: 'center', gap: 8, minWidth: 280,
-        }}>
-          {n.type === 'success' ? <IconCheck style={{ width: 16, height: 16 }} /> :
-           n.type === 'error' ? <IconX style={{ width: 16, height: 16 }} /> :
-           <IconInfo style={{ width: 16, height: 16 }} />}
-          {n.message}
-        </div>
-      ))}
-    </div>
-  );
-
   // Map of view keys to their header titles
   const VIEW_TITLE = {
     dashboard: 'Dashboard', tickets: 'Réclamations',
@@ -2079,10 +1760,8 @@ export default function AdminDashboard() {
         <div style={styles.pageContent}>
           {/* Render the active view based on currentView state */}
           {currentView === 'dashboard' && dashboardView()}
-          {currentView === 'tickets' && ticketsView()}
           {currentView === 'sites' && sitesView()}
           {currentView === 'users' && usersView()}
-          {currentView === 'reports' && reportsView()}
           {currentView === 'performance' && performanceView()}
           {currentView === 'archives' && archivesView()}
         </div>
@@ -2095,7 +1774,6 @@ export default function AdminDashboard() {
       {selectedTicket && ticketDetailModal()}
       {selectedSite && siteDetailModal()}
       {selectedRapport && rapportReadModal()}
-      <NotificationToast />
     </div>
   );
 }

@@ -119,7 +119,7 @@ DESCRIPTIONS = [
     "Coupure frequente du service signalee par {nom} ({tel}). Les deconnexions surviennent principalement en soiree entre 18h et 22h, affectant a la fois les appels et la data. Le client reside dans la commune de {commune}, wilaya de {wilaya}. Le site {site_code} ({techno}) montre des signaux de surcharge. Priorite : {priorite}.",
     "Debit internet extremement lent depuis {jours} jours selon {nom} ({tel}). Le client ne peut plus naviguer correctement ni regarder des videos. La zone concernee est {commune}, {wilaya}. Les tests montrent un debit inferieur a 1 Mbps sur le site {site_code}. Le client est en forfait {type_forfait}.",
     "Panne totale du service. Le client {nom} ({tel}) n'a plus aucun signal depuis {jours} jours. Le telephone affiche 'Aucun reseau' et ne capte meme plus les ondes 2G. Le client est dans la commune de {commune}, wilaya de {wilaya}. Le site {site_code} ({techno}) est en panne complete.",
-    "Reseau indisponible dans le quartier de {commune}. Plusieurs clients sont受影响, dont {nom} ({tel}). Les appels echouent systematiquement avec le message 'Reseau non disponible'. Le probleme est lie a une panne du site {site_code} ({techno}). Date de debut : il y a {jours} jours.",
+    "Reseau indisponible dans le quartier de {commune}. Plusieurs clients sont affectes, dont {nom} ({tel}). Les appels echouent systematiquement avec le message 'Reseau non disponible'. Le probleme est lie a une panne du site {site_code} ({techno}). Date de debut : il y a {jours} jours.",
     "Connexion intermitente depuis {jours} jours. {nom} ({tel}) rapporte que le signal apparait et disparait regulierement, rendant tout usage du telephone impossible. La zone de {commune}, {wilaya} est affectee. Le site {site_code} ({techno}) semble en mode degradé.",
     "Cable principal endommage suite aux intemperies de la semaine derniere. {nom} ({tel}) signale que la connexion du site {site_code} ({techno}) a ete coupee par des travaux de voirie dans la commune de {commune}. Le client utilise le forfait {type_forfait} et n'a plus de service.",
     "Deconnexions repetees chaque soir entre 19h et 23h. {nom} ({tel}) ne parvient pas a maintenir une connexion stable. Le probleme est present depuis {jours} jours dans la wilaya de {wilaya}, commune de {commune}. Le site {site_code} ({techno}) est soupconne de surcharge.",
@@ -167,7 +167,6 @@ class Command(BaseCommand):
         # ─── Step 2: Create users ───
         self.stdout.write("\n[2/5] Creation des 12 utilisateurs...")
         created_users = {}
-        from django.db import connection
 
         admin_first, admin_last, admin_role = USERS[0]
         admin_email = "admin@exemple.com"
@@ -177,11 +176,6 @@ class Command(BaseCommand):
             last_name=' '.join(w.capitalize() for w in admin_last.split()),
             role=admin_role, is_active=True,
         )
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute("UPDATE accounts_customuser SET sexe = %s WHERE id = %s", ['Homme', admin_user.id])
-        except Exception:
-            pass
         created_users[admin_role] = [admin_user]
         self.stdout.write(f"  {admin_user.code_user} - {admin_user.first_name} {admin_user.last_name} ({admin_role}) [SUPERUSER]")
 
@@ -195,12 +189,6 @@ class Command(BaseCommand):
                 last_name=' '.join(w.capitalize() for w in last_name.split()),
                 role=role, is_active=True,
             )
-            try:
-                with connection.cursor() as cursor:
-                    cursor.execute("UPDATE accounts_customuser SET sexe = %s WHERE id = %s",
-                        ['Homme' if first_name not in ('amel', 'soundous', 'bouchra', 'malak', 'manel') else 'Femme', user.id])
-            except Exception:
-                pass
             created_users[role] = created_users.get(role, [])
             created_users[role].append(user)
             self.stdout.write(f"  {user.code_user} - {user.first_name} {user.last_name} ({role})")
@@ -301,7 +289,6 @@ class Command(BaseCommand):
                 type_client=type_client,
                 site=site,
                 mots_cles_ia=mots_cles,
-                description=desc,
                 priorite=priorite,
                 statut=statut,
                 cree_par=cc_agent,

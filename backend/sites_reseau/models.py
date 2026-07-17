@@ -19,8 +19,10 @@ class SiteReseau(models.Model):
     """
 
     STATUT_CHOICES = [
-        ('UP',   'Opérationnel'),
-        ('DOWN', 'Hors service'),
+        ('UP',      'Opérationnel'),
+        ('DOWN',    'Hors service'),
+        ('DEGRADE', 'Dégradé'),
+        ('PERTURBE', 'Perturbé'),
     ]
 
     TECHNOLOGIE_CHOICES = [

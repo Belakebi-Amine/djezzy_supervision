@@ -129,9 +129,20 @@ class UpdateProfileSerializer(serializers.ModelSerializer):
 
 class UpdateUserSerializer(serializers.ModelSerializer):
     """
-    For admin to modify any user's details including their role.
+    For admin to modify any user's details including their role and password.
     """
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
     class Meta:
         model = CustomUser
-        fields = ['first_name', 'last_name', 'email', 'role']
+        fields = ['first_name', 'last_name', 'email', 'role', 'password']
         read_only_fields = []
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+        return instance

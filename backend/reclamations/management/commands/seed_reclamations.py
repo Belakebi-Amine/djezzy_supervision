@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.contrib.auth import get_user_model
+from decouple import config
 from reclamations.models import Reclamation, CommentaireTicket
 from sites_reseau.models import SiteReseau
 from accounts.models import Role
@@ -98,7 +99,7 @@ class Command(BaseCommand):
             return
 
         # Passwords
-        common_pwd = "password123"
+        common_pwd = config('SEED_PASSWORD', default='change-me')
         for agent in cc_agents + ingenieurs:
             agent.set_password(common_pwd)
             agent.save(update_fields=["password"])
@@ -160,7 +161,6 @@ class Command(BaseCommand):
                 type_client=type_client,
                 site=site,
                 mots_cles_ia=mots_cles,
-                description=desc,
                 priorite=priorite,
                 statut=statut,
                 cree_par=cc_agent,

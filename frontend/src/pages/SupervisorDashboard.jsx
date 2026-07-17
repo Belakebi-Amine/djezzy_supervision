@@ -14,6 +14,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { spawnParticles } from '../hooks/useAnimations';
+import { useNotification } from '../context/NotificationContext';
 import {
   LineChart, Line, BarChart, Bar, Cell,
   PieChart, Pie,
@@ -25,7 +26,7 @@ import html2pdf from 'html2pdf.js';
 import {
   getDashboardStats, getDashboardReporting,
   genererRapportIA, getRapportsIA, sauvegarderRapportIA,
-  updateRapportIA, deleteRapportIA,
+  updateRapportIA, deleteRapportIA, getArchivedRapports, restoreRapportIA,
 } from '../api/dashboard';
 import { getSites, getTickets, getTokenRole } from '../api/tickets';
 import DetailModal from '../components/DetailModal';
@@ -54,6 +55,7 @@ const IconSave = (p) => <svg {...iconProps} {...p}><path d="M19 21H5a2 2 0 0 1-2
 const IconCalendar = (p) => <svg {...iconProps} {...p}><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>;
 const IconX = (p) => <svg {...iconProps} {...p}><path d="M18 6L6 18M6 6l12 12" /></svg>;
 const IconSite = (p) => <svg {...iconProps} {...p}><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z" /><circle cx="12" cy="9.5" r="2.3" /></svg>;
+const IconArchive = (p) => <svg {...iconProps} {...p}><path d="M21 4H3M8 2v2M16 2v2M4 7l1 12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2l1-12M10 11v6M14 11v6" /></svg>;
 
 /* Custom tooltip component used by all Recharts charts */
 const Tip = ({ active, payload, label }) => {
@@ -111,6 +113,7 @@ function InfoPopup({ text }) {
 
 export default function SupervisorDashboard() {
   const navigate = useNavigate();
+  const { addNotification } = useNotification();
 
   // Role guard
   const tokenRole = getTokenRole();
@@ -185,6 +188,19 @@ export default function SupervisorDashboard() {
   /* ── Performance view state ── */
   const [perfRole, setPerfRole] = useState('ingenieurs');
   const [perfUser, setPerfUser] = useState(null);
+
+  /* ── Archives state ── */
+  const [archivedRapports, setArchivedRapports] = useState([]);
+  const [archivedLoading, setArchivedLoading] = useState(false);
+
+  const fetchArchivedRapports = useCallback(async () => {
+    setArchivedLoading(true);
+    try { const d = await getArchivedRapports(); setArchivedRapports(Array.isArray(d) ? d : []); }
+    catch { setArchivedRapports([]); }
+    finally { setArchivedLoading(false); }
+  }, []);
+
+  useEffect(() => { if (currentView === 'archives') fetchArchivedRapports(); }, [currentView, fetchArchivedRapports]);
 
   /* ── Priority modal state ── */
   const [prioModal, setPrioModal] = useState(null); // null or { priorite: string, label: string, color: string }
@@ -272,7 +288,7 @@ export default function SupervisorDashboard() {
       setSavedName(prompt.trim().slice(0, 80));
       setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
     } catch (err) {
-      alert(err.message);
+      addNotification(err.message, 'error');
     } finally {
       setGenerating(false);
     }
@@ -289,9 +305,9 @@ export default function SupervisorDashboard() {
       setSavedName(titre.trim());
       setSavedReports((prev) => [report, ...prev]);
       setSelectedReportId(report.id);
-      alert('Rapport sauvegardé !');
+      addNotification('Rapport sauvegardé !');
     } catch (err) {
-      alert(err.message);
+      addNotification(err.message, 'error');
     } finally {
       setSaving(false);
     }
@@ -312,7 +328,7 @@ export default function SupervisorDashboard() {
         setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
       }
     } catch (err) {
-      alert(err.message);
+      addNotification(err.message, 'error');
     }
   }, [savedReports]);
 
@@ -322,12 +338,13 @@ export default function SupervisorDashboard() {
     try {
       await deleteRapportIA(id);
       setSavedReports((prev) => prev.filter(r => r.id !== id));
+      addNotification('Rapport supprimé');
       if (selectedReportId === id) {
         setSelectedReportId(null);
         setGeneratedContent(null);
       }
     } catch (err) {
-      alert(err.message);
+      addNotification(err.message, 'error');
     }
   }, [selectedReportId]);
 
@@ -341,8 +358,9 @@ export default function SupervisorDashboard() {
       setSavedName(editTitle.trim());
       setGeneratedContent(editContent);
       setEditMode(false);
+      addNotification('Rapport mis à jour');
     } catch (err) {
-      alert(err.message);
+      addNotification(err.message, 'error');
     }
   }, [selectedReportId, editTitle, editContent]);
 
@@ -383,8 +401,7 @@ export default function SupervisorDashboard() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('PDF error:', err);
-      alert('Erreur lors de la génération du PDF.');
+      addNotification('Erreur lors de la génération du PDF.', 'error');
     }
   }, [savedName]);
 
@@ -438,8 +455,7 @@ export default function SupervisorDashboard() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('PDF error:', err);
-      alert('Erreur lors de la génération du PDF.');
+      addNotification('Erreur lors de la génération du PDF.', 'error');
     }
   }, []);
 
@@ -675,6 +691,7 @@ export default function SupervisorDashboard() {
           <button className="side-btn" style={{ ...S.mi, ...(currentView === 'cartographie' ? S.mia : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('cartographie'); }}><IconMap style={{ marginRight: 10 }} /> Cartographie</button>
           <button className="side-btn" style={{ ...S.mi, ...(currentView === 'rapport-ia' ? S.mia : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('rapport-ia'); }}><IconFile style={{ marginRight: 10 }} /> Rapport IA</button>
           <button className="side-btn" style={{ ...S.mi, ...(currentView === 'performance' ? S.mia : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('performance'); }}><IconU style={{ marginRight: 10 }} /> Performance</button>
+          <button className="side-btn" style={{ ...S.mi, ...(currentView === 'archives' ? S.mia : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('archives'); }}><IconArchive style={{ marginRight: 10 }} /> Archives</button>
         </div>
       </aside>
 
@@ -682,7 +699,7 @@ export default function SupervisorDashboard() {
       <div style={S.main}>
         {/* Top header bar with title, period toggle, refresh, and date */}
         <header style={S.head}>
-          <h1 style={S.title}>{currentView === 'cartographie' ? 'Cartographie' : currentView === 'rapport-ia' ? 'Rapport IA' : currentView === 'performance' ? 'Performance Équipe' : "Vue d'ensemble"}</h1>
+          <h1 style={S.title}>{currentView === 'cartographie' ? 'Cartographie' : currentView === 'rapport-ia' ? 'Rapport IA' : currentView === 'performance' ? 'Performance Équipe' : currentView === 'archives' ? 'Archives' : "Vue d'ensemble"}</h1>
           <div style={S.right}>
             {/* Period toggle buttons: 7 / 30 / 60 / 90 / All */}
             <div style={S.toggle}>
@@ -820,7 +837,7 @@ export default function SupervisorDashboard() {
                           </span>
                         )}
                       </div>
-                      {/* Pre-made prompt buttons */}
+                       {/* Pre-made prompt buttons */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted3)' }}>Choisir un type de rapport :</span>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -831,6 +848,12 @@ export default function SupervisorDashboard() {
                             { label: 'Tendances et recommandations', prompt: 'Tendances des réclamations et recommandations d\'amélioration' },
                             { label: 'Évolution mensuelle', prompt: 'Évolution mensuelle des réclamations avec comparaison' },
                             { label: 'Bilan par wilaya', prompt: 'Bilan des réclamations par wilaya avec top 10 des zones' },
+                            { label: 'Performance des agents', prompt: 'Analyse de la performance des agents de call center : temps de traitement, nombre de résolutions, et satisfaction' },
+                            { label: 'Analyse des priorités', prompt: 'Répartition des réclamations par niveau de priorité avec tendances et recommandations' },
+                            { label: 'Top 10 des problèmes', prompt: 'Les 10 types de problèmes les plus fréquents avec analyse détaillée et solutions proposées' },
+                            { label: 'Comparaison mensuelle', prompt: 'Comparaison détaillée entre le mois en cours et le mois précédent avec écarts et explications' },
+                            { label: 'Taux de résolution', prompt: 'Analyse du taux de résolution des réclamations : délai moyen, taux de succès, et points d\'amélioration' },
+                            { label: 'Sites UP/DOWN', prompt: 'État des sites réseau : répartition UP/DOWN, sites critiques, et plan de remédiation' },
                           ].map((s) => (
                             <button key={s.label} onClick={() => setPrompt(s.prompt)}
                               style={{ fontSize: 11, padding: '6px 14px', borderRadius: 14, border: prompt === s.prompt ? '2px solid #E8401A' : '1px solid var(--border-color)', background: prompt === s.prompt ? 'rgba(232,64,26,0.1)' : 'var(--bg-hover)', color: prompt === s.prompt ? '#E8401A' : 'var(--text-muted3)', cursor: 'pointer', fontWeight: 600, transition: 'all 0.15s', fontFamily: 'inherit' }}>
@@ -839,10 +862,6 @@ export default function SupervisorDashboard() {
                           ))}
                         </div>
                       </div>
-                      {/* Editable prompt textarea */}
-                      <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)}
-                        placeholder={"Ou décrivez votre rapport personnalisé..."}
-                        style={{ ...S.inp, minHeight: 80, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6, whiteSpace: 'pre-wrap' }} />
                       <button onClick={handleGenerate} disabled={generating || !prompt.trim()}
                         style={{ ...S.btn, opacity: generating || !prompt.trim() ? 0.6 : 1, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
                         {generating ? (
@@ -1011,6 +1030,56 @@ export default function SupervisorDashboard() {
             )}
           </div>
         </div>
+
+        /* ═══════ ARCHIVES VIEW ═══════ */
+        ) : currentView === 'archives' ? (
+        <div style={S.scroll}>
+            <div style={{ padding: '16px 21px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                <span style={{ width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg,#64748B22,#64748B0A)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <IconArchive style={{ width: 18, height: 18, color: '#64748B' }} />
+                </span>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Archives Rapports</h2>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted2)' }}>Rapports archivés — retention 3 mois</span>
+                </div>
+              </div>
+              <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 10, overflow: 'hidden' }}>
+                {archivedLoading ? (
+                  <div style={{ padding: 50, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>Chargement...</div>
+                ) : archivedRapports.length === 0 ? (
+                  <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>
+                    <IconArchive style={{ width: 32, height: 32, color: 'var(--text-muted2)', opacity: 0.3, margin: '0 auto 12px' }} />
+                    <div style={{ fontWeight: 600 }}>Aucun rapport archivé</div>
+                  </div>
+                ) : (
+                  <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {archivedRapports.map((r) => (
+                      <div key={r.id}
+                        style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-card)', transition: 'all 0.15s' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#64748B44'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-color)'; }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg,#64748B22,#64748B0A)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <IconFile style={{ width: 16, height: 16, color: '#64748B' }} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.titre}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>
+                            {r.cree_par?.nom_user || '—'}
+                            {r.archived_at ? ` · Archivé le ${new Date(r.archived_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
+                          </div>
+                        </div>
+                        <button onClick={async () => { try { await restoreRapportIA(r.id); fetchArchivedRapports(); addNotification('Rapport restauré'); } catch { addNotification('Erreur lors de la restauration.', 'error'); } }}
+                          style={{ background: '#05966918', border: '1px solid #05966933', borderRadius: 4, cursor: 'pointer', padding: '4px 10px', color: '#059669', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          Restaurer
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
 
         /* ═══════ DEFAULT DASHBOARD VIEW ═══════ */
         ) : (

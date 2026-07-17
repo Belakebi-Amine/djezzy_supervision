@@ -1,24 +1,28 @@
 # reclamations/urls.py
 # ─────────────────────────────────────────────────────────────
-# URL routing for reclamation tickets. All routes are prefixed
-# with /api/reclamations/ (set in config/urls.py).
+# URL routing for reclamation tickets and grouped tickets.
+# All routes are prefixed with /api/reclamations/.
 # ─────────────────────────────────────────────────────────────
 from django.urls import path
 from . import views
 
 urlpatterns = [
-    # List all tickets (supports ?statut= filtering)
+    # ── Reclamation endpoints ──
     path('', views.liste_reclamations, name='liste-reclamations'),
-    # Create a new complaint ticket
     path('creer/', views.creer_reclamation, name='creer-reclamation'),
-    # Get or update a specific ticket by ID
     path('<int:pk>/', views.detail_reclamation, name='detail-reclamation'),
-    # Add a comment to a ticket (engineers only)
     path('<int:pk>/commentaire/', views.ajouter_commentaire, name='ajouter-commentaire'),
-    # Archive/unarchive a ticket (admin only)
     path('<int:pk>/archiver/', views.archiver_reclamation, name='archiver-reclamation'),
     path('<int:pk>/desarchiver/', views.desarchiver_reclamation, name='desarchiver-reclamation'),
-    # Keywords system
     path('keywords/', views.liste_keywords, name='liste-keywords'),
     path('keywords/preview/', views.preview_priorite, name='preview-priorite'),
+
+    # ── GroupeTicket endpoints ──
+    path('groupes/', views.liste_groupe_tickets, name='liste-groupe-tickets'),
+    path('groupes/stats/', views.stats_groupe_tickets, name='stats-groupe-tickets'),
+    path('groupes/<int:pk>/', views.detail_groupe_ticket, name='detail-groupe-ticket'),
+    path('groupes/<int:pk>/modifier/', views.modifier_groupe_ticket, name='modifier-groupe-ticket'),
+    path('groupes/<int:pk>/resoudre/', views.resoudre_groupe_ticket, name='resoudre-groupe-ticket'),
+    path('groupes/<int:pk>/assigner/', views.assigner_groupe_ticket, name='assigner-groupe-ticket'),
+    path('groupes/<int:pk>/archiver/', views.archiver_groupe_ticket, name='archiver-groupe-ticket'),
 ]

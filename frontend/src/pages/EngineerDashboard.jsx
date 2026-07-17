@@ -13,7 +13,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { spawnParticles } from '../hooks/useAnimations';
-import { getTickets, updateTicket, getSites, getAllSites, updateSiteStatus, createSite, archiverSite, restoreSite, getTokenRole } from '../api/tickets';
+import { useNotification } from '../context/NotificationContext';
+import { getTickets, updateTicket, getSites, getAllSites, updateSiteStatus, createSite, archiverSite, restoreSite, getTokenRole, getGroupeTickets, getGroupeTicketStats, resoudreGroupeTicket, assignerGroupeTicket, getArchivedSites, getArchivedTickets } from '../api/tickets';
 import MapComponent from '../components/Map';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
@@ -102,13 +103,14 @@ const IconFilter = (p) => (
 const IconX = (p) => (
   <svg {...iconProps} {...p}><path d="M18 6L6 18M6 6l12 12" /></svg>
 );
-const IconChevronLeft = (p) => (
-  <svg {...iconProps} {...p}><path d="M15 18l-6-6 6-6" /></svg>
+const IconArchive = (p) => (
+  <svg {...iconProps} {...p}><path d="M21 4H3M8 2v2M16 2v2M4 7l1 12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2l1-12M10 11v6M14 11v6" /></svg>
 );
 
 // Possible ticket statuses and their display labels
 const ALL_STATUSES = ['ferme', 'ouvert', 'resolu'];
 const ALL_LABELS = { ferme: 'Ferme', ouvert: 'Ouvert', resolu: 'Resolu' };
+
 
 // Site status display labels and color mappings
 const SITE_LABELS = { UP: 'Actif', DOWN: 'Inactif' };
@@ -128,6 +130,7 @@ const getForwardStatuses = (statut) => {
 
 export default function EngineerDashboard() {
   const navigate = useNavigate();
+  const { addNotification } = useNotification();
 
   // Role guard
   const tokenRole = getTokenRole();
@@ -148,6 +151,14 @@ export default function EngineerDashboard() {
   // --- Tickets State ---
   const [tickets, setTickets] = useState([]);       // all tickets from the API
   const [loading, setLoading] = useState(false);     // loading indicator for tickets
+
+  // --- Grouped Tickets State ---
+  const [groupeTickets, setGroupeTickets] = useState([]);
+  const [groupeStats, setGroupeStats] = useState({ tickets_ouverts: 0, tickets_total: 0, tickets_resolus: 0, reclamations_total: 0, top_site: null });
+  const [groupeLoading, setGroupeLoading] = useState(false);
+  const [selectedGroupe, setSelectedGroupe] = useState(null);
+  const [updatingGroupeId, setUpdatingGroupeId] = useState(null);
+  const [viewMode, setViewMode] = useState('grouped'); // 'grouped' | 'individual'
 
   // --- Sites State ---
   const [sites, setSites] = useState([]);            // sites list used for ticket filter dropdown
@@ -183,6 +194,30 @@ export default function EngineerDashboard() {
   const [siteFilterStatut, setSiteFilterStatut] = useState('');
   const [showSiteFilters, setShowSiteFilters] = useState(false);
 
+  // --- Archived Sites State ---
+  const [archivedSites, setArchivedSites] = useState([]);
+  const [archivedLoading, setArchivedLoading] = useState(false);
+
+  // --- Archived Tickets State ---
+  const [archivedTickets, setArchivedTickets] = useState([]);
+  const [archiveTab, setArchiveTab] = useState('sites');
+
+  const fetchArchivedSites = useCallback(async () => {
+    setArchivedLoading(true);
+    try { const d = await getArchivedSites(); setArchivedSites(Array.isArray(d) ? d : []); }
+    catch { setArchivedSites([]); }
+    finally { setArchivedLoading(false); }
+  }, []);
+
+  const fetchArchivedTickets = useCallback(async () => {
+    try { const d = await getArchivedTickets(); setArchivedTickets(Array.isArray(d) ? d : []); }
+    catch { setArchivedTickets([]); }
+  }, []);
+
+  useEffect(() => {
+    if (currentView === 'archives') { fetchArchivedSites(); fetchArchivedTickets(); }
+  }, [currentView, fetchArchivedSites, fetchArchivedTickets]);
+
   // Fetch sites on mount (used for the ticket filter dropdown)
   useEffect(() => {
     getSites().then(setSites).catch(() => setSites([]));
@@ -196,10 +231,19 @@ export default function EngineerDashboard() {
       setTickets(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Impossible de charger les reclamations', err);
+      addNotification('Impossible de charger les réclamations.', 'error');
       setTickets([]);
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  // Silent background refresh (no loading spinner)
+  const refreshTickets = useCallback(async () => {
+    try {
+      const data = await getTickets();
+      if (Array.isArray(data)) setTickets(data);
+    } catch {}
   }, []);
 
   // Load tickets on mount
@@ -207,13 +251,53 @@ export default function EngineerDashboard() {
     fetchTickets();
   }, [fetchTickets]);
 
-  // ─── Auto-refresh every 5 seconds ───
+  // ─── Fetch grouped tickets ───
+  const fetchGroupeTickets = useCallback(async () => {
+    setGroupeLoading(true);
+    try {
+      const data = await getGroupeTickets();
+      setGroupeTickets(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Impossible de charger les tickets groupés', err);
+      addNotification('Impossible de charger les tickets groupés.', 'error');
+      setGroupeTickets([]);
+    } finally {
+      setGroupeLoading(false);
+    }
+  }, []);
+
+  // Silent background refresh for grouped tickets
+  const refreshGroupeTickets = useCallback(async () => {
+    try {
+      const data = await getGroupeTickets();
+      if (Array.isArray(data)) setGroupeTickets(data);
+    } catch {}
+  }, []);
+
+  const fetchGroupeStats = useCallback(async () => {
+    try {
+      const data = await getGroupeTicketStats();
+      setGroupeStats(data);
+    } catch (err) {
+      console.error('Impossible de charger les stats', err);
+      addNotification('Impossible de charger les statistiques.', 'error');
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchGroupeTickets();
+    fetchGroupeStats();
+  }, [fetchGroupeTickets, fetchGroupeStats]);
+
+  // ─── Auto-refresh every 5 seconds (transparent, no loading flash) ───
   useEffect(() => {
     const interval = setInterval(() => {
-      fetchTickets();
+      refreshTickets();
+      refreshGroupeTickets();
+      fetchGroupeStats();
     }, 5000);
     return () => clearInterval(interval);
-  }, [fetchTickets]);
+  }, [refreshTickets, refreshGroupeTickets, fetchGroupeStats]);
 
   // Fetch all sites including archived (for inline grayed-out display)
   const fetchSitesData = useCallback(async () => {
@@ -223,6 +307,7 @@ export default function EngineerDashboard() {
       setSitesList(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Impossible de charger les sites', err);
+      addNotification('Impossible de charger les sites.', 'error');
       setSitesList([]);
     } finally {
       setSitesLoading(false);
@@ -247,9 +332,9 @@ export default function EngineerDashboard() {
       setSitesList((prev) =>
         prev.map((s) => (s.id === siteId ? { ...s, statut: newStatut } : s))
       );
+      addNotification(`Site passé en ${newStatut === 'UP' ? 'actif' : 'inactif'}`);
     } catch (err) {
-      console.error(err);
-      alert('Erreur lors du changement de statut du site.');
+      addNotification('Erreur lors du changement de statut du site.', 'error');
     } finally {
       setTogglingSiteId(null);
     }
@@ -266,8 +351,7 @@ export default function EngineerDashboard() {
       );
       setSelectedSite(null);
     } catch (err) {
-      console.error(err);
-      alert('Erreur lors de l\'archivage.');
+      addNotification("Erreur lors de l'archivage.", 'error');
     } finally {
       setTogglingSiteId(null);
     }
@@ -283,8 +367,7 @@ export default function EngineerDashboard() {
       );
       setSelectedSite(null);
     } catch (err) {
-      console.error(err);
-      alert('Erreur lors de la restauration.');
+      addNotification('Erreur lors de la restauration.', 'error');
     } finally {
       setTogglingSiteId(null);
     }
@@ -307,9 +390,9 @@ export default function EngineerDashboard() {
       setTickets((prev) =>
         prev.map((t) => (t.id === ticketId ? { ...t, statut: newStatut } : t))
       );
+      addNotification(`Ticket passé à ${newStatut}`);
     } catch (err) {
-      console.error(err);
-      alert('Erreur lors du changement de statut.');
+      addNotification('Erreur lors du changement de statut.', 'error');
     } finally {
       setUpdatingId(null);
     }
@@ -330,10 +413,10 @@ export default function EngineerDashboard() {
       setShowSiteForm(false);
       // Reset form to defaults after successful creation
       setNewSiteForm({ nom: '', wilaya: '', commune: '', coordX: '', coordY: '', adresse: '', statut: 'UP', technologie: '5G' });
+      addNotification('Site créé avec succès');
       fetchSitesData(); // refresh the list
     } catch (err) {
-      console.error(err);
-      alert('Erreur: ' + err.message);
+      addNotification('Erreur création site: ' + err.message, 'error');
     } finally {
       setSiteSubmitting(false);
     }
@@ -352,8 +435,45 @@ export default function EngineerDashboard() {
     navigate('/login');
   };
 
+  // ─── Grouped ticket actions ───
+  const handleResoudreGroupe = useCallback(async (groupeId) => {
+    if (!window.confirm('Confirmer la résolution de ce ticket ? Toutes les réclamations seront résolues.')) return;
+    setUpdatingGroupeId(groupeId);
+    try {
+      await resoudreGroupeTicket(groupeId);
+      setGroupeTickets((prev) =>
+        prev.map((g) => g.id === groupeId ? { ...g, statut: 'resolu' } : g)
+      );
+      setSelectedGroupe(null);
+      addNotification('Ticket résolu avec succès');
+      fetchGroupeStats();
+    } catch (err) {
+      addNotification('Erreur lors de la résolution du ticket.', 'error');
+    } finally {
+      setUpdatingGroupeId(null);
+    }
+  }, [fetchGroupeStats]);
+
+  const handleAssignerGroupe = useCallback(async (groupeId) => {
+    if (!window.confirm('Vous assigner à ce ticket ? Toutes les réclamations vous seront assignées.')) return;
+    setUpdatingGroupeId(groupeId);
+    try {
+      await assignerGroupeTicket(groupeId);
+      addNotification('Ticket assigné avec succès');
+      fetchGroupeTickets();
+      fetchGroupeStats();
+    } catch (err) {
+      addNotification("Erreur lors de l'assignation du ticket.", 'error');
+    } finally {
+      setUpdatingGroupeId(null);
+    }
+  }, [fetchGroupeTickets, fetchGroupeStats]);
+
   // Convert a raw status string to the uppercase key used in the COLORS map
   const getStatutKey = (statut) => statut?.replace('_', ' ').toUpperCase();
+
+  // Priority sort order: higher priority = sort first
+  const PRIO_ORDER = { critique: 0, haute: 1, normale: 2, basse: 3 };
 
   // ---- Filtered & sorted sites list ----
   // Non-archived sites first (sorted by code), then archived sites at the bottom (sorted by code)
@@ -389,7 +509,7 @@ export default function EngineerDashboard() {
       t.nom_complet_client?.toLowerCase().includes(term) ||
       t.numero_ticket?.toLowerCase().includes(term) ||
       t.site_display?.toLowerCase().includes(term) ||
-      t.description?.toLowerCase().includes(term);
+      t.mots_cles_ia?.toLowerCase().includes(term);
     if (!matchSearch) return false;
 
     // Apply each active filter independently
@@ -414,6 +534,45 @@ export default function EngineerDashboard() {
       if (st !== filterStatut.toLowerCase()) return false;
     }
     return true;
+  }).sort((a, b) => {
+    // Sort by type_client first, then by priority
+    const typeA = a.type_client || '';
+    const typeB = b.type_client || '';
+    if (typeA !== typeB) return typeA.localeCompare(typeB);
+    const prioA = PRIO_ORDER[a.priorite] ?? 4;
+    const prioB = PRIO_ORDER[b.priorite] ?? 4;
+    if (prioA !== prioB) return prioA - prioB;
+    return new Date(b.created_at) - new Date(a.created_at);
+  });
+
+  // ---- Filtered grouped tickets ----
+  const filteredGroupeTickets = groupeTickets.filter((g) => {
+    if (g.statut === 'resolu') return false;
+    const term = searchTerm.toLowerCase();
+    const matchSearch =
+      g.titre?.toLowerCase().includes(term) ||
+      g.numero_ticket?.toLowerCase().includes(term) ||
+      g.site_display?.toLowerCase().includes(term) ||
+      g.mots_cles?.toLowerCase().includes(term);
+    if (!matchSearch) return false;
+    if (filterPriority) {
+      const prio = (g.priorite || '').toUpperCase();
+      if (prio !== filterPriority.toUpperCase()) return false;
+    }
+    if (filterSiteId) {
+      if (String(g.site?.id) !== String(filterSiteId)) return false;
+    }
+    if (filterStatut) {
+      const st = (g.statut || '').toLowerCase();
+      if (st !== filterStatut.toLowerCase()) return false;
+    }
+    return true;
+  }).sort((a, b) => {
+    // Sort by priority, then by date (most recent first)
+    const prioA = PRIO_ORDER[a.priorite] ?? 4;
+    const prioB = PRIO_ORDER[b.priorite] ?? 4;
+    if (prioA !== prioB) return prioA - prioB;
+    return new Date(b.created_at) - new Date(a.created_at);
   });
 
   return (
@@ -436,13 +595,19 @@ export default function EngineerDashboard() {
             <IconMap /> Cartographie
           </button>
         </div>
+        <div style={{ ...styles.menu, marginTop: 8 }}>
+          <span style={styles.sectionLabel}>ARCHIVES</span>
+          <button style={{ ...styles.navItem, ...(currentView === 'archives' ? styles.navItemActive : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('archives'); }}>
+            <IconArchive /> Sites archivés
+          </button>
+        </div>
       </aside>
 
       {/* ===== Main Content Area ===== */}
       <div style={{ ...styles.mainContent, backgroundColor: COLORS.mainBg }}>
         {/* Sticky header bar with dynamic title */}
         <header style={{ position: 'sticky', top: 0, height: 51, display: 'flex', alignItems: 'center', padding: '0 27px', background: COLORS.cardBg, borderBottom: `1px solid ${COLORS.border}`, boxShadow: 'var(--shadow-sm)', zIndex: 10 }}>
-          <h1 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-secondary)' }}>{currentView === 'sites' ? 'Sites Réseau' : currentView === 'cartographie' ? 'Cartographie' : 'Réclamations'}</h1>
+          <h1 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-secondary)' }}>{currentView === 'sites' ? 'Sites Réseau' : currentView === 'cartographie' ? 'Cartographie' : currentView === 'archives' ? 'Sites Archivés' : 'Réclamations'}</h1>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 10, color: 'var(--text-muted2)', fontWeight: 500, padding: '4px 10px', background: 'var(--bg-toolbar)', borderRadius: 4 }}>{now()}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8, paddingLeft: 12, borderLeft: '1px solid var(--border-color)' }}>
@@ -692,14 +857,155 @@ export default function EngineerDashboard() {
               </div>
             </div>
           </div>
-        )) : (
+        )) : currentView === 'archives' ? (
+          /* ---------- Archives View (Sites + Réclamations, read-only) ---------- */
+          <div style={styles.pageContent}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <span style={{ width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg,#64748B22,#64748B0A)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <IconArchive style={{ width: 18, height: 18, color: '#64748B' }} />
+              </span>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Archives</h2>
+                <span style={{ fontSize: 10, color: 'var(--text-muted2)' }}>Consultation seule</span>
+              </div>
+            </div>
+            {/* Tab bar */}
+            <div style={{ display: 'flex', gap: 6, background: 'var(--bg-toolbar)', borderRadius: 8, padding: 4, marginBottom: 16 }}>
+              {[
+                { key: 'sites', label: 'Sites', icon: <IconSite style={{ width: 13, height: 13 }} />, count: archivedSites.length },
+                { key: 'tickets', label: 'Réclamations', icon: <IconTicket style={{ width: 13, height: 13 }} />, count: archivedTickets.length },
+              ].map((tab) => (
+                <button key={tab.key} onClick={() => setArchiveTab(tab.key)}
+                  style={{ padding: '7px 16px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
+                    background: archiveTab === tab.key ? 'var(--bg-card)' : 'transparent',
+                    color: archiveTab === tab.key ? 'var(--text-primary)' : 'var(--text-muted3)',
+                    boxShadow: archiveTab === tab.key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none' }}>
+                  {tab.icon} {tab.label}
+                  <span style={{ fontSize: 9, fontWeight: 700, background: archiveTab === tab.key ? '#64748B22' : 'var(--bg-hover)', color: archiveTab === tab.key ? '#64748B' : 'var(--text-muted2)', padding: '1px 6px', borderRadius: 8, lineHeight: '16px' }}>{tab.count}</span>
+                </button>
+              ))}
+            </div>
+            <div style={{ ...styles.tableCard, backgroundColor: COLORS.cardBg }}>
+              <div style={{ overflowX: 'auto' }}>
+                {archiveTab === 'sites' ? (
+                  archivedLoading ? (
+                    <div style={{ padding: 50, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>Chargement...</div>
+                  ) : archivedSites.length === 0 ? (
+                    <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>
+                      <IconArchive style={{ width: 32, height: 32, color: 'var(--text-muted2)', opacity: 0.3, margin: '0 auto 12px' }} />
+                      <div style={{ fontWeight: 600 }}>Aucun site archivé</div>
+                    </div>
+                  ) : (
+                    <table style={styles.table}>
+                      <thead>
+                        <tr style={styles.thRow}>
+                          <th style={styles.th}>Code Site</th><th style={styles.th}>Nom Site</th><th style={styles.th}>Wilaya</th><th style={styles.th}>Commune</th><th style={styles.th}>Statut</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {archivedSites.map((site) => (
+                          <tr key={site.id} style={styles.tr}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}>
+                            <td style={{ ...styles.td, fontWeight: 600 }}>{site.codeSite}</td>
+                            <td style={styles.td}>{site.nom}</td>
+                            <td style={styles.td}>{site.wilaya}</td>
+                            <td style={styles.td}>{site.commune}</td>
+                            <td style={styles.td}>
+                              <span style={{ padding: '3px 10px', borderRadius: 4, fontWeight: 700, fontSize: 11, backgroundColor: ST_BG[site.statut] || '#F1F5F9', color: ST[site.statut] || '#64748B' }}>
+                                {SITE_LABELS[site.statut] || site.statut}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )
+                ) : (
+                  archivedTickets.length === 0 ? (
+                    <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>
+                      <IconArchive style={{ width: 32, height: 32, color: 'var(--text-muted2)', opacity: 0.3, margin: '0 auto 12px' }} />
+                      <div style={{ fontWeight: 600 }}>Aucune réclamation archivée</div>
+                    </div>
+                  ) : (
+                    <table style={styles.table}>
+                      <thead>
+                        <tr style={styles.thRow}>
+                          <th style={styles.th}>N° Ticket</th><th style={styles.th}>Client</th><th style={styles.th}>Site</th><th style={styles.th}>Priorité</th><th style={styles.th}>Archivé le</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {archivedTickets.map((t) => (
+                          <tr key={t.id} style={styles.tr}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}>
+                            <td style={{ ...styles.td, fontWeight: 600 }}>{t.numero_ticket}</td>
+                            <td style={styles.td}>{t.nom_complet_client || t.nom_client}</td>
+                            <td style={styles.td}>{t.site?.nom || '-'}</td>
+                            <td style={styles.td}>
+                              <span style={{ padding: '3px 10px', borderRadius: 4, fontWeight: 700, fontSize: 11, backgroundColor: (COLORS.priorities[t.priorite?.toUpperCase()] || COLORS.priorities.NORMALE).bg, color: (COLORS.priorities[t.priorite?.toUpperCase()] || COLORS.priorities.NORMALE).text }}>
+                                {t.priorite?.toUpperCase()}
+                              </span>
+                            </td>
+                            <td style={{ ...styles.td, color: 'var(--text-muted)' }}>{t.archived_at ? new Date(t.archived_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
         /* ---------- Reclamations (Tickets) View ---------- */
         <div style={styles.pageContent}>
+          {/* ─── Stats Row ─── */}
+          <div style={styles.statsRow}>
+            <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#3B82F6', backgroundColor: COLORS.cardBg, animationDelay: '0s' }}>
+              <span style={{ ...styles.statNumber, color: '#171a21' }}>{groupeStats.tickets_total || 0}</span>
+              <span style={styles.statLabel}>Total tickets</span>
+            </div>
+            <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#D97706', backgroundColor: COLORS.cardBg, animationDelay: '0.05s' }}>
+              <span style={{ ...styles.statNumber, color: '#D97706' }}>{groupeStats.tickets_ouverts || 0}</span>
+              <span style={styles.statLabel}>Tickets ouverts</span>
+            </div>
+            <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#15803D', backgroundColor: COLORS.cardBg, animationDelay: '0.1s' }}>
+              <span style={{ ...styles.statNumber, color: '#15803D' }}>{groupeStats.tickets_resolus || 0}</span>
+              <span style={styles.statLabel}>Tickets résolus</span>
+            </div>
+            <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#8B5CF6', backgroundColor: COLORS.cardBg, animationDelay: '0.15s' }}>
+              <span style={{ ...styles.statNumber, color: '#8B5CF6' }}>{groupeStats.reclamations_total || 0}</span>
+              <span style={styles.statLabel}>Réclamations total</span>
+            </div>
+          </div>
+
           <div className="fade-in table-card" style={{ ...styles.tableCard, backgroundColor: COLORS.cardBg, animationDelay: '0.1s' }}>
-            {/* Toolbar with search and filter controls */}
+            {/* Toolbar with view mode toggle, search and filter */}
             <div style={{ ...styles.toolbar, borderBottom: `1px solid ${COLORS.border}` }}>
               <div style={styles.toolbarLeft}>
-                <h2 style={{ ...styles.tableTitle, color: '#181c24' }}>Listes des reclamations</h2>
+                <h2 style={{ ...styles.tableTitle, color: '#181c24' }}>Liste des tickets</h2>
+                {/* View mode toggle */}
+                <div style={{ display: 'flex', gap: '2px', marginLeft: '12px', backgroundColor: '#F1F5F9', borderRadius: '6px', padding: '2px' }}>
+                  <button
+                    onClick={() => setViewMode('grouped')}
+                    style={{
+                      padding: '4px 12px', borderRadius: '4px', border: 'none', fontSize: '11px', fontWeight: 600, cursor: 'pointer',
+                      backgroundColor: viewMode === 'grouped' ? '#FFFFFF' : 'transparent',
+                      color: viewMode === 'grouped' ? '#181c24' : '#64748B',
+                      boxShadow: viewMode === 'grouped' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    }}
+                  >Tickets</button>
+                  <button
+                    onClick={() => setViewMode('individual')}
+                    style={{
+                      padding: '4px 12px', borderRadius: '4px', border: 'none', fontSize: '11px', fontWeight: 600, cursor: 'pointer',
+                      backgroundColor: viewMode === 'individual' ? '#FFFFFF' : 'transparent',
+                      color: viewMode === 'individual' ? '#181c24' : '#64748B',
+                      boxShadow: viewMode === 'individual' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    }}
+                  >Réclamations</button>
+                </div>
               </div>
 
               <div style={styles.toolbarActions}>
@@ -707,7 +1013,6 @@ export default function EngineerDashboard() {
                   <IconFilter style={{ marginRight: '6px' }} /> Filtrer
                 </button>
 
-                {/* Search bar */}
                 <div style={{ ...styles.searchWrapper, backgroundColor: '#F8FAFC' }}>
                   <IconSearch style={styles.searchIcon} />
                   <input
@@ -721,7 +1026,7 @@ export default function EngineerDashboard() {
               </div>
             </div>
 
-            {/* Collapsible filter panel for tickets */}
+            {/* Collapsible filter panel */}
             {showFilters && (
               <div style={{ ...styles.filterArea, backgroundColor: '#fafbfc', borderBottom: `1px solid ${COLORS.border}` }}>
                 <input
@@ -732,9 +1037,9 @@ export default function EngineerDashboard() {
                 />
                 <select value={filterStatut} onChange={(e) => setFilterStatut(e.target.value)} style={{ ...styles.filterSelect, backgroundColor: COLORS.inputBg, color: '#4e5561', border: `1px solid ${COLORS.border}` }}>
                   <option value="">Tous statuts</option>
-                  <option value="ferme">Ferme</option>
                   <option value="ouvert">Ouvert</option>
-                  <option value="resolu">Resolu</option>
+                  <option value="en_cours">En cours</option>
+                  <option value="ferme">Fermé</option>
                 </select>
                 <select value={filterSiteId} onChange={(e) => setFilterSiteId(e.target.value)} style={{ ...styles.filterSelect, backgroundColor: COLORS.inputBg, color: '#4e5561', border: `1px solid ${COLORS.border}` }}>
                   <option value="">Tous les sites</option>
@@ -749,15 +1054,112 @@ export default function EngineerDashboard() {
                   <option value="normale">Normale</option>
                   <option value="basse">Basse</option>
                 </select>
-                <select value={filterType} onChange={(e) => setFilterType(e.target.value)} style={{ ...styles.filterSelect, backgroundColor: COLORS.inputBg, color: '#4e5561', border: `1px solid ${COLORS.border}` }}>
-                  <option value="">Tous types</option>
-                  <option value="particulier">Particulier</option>
-                  <option value="entreprise">Entreprise</option>
-                </select>
+                {viewMode === 'individual' && (
+                  <select value={filterType} onChange={(e) => setFilterType(e.target.value)} style={{ ...styles.filterSelect, backgroundColor: COLORS.inputBg, color: '#4e5561', border: `1px solid ${COLORS.border}` }}>
+                    <option value="">Tous types</option>
+                    <option value="particulier">Particulier</option>
+                    <option value="entreprise">Entreprise</option>
+                  </select>
+                )}
               </div>
             )}
 
-            {/* Tickets data table */}
+            {/* ─── GROUPED VIEW: Card Grid ─── */}
+            {viewMode === 'grouped' ? (
+              <div style={{ padding: '20px' }}>
+                {groupeLoading ? (
+                  <div style={{ textAlign: 'center', padding: '40px', color: COLORS.textMuted }}>Chargement des tickets...</div>
+                ) : filteredGroupeTickets.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '40px', color: COLORS.textMuted }}>Aucun ticket trouvé.</div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+                    {filteredGroupeTickets.map((groupe) => {
+                      const prio = COLORS.priorities[groupe.priorite?.toUpperCase()] || COLORS.priorities.NORMALE;
+                      const statutKey = getStatutKey(groupe.statut);
+                      const stat = COLORS.status[statutKey] || COLORS.status.OUVERT;
+
+                      return (
+                        <div
+                          key={groupe.id}
+                          onClick={() => setSelectedGroupe(groupe)}
+                          style={{
+                            backgroundColor: '#FFFFFF',
+                            borderRadius: '10px',
+                            boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+                            border: `1px solid ${COLORS.border}`,
+                            borderLeft: `4px solid ${prio.side}`,
+                            padding: '16px',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '10px',
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.08)'; e.currentTarget.style.transform = 'none'; }}
+                        >
+                          {/* Header: ticket number + priority badge */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 600, color: COLORS.textMuted }}>{groupe.numero_ticket}</span>
+                            <span style={{ padding: '3px 8px', borderRadius: '4px', fontWeight: 700, fontSize: '9px', backgroundColor: prio.bg, color: prio.text }}>
+                              {groupe.priorite?.toUpperCase()}
+                            </span>
+                          </div>
+
+                          {/* Title */}
+                          <div style={{ fontSize: '14px', fontWeight: 700, color: COLORS.textDark, lineHeight: '1.3' }}>
+                            {groupe.titre}
+                          </div>
+
+                          {/* Site name */}
+                          <div style={{ fontSize: '12px', color: COLORS.textMuted, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <IconSite style={{ width: 12, height: 12 }} />
+                            {groupe.site_display}
+                          </div>
+
+                          {/* Date + reclamations count */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '11px', color: COLORS.textMuted }}>{formatDateFr(groupe.premier_signalement || groupe.created_at)}</span>
+                            <span style={{ padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 600, backgroundColor: '#F1F5F9', color: '#475569' }}>
+                              {groupe.reclamations_count || groupe.nombre_reclamations} récl.
+                            </span>
+                          </div>
+
+                          {/* Status badge + action buttons */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: '4px', fontWeight: 700, fontSize: '10px', backgroundColor: stat.bg, color: stat.text }}>
+                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: stat.dot, marginRight: '6px', display: 'inline-block' }} />
+                              {statutKey}
+                            </span>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              {groupe.statut !== 'resolu' && groupe.statut !== 'ferme' && (
+                                <button
+                                  disabled={updatingGroupeId === groupe.id}
+                                  onClick={(e) => { e.stopPropagation(); handleResoudreGroupe(groupe.id); }}
+                                  style={{ padding: '4px 10px', borderRadius: '4px', border: '1px solid #15803D33', backgroundColor: '#DCFCE7', color: '#15803D', fontSize: '10px', fontWeight: 600, cursor: 'pointer' }}
+                                >Résoudre</button>
+                              )}
+                              {!groupe.assigne_a_display || groupe.assigne_a_display === '-' ? (
+                                <button
+                                  disabled={updatingGroupeId === groupe.id}
+                                  onClick={(e) => { e.stopPropagation(); handleAssignerGroupe(groupe.id); }}
+                                  style={{ padding: '4px 10px', borderRadius: '4px', border: '1px solid #2563EB33', backgroundColor: '#EFF6FF', color: '#2563EB', fontSize: '10px', fontWeight: 600, cursor: 'pointer' }}
+                                >S'assigner</button>
+                              ) : (
+                                <span style={{ fontSize: '10px', color: COLORS.textMuted, padding: '4px 6px' }}>
+                                  {groupe.assigne_a_display}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
+            /* ─── INDIVIDUAL VIEW: Table ─── */
             <div style={{ overflowX: 'auto' }}>
               <table style={{ ...styles.table, backgroundColor: COLORS.cardBg }}>
                 <thead>
@@ -777,7 +1179,6 @@ export default function EngineerDashboard() {
                   ) : filteredTickets.length === 0 ? (
                     <tr><td colSpan="7" style={styles.emptyCell}>Aucune reclamation trouvee.</td></tr>
                   ) : filteredTickets.map((ticket) => {
-                    // Resolve color config for this ticket's priority, type, and status
                     const prio = COLORS.priorities[ticket.priorite?.toUpperCase()] || COLORS.priorities.NORMALE;
                     const typ = COLORS.types[ticket.type_client?.toUpperCase()] || COLORS.types.PARTICULIER;
                     const statutKey = getStatutKey(ticket.statut);
@@ -790,7 +1191,6 @@ export default function EngineerDashboard() {
                         onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#F8FAFC'; }}
                         onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
                       >
-                        {/* Ticket number – clickable to open detail modal */}
                         <td style={{ ...styles.td, borderLeft: `4px solid ${prio.side}`, fontWeight: 600, cursor: 'pointer' }}
                           onClick={() => setSelectedTicket(ticket)}>
                           {ticket.numero_ticket}
@@ -813,7 +1213,6 @@ export default function EngineerDashboard() {
                           </span>
                         </td>
                         <td style={{ ...styles.td, color: COLORS.textMuted }}>{formatDateFr(ticket.created_at)}</td>
-                        {/* Status action buttons – only forward transitions are enabled */}
                         <td style={{ ...styles.td, textAlign: 'center' }}>
                           <div style={styles.statusActions}>
                             {ALL_STATUSES.map((s) => {
@@ -848,6 +1247,7 @@ export default function EngineerDashboard() {
                 </tbody>
               </table>
               </div>
+            )}
             </div>
           </div>
         )}
@@ -1136,6 +1536,151 @@ export default function EngineerDashboard() {
                 )}
                 <button style={styles.btnCancel} onClick={() => setSelectedSite(null)}>Fermer</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Grouped Ticket Detail Modal ===== */}
+      {selectedGroupe && (
+        <div className="fade-in" style={styles.overlay} onClick={() => setSelectedGroupe(null)}>
+          <div className="scale-in" style={{ ...styles.modal, maxWidth: '800px' }} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <h2 style={styles.modalTitle}>{selectedGroupe.numero_ticket}</h2>
+                <span style={{ padding: '3px 10px', borderRadius: '4px', fontWeight: 700, fontSize: '11px', backgroundColor: (COLORS.priorities[selectedGroupe.priorite?.toUpperCase()] || COLORS.priorities.NORMALE).bg, color: (COLORS.priorities[selectedGroupe.priorite?.toUpperCase()] || COLORS.priorities.NORMALE).text }}>
+                  {selectedGroupe.priorite?.toUpperCase()}
+                </span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: '4px', fontWeight: 700, fontSize: '11px', backgroundColor: (COLORS.status[getStatutKey(selectedGroupe.statut)] || COLORS.status.OUVERT).bg, color: (COLORS.status[getStatutKey(selectedGroupe.statut)] || COLORS.status.OUVERT).text }}>
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: (COLORS.status[getStatutKey(selectedGroupe.statut)] || COLORS.status.OUVERT).dot, marginRight: '6px', display: 'inline-block' }} />
+                  {getStatutKey(selectedGroupe.statut)}
+                </span>
+              </div>
+              <button style={styles.modalClose} onClick={() => setSelectedGroupe(null)}><IconX /></button>
+            </div>
+
+            <div style={styles.modalBody}>
+              {/* Title */}
+              <div style={styles.modalSection}>
+                <h3 style={styles.modalSectionTitle}>Titre</h3>
+                <p style={{ fontSize: '16px', fontWeight: 700, color: COLORS.textDark, margin: 0 }}>{selectedGroupe.titre}</p>
+              </div>
+
+              {/* Site info */}
+              <div style={styles.modalSection}>
+                <h3 style={styles.modalSectionTitle}>Site</h3>
+                <div style={styles.modalGrid}>
+                  <div style={styles.modalField}>
+                    <span style={styles.modalLabel}>Nom</span>
+                    <span style={styles.modalValue}>{selectedGroupe.site_display || '-'}</span>
+                  </div>
+                  <div style={styles.modalField}>
+                    <span style={styles.modalLabel}>Assigné à</span>
+                    <span style={styles.modalValue}>{selectedGroupe.assigne_a_display || '-'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Description */}
+              {selectedGroupe.description && (
+                <div style={styles.modalSection}>
+                  <h3 style={styles.modalSectionTitle}>Description du problème</h3>
+                  <div style={{ padding: '12px', backgroundColor: '#F8FAFC', borderRadius: '8px', border: `1px solid ${COLORS.border}` }}>
+                    <p style={{ fontSize: '13px', color: COLORS.textDark, lineHeight: '1.6', margin: 0, whiteSpace: 'pre-wrap' }}>{selectedGroupe.description}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Keywords */}
+              {selectedGroupe.mots_cles && (
+                <div style={styles.modalSection}>
+                  <h3 style={styles.modalSectionTitle}>Mots-clés consolidés</h3>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {selectedGroupe.mots_cles.split(',').map((kw, i) => (
+                      <span key={i} style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, backgroundColor: '#F1F5F9', color: '#475569' }}>
+                        {kw.trim()}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Reclamations list */}
+              <div style={styles.modalSection}>
+                <h3 style={styles.modalSectionTitle}>Réclamations ({selectedGroupe.reclamations?.length || selectedGroupe.reclamations_count || 0})</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '300px', overflowY: 'auto' }}>
+                  {selectedGroupe.reclamations?.map((rec) => {
+                    const recPrio = COLORS.priorities[rec.priorite?.toUpperCase()] || COLORS.priorities.NORMALE;
+                    const recStat = COLORS.status[getStatutKey(rec.statut)] || COLORS.status.OUVERT;
+                    return (
+                      <div key={rec.id} style={{ padding: '12px', backgroundColor: '#FAFBFC', borderRadius: '8px', border: `1px solid ${COLORS.border}`, borderLeft: `3px solid ${recPrio.side}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: COLORS.textMuted }}>{rec.numero_ticket}</span>
+                            <span style={{ padding: '2px 6px', borderRadius: '3px', fontSize: '9px', fontWeight: 700, backgroundColor: recPrio.bg, color: recPrio.text }}>{rec.priorite?.toUpperCase()}</span>
+                          </div>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: '3px', fontSize: '9px', fontWeight: 700, backgroundColor: recStat.bg, color: recStat.text }}>
+                            <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: recStat.dot, marginRight: '4px', display: 'inline-block' }} />
+                            {getStatutKey(rec.statut)}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '12px', color: COLORS.textDark, fontWeight: 600 }}>{rec.nom_complet_client || rec.nom_client}</div>
+                        <div style={{ fontSize: '11px', color: COLORS.textMuted, marginTop: '2px' }}>{rec.telephone_client} — {formatDateFr(rec.created_at)}</div>
+                        {rec.mots_cles_ia && (
+                          <div style={{ fontSize: '10px', color: COLORS.textMuted, marginTop: '4px', fontStyle: 'italic' }}>Mots-clés: {rec.mots_cles_ia}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Dates */}
+              <div style={styles.modalSection}>
+                <div style={styles.modalGrid}>
+                  <div style={styles.modalField}>
+                    <span style={styles.modalLabel}>Premier signalement</span>
+                    <span style={styles.modalValue}>{formatDateTimeFr(selectedGroupe.premier_signalement || selectedGroupe.created_at)}</span>
+                  </div>
+                  <div style={styles.modalField}>
+                    <span style={styles.modalLabel}>Dernière mise à jour</span>
+                    <span style={styles.modalValue}>{formatDateTimeFr(selectedGroupe.updated_at)}</span>
+                  </div>
+                  {selectedGroupe.resolu_le && (
+                    <div style={styles.modalField}>
+                      <span style={styles.modalLabel}>Résolu le</span>
+                      <span style={styles.modalValue}>{formatDateTimeFr(selectedGroupe.resolu_le)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal footer */}
+            <div style={styles.modalFooter}>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {selectedGroupe.statut !== 'resolu' && selectedGroupe.statut !== 'ferme' && (
+                  <button
+                    disabled={updatingGroupeId === selectedGroupe.id}
+                    onClick={() => handleResoudreGroupe(selectedGroupe.id)}
+                    style={{ display: 'flex', alignItems: 'center', backgroundColor: '#DCFCE7', color: '#15803D', border: '1px solid #A7F3D0', padding: '10px 20px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '6px' }}><path d="M4 12l5 5 11-11" /></svg>
+                    Résoudre le ticket
+                  </button>
+                )}
+                {(!selectedGroupe.assigne_a_display || selectedGroupe.assigne_a_display === '-') && selectedGroupe.statut !== 'resolu' && (
+                  <button
+                    disabled={updatingGroupeId === selectedGroupe.id}
+                    onClick={() => handleAssignerGroupe(selectedGroupe.id)}
+                    style={{ display: 'flex', alignItems: 'center', backgroundColor: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', padding: '10px 20px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    <IconUser style={{ marginRight: '6px' }} />
+                    S'assigner
+                  </button>
+                )}
+              </div>
+              <button style={styles.btnCancel} onClick={() => setSelectedGroupe(null)}>Fermer</button>
             </div>
           </div>
         </div>

@@ -11,6 +11,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { spawnParticles } from '../hooks/useAnimations';
+import { useNotification } from '../context/NotificationContext';
 import { getTickets, createTicket, updateTicket, getSites, getTokenRole, getKeywords } from '../api/tickets';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
@@ -119,6 +120,7 @@ const INITIAL_FORM = {
 
 export default function CallCenter() {
   const navigate = useNavigate();
+  const { addNotification } = useNotification();
 
   // Role guard
   const tokenRole = getTokenRole();
@@ -208,7 +210,7 @@ export default function CallCenter() {
       const data = await getTickets(statut);
       setTickets(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error('Impossible de charger les reclamations', err);
+      addNotification('Impossible de charger les réclamations.', 'error');
       setTickets([]);
     } finally {
       setLoading(false);
@@ -247,9 +249,9 @@ export default function CallCenter() {
       setFormData(INITIAL_FORM);
       setSelectedKeywords([]);
       setCurrentView('non-traites');
+      addNotification('Ticket créé avec succès');
     } catch (err) {
-      console.error(err);
-      alert('Erreur lors de la creation du ticket.');
+      addNotification('Erreur lors de la création du ticket.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -263,7 +265,7 @@ export default function CallCenter() {
       setSelectedTicket(null);
       fetchTickets(); // Refresh the list to reflect the change
     } catch (err) {
-      alert("Erreur lors de l'archivage.");
+      addNotification("Erreur lors de l'archivage.", 'error');
     }
   };
 
