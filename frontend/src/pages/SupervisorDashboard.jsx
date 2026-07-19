@@ -223,7 +223,7 @@ export default function SupervisorDashboard() {
   // Initial fetch whenever the selected period changes
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // ─── Auto-refresh every 5 seconds ───
+  // ─── Auto-refresh every 5 seconds (transparent) ───
   useEffect(() => {
     const interval = setInterval(() => {
       const refresh = async () => {

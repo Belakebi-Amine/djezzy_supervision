@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
+const API_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api';
+
 const Login = () => {
     const navigate = useNavigate();
     const [email, setEmail] = useState('');
@@ -50,7 +52,7 @@ const Login = () => {
         }
 
         try {
-            const response = await axios.post(`${process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api'}/token/`, {
+            const response = await axios.post(`${API_URL}/token/`, {
                 email: email,
                 password: password
             });
@@ -74,7 +76,7 @@ const Login = () => {
 
             if (!userRole && response.data.access) {
                 try {
-                    const meResp = await axios.get(`${process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api'}/accounts/me/`, {
+                    const meResp = await axios.get(`${API_URL}/accounts/me/`, {
                         headers: { Authorization: 'Bearer ' + response.data.access }
                     });
                     userRole = meResp.data?.role_user || meResp.data?.role;
@@ -390,6 +392,7 @@ const S = {
         borderTopColor: '#ffffff',
         borderRadius: '50%',
         animation: 'spin 0.7s linear infinite',
+        display: 'inline-block',
     },
     footer: {
         textAlign: 'center',
@@ -410,10 +413,6 @@ styleSheet.textContent = `
         from { opacity: 0; transform: translateY(16px); }
         to { opacity: 1; transform: translateY(0); }
     }
-    @keyframes loginScaleIn {
-        from { opacity: 0; transform: scale(0.8); }
-        to { opacity: 1; transform: scale(1); }
-    }
     @keyframes loginShake {
         0%, 100% { transform: translateX(0); }
         20% { transform: translateX(-4px); }
@@ -424,7 +423,7 @@ styleSheet.textContent = `
     @keyframes spin {
         to { transform: rotate(360deg); }
     }
-    input:focus ~ div, input:focus + div {
+    input:focus {
         border-color: #E8401A !important;
         box-shadow: 0 0 0 3px rgba(232,64,26,0.1) !important;
     }

@@ -41,3 +41,4 @@ class CustomUserAdmin(UserAdmin):
             'fields': ('role', 'first_name', 'last_name', 'email'),
         }),
     )
+

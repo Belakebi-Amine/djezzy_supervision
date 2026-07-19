@@ -11,6 +11,7 @@ from .views import (
     me_view,
     change_password_view,
     update_profile_view,
+    user_stats_view,
     list_users_view,
     register_view,
     archive_user_view,
@@ -37,6 +38,7 @@ urlpatterns = [
     path('ingenieurs/', liste_ingenieurs, name='liste-ingenieurs'),
 
     # ── Admin: user management ──
+    path('users/stats/', user_stats_view, name='user_stats'),
     path('users/', list_users_view, name='list_users'),
     path('users/register/', register_view, name='register_user'),
     path('users/<str:code_user>/', update_user_view, name='update_user'),

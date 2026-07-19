@@ -236,6 +236,13 @@ export const getUsers = async () => {
     return await response.json();
 };
 
+/** Fetches user stats KPIs (admin only) */
+export const getUserStats = async () => {
+    const response = await fetch(`${API_URL}/accounts/users/stats/`, { method: 'GET', headers: await getHeaders() });
+    if (!response.ok) throw new Error(`Erreur serveur [${response.status}]`);
+    return await response.json();
+};
+
 /** Creates a new user account (admin only) */
 export const createUser = async (userData) => {
     const response = await fetch(`${API_URL}/accounts/users/register/`, {
@@ -455,3 +462,5 @@ export const previewPriorite = async (motsCles) => {
     if (!response.ok) throw new Error(`Erreur serveur [${response.status}]`);
     return await response.json();
 };
+
+

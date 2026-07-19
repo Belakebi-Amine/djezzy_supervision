@@ -105,6 +105,114 @@ def update_profile_view(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdmin])
+def user_stats_view(request):
+    """
+    Admin-only endpoint returning user management KPIs:
+    - System health: active/inactive/dormant/never-connected users
+    - Workload: tickets per engineer, resolution rates
+    - Per-user breakdown with last login + active tickets
+    """
+    from django.utils import timezone
+    from django.db.models import Count, Q, Max
+    from datetime import timedelta
+    from reclamations.models import GroupeTicket
+
+    now = timezone.now()
+    h24 = now - timedelta(hours=24)
+    j30 = now - timedelta(days=30)
+
+    all_users = CustomUser.objects.all()
+    visible_users = all_users.filter(is_archived=False)
+
+    # ── System health ──
+    actifs = visible_users.filter(is_active=True).count()
+    inactifs = visible_users.filter(is_active=False).count()
+    archived = all_users.filter(is_archived=True).count()
+    total = all_users.count()
+
+    never_connected = all_users.filter(last_login__isnull=True, is_archived=False).count()
+    connected_24h = all_users.filter(last_login__gte=h24).count()
+    dormant_30j = all_users.filter(
+        is_active=True, is_archived=False,
+        last_login__lt=j30
+    ).count()
+    most_recent = all_users.filter(last_login__isnull=False).aggregate(Max('last_login'))['last_login__max']
+
+    # ── Workload ──
+    all_tickets_assignes = GroupeTicket.objects.filter(assigne_a__isnull=False).count()
+    tickets_non_resolus = GroupeTicket.objects.filter(assigne_a__isnull=False, statut='ouvert').count()
+    tickets_resolus = GroupeTicket.objects.filter(assigne_a__isnull=False, statut='resolu').count()
+    tickets_total = tickets_resolus + tickets_non_resolus
+    taux_resolution = round((tickets_resolus / tickets_total) * 100, 1) if tickets_total > 0 else 0.0
+
+    # Per engineer workload
+    ingenieurs = CustomUser.objects.filter(role='INGENIEUR_RESEAUX', is_active=True)
+    charge_per_eng = []
+    for ing in ingenieurs:
+        n = GroupeTicket.objects.filter(assigne_a=ing).count()
+        charge_per_eng.append(n)
+
+    max_charge = max(charge_per_eng) if charge_per_eng else 0
+    min_charge = min(charge_per_eng) if charge_per_eng else 0
+    avg_charge = round(sum(charge_per_eng) / len(charge_per_eng), 1) if charge_per_eng else 0
+    total_agents_cc = CustomUser.objects.filter(role='AGENT_CALL_CENTER', is_active=True).count()
+
+    # ── Per user breakdown ──
+    per_user = []
+    for u in visible_users.filter(is_active=True).select_related().order_by('code_user'):
+        tickets_actifs = 0
+        tickets_total_u = 0
+        taux_u = 0.0
+
+        if u.role == 'INGENIEUR_RESEAUX':
+            tickets_total_u = GroupeTicket.objects.filter(assigne_a=u).count()
+            resolus_u = GroupeTicket.objects.filter(assigne_a=u, statut='resolu').count()
+            tickets_actifs = GroupeTicket.objects.filter(assigne_a=u, statut='ouvert').count()
+            taux_u = round((resolus_u / tickets_total_u) * 100, 1) if tickets_total_u > 0 else 0.0
+        elif u.role == 'AGENT_CALL_CENTER':
+            from reclamations.models import Reclamation
+            tickets_total_u = Reclamation.objects.filter(cree_par=u).count()
+            resolus_u = Reclamation.objects.filter(cree_par=u, statut='resolu').count()
+            tickets_actifs = Reclamation.objects.filter(cree_par=u, statut='ouvert').count()
+            taux_u = round((resolus_u / tickets_total_u) * 100, 1) if tickets_total_u > 0 else 0.0
+
+        per_user.append({
+            'code_user': u.code_user,
+            'nom': u.get_full_name().strip() or u.code_user,
+            'role': u.role,
+            'tickets_actifs': tickets_actifs,
+            'tickets_total': tickets_total_u,
+            'taux_resolution': taux_u,
+            'derniere_connexion': u.last_login,
+            'jamais_connecte': u.last_login is None,
+        })
+
+    return Response({
+        'utilisateurs': {
+            'total': total,
+            'actifs': actifs,
+            'inactifs': inactifs,
+            'archives': archived,
+            'never_connected': never_connected,
+            'connected_24h': connected_24h,
+            'dormant_30j': dormant_30j,
+            'most_recent_login': most_recent,
+        },
+        'workload': {
+            'total_tickets_assignes': all_tickets_assignes,
+            'tickets_non_resolus': tickets_non_resolus,
+            'taux_resolution_global': taux_resolution,
+            'max_charge_ingenieur': max_charge,
+            'min_charge_ingenieur': min_charge,
+            'charge_moyenne_ingenieur': avg_charge,
+            'total_agents_cc': total_agents_cc,
+        },
+        'per_user': per_user,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdmin])
 def list_users_view(request):
     """Returns filtered users. Admin-only endpoint for user management panel.
     Query params: ?role=, ?search=, ?is_active=, ?archived="""
@@ -308,3 +416,5 @@ def reinitialiser_mot_de_passe_view(request):
         'message': f'Mot de passe réinitialisé pour {user.code_user}',
         'nouveau_mot_de_passe': temp_password,
     })
+
+

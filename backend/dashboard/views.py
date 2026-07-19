@@ -14,7 +14,7 @@ from django.utils import timezone
 from datetime import timedelta
 
 from rest_framework import status
-from reclamations.models import Reclamation
+from reclamations.models import Reclamation, GroupeTicket
 from sites_reseau.models import SiteReseau
 from accounts.models import CustomUser, Role
 from accounts.serializers import UserSerializer
@@ -157,14 +157,14 @@ def statistiques(request):
     except Exception:
         resolutions_par_jour = []
 
-    # ── Per-engineer performance stats ──
+    # ── Per-engineer performance stats (based on GroupeTickets) ──
     stats_employes = []
     ingenieurs = CustomUser.objects.filter(role=Role.INGENIEUR_RESEAUX, is_active=True)
     for ing in ingenieurs:
-        total_assignes = Reclamation.objects.filter(assigne_a=ing, created_at__gte=date_limite).count()
-        resolus = Reclamation.objects.filter(assigne_a=ing, statut='resolu', created_at__gte=date_limite).count()
-        ouverts = Reclamation.objects.filter(assigne_a=ing, statut='ouvert', created_at__gte=date_limite).count()
-        delai_ing = Reclamation.objects.filter(
+        total_assignes = GroupeTicket.objects.filter(assigne_a=ing, created_at__gte=date_limite).count()
+        resolus = GroupeTicket.objects.filter(assigne_a=ing, statut='resolu', created_at__gte=date_limite).count()
+        ouverts = GroupeTicket.objects.filter(assigne_a=ing, statut='ouvert', created_at__gte=date_limite).count()
+        delai_ing = GroupeTicket.objects.filter(
             assigne_a=ing, statut='resolu', resolu_le__isnull=False, created_at__gte=date_limite
         ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
         stats_employes.append({

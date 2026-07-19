@@ -26,7 +26,7 @@ import {
   getDashboardStats, getDashboardReporting,
   getRapportsIA, getArchivedRapports, restoreRapportIA,
 } from '../api/dashboard';
-import { getSites, getUsers, createUser, getTickets, createTicket, updateTicket, createSite, updateSiteStatus, archiverSite, archiveUser, toggleActiveUser, updateUser, restoreUser, getTokenRole, getArchivedTickets, archiverReclamation, desarchiverReclamation, getArchivedSites, restoreSite, getKeywords } from '../api/tickets';
+import { getSites, getUsers, getUserStats, createUser, getTickets, createTicket, updateTicket, createSite, updateSiteStatus, archiverSite, archiveUser, toggleActiveUser, updateUser, restoreUser, getTokenRole, getArchivedTickets, archiverReclamation, desarchiverReclamation, getArchivedSites, restoreSite, getKeywords } from '../api/tickets';
 import MapComponent from '../components/Map';
 import DetailModal from '../components/DetailModal';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
@@ -93,6 +93,22 @@ const formatDateTimeFr = (iso) => {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '-';
   return `${d.getDate()} ${MOIS_FR[d.getMonth()]} ${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+// Relative time in French (e.g., "il y a 3j", "il y a 2h")
+const formatRelativeTime = (iso) => {
+  if (!iso) return 'Jamais';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'Jamais';
+  const diffMs = Date.now() - d.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return "A l'instant";
+  if (diffMin < 60) return `il y a ${diffMin}min`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `il y a ${diffH}h`;
+  const diffJ = Math.floor(diffH / 24);
+  if (diffJ < 30) return `il y a ${diffJ}j`;
+  const diffM = Math.floor(diffJ / 30);
+  return `il y a ${diffM}mo`;
 };
 // Returns today's date as DD/MM/YYYY
 const now = () => {
@@ -230,6 +246,7 @@ export default function AdminDashboard() {
   const [reporting, setReporting] = useState(null);
   const [sites, setSites] = useState([]);
   const [users, setUsers] = useState([]);
+  const [userStats, setUserStats] = useState(null);
   const [tickets, setTickets] = useState([]);
   const [detail, setDetail] = useState(null); // detail modal for chart drill-down
 
@@ -305,6 +322,9 @@ export default function AdminDashboard() {
   const fetchUsers = useCallback(async () => {
     try { const d = await getUsers(); setUsers(Array.isArray(d) ? d : []); } catch { setUsers([]); }
   }, []);
+  const fetchUserStats = useCallback(async () => {
+    try { const d = await getUserStats(); setUserStats(d); } catch { setUserStats(null); }
+  }, []);
   const fetchTickets = useCallback(async () => {
     try { const d = await getTickets(); setTickets(Array.isArray(d) ? d : []); } catch { setTickets([]); }
   }, []);
@@ -316,17 +336,21 @@ export default function AdminDashboard() {
 
   // ─── Initial data load on mount and when period changes ───
   useEffect(() => {
-    fetchStats(); fetchSites(); fetchUsers(); fetchTickets();
+    fetchStats(); fetchSites(); fetchUsers(); fetchTickets(); fetchUserStats();
     getKeywords().then(setTicketKeywordsData).catch(() => setTicketKeywordsData({}));
-  }, [fetchStats, fetchSites, fetchUsers, fetchTickets]);
+  }, [fetchStats, fetchSites, fetchUsers, fetchTickets, fetchUserStats]);
 
   // ─── Auto-refresh every 5 seconds ───
   useEffect(() => {
     const interval = setInterval(() => {
       fetchStats(); fetchSites(); fetchTickets();
     }, 5000);
-    return () => clearInterval(interval);
-  }, [fetchStats, fetchSites, fetchTickets]);
+    // Refresh user stats less frequently (every 30s)
+    const userInterval = setInterval(() => {
+      fetchUserStats();
+    }, 30000);
+    return () => { clearInterval(interval); clearInterval(userInterval); };
+  }, [fetchStats, fetchSites, fetchTickets, fetchUserStats]);
 
   // Load archived data when archive view is active
   const fetchArchivedData = useCallback(async () => {
@@ -668,12 +692,12 @@ export default function AdminDashboard() {
   }, [fetchSites, addNotification]);
 
   // ─── Edit user form state ───
-  const [editForm, setEditForm] = useState({ first_name: '', last_name: '', email: '', role: '', password: '' });
+  const [editForm, setEditForm] = useState({ first_name: '', last_name: '', email: '', role: '' });
 
   // Populate edit form with existing user data and open modal
   const openEditUser = (u) => {
     setEditingUser(u);
-    setEditForm({ first_name: u.first_name || '', last_name: u.last_name || '', email: u.email || '', role: u.role_user || 'AGENT_CALL_CENTER', password: '' });
+    setEditForm({ first_name: u.first_name || '', last_name: u.last_name || '', email: u.email || '', role: u.role_user || 'AGENT_CALL_CENTER' });
     setShowEditUserForm(true);
   };
 
@@ -684,7 +708,6 @@ export default function AdminDashboard() {
     setSubmitting(true);
     try {
       const payload = { ...editForm };
-      if (!payload.password) delete payload.password;
       await updateUser(editingUser.code_user, payload);
       setUsers((prev) => prev.map((u) => u.code_user === editingUser.code_user ? { ...u, ...editForm, role_user: editForm.role } : u));
       setShowEditUserForm(false);
@@ -720,7 +743,7 @@ export default function AdminDashboard() {
           { key: 'dashboard', label: 'Dashboard', icon: IconDashboard },
           { key: 'sites', label: 'Sites Réseau', icon: IconSite },
           { key: 'users', label: 'Utilisateurs', icon: IconUsers },
-        ].map(({ key, label, icon: Icon }) => (
+        ].map(({ key, label, icon: Icon, badge }) => (
           <button key={key} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView(key); }}
             style={{ ...styles.navItem, ...(currentView === key ? styles.navItemActive : {}) }}>
             <Icon /> {label}
@@ -997,13 +1020,32 @@ export default function AdminDashboard() {
             </tbody>
           </table>
         </div>
-      </div>
+    </div>
     </>
   );
 
   // ─── USERS VIEW ───
   // User management table with role filtering, search, and CRUD actions per row
-  const usersView = () => (
+  const usersView = () => {
+    const us = userStats;
+    return (<>
+      {/* ── ROW 1: System Health KPIs ── */}
+      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#10B981', marginRight: 6, verticalAlign: 'middle' }} />SANTE SYSTEME</span></div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
+        <AnimatedKpi label="Utilisateurs actifs" value={us?.utilisateurs?.actifs ?? '-'} sub={`${us?.utilisateurs?.total ?? '-'} total`} color="#10B981" />
+        <AnimatedKpi label="Derniere connexion" value={formatRelativeTime(us?.utilisateurs?.most_recent_login)} sub="la plus recente" color="#2563EB" />
+        <AnimatedKpi label="Inactifs 30j+" value={us?.utilisateurs?.dormant_30j ?? '-'} sub="comptes dormants" color="#F59E0B" />
+        <AnimatedKpi label="Sessions 24h" value={us?.utilisateurs?.connected_24h ?? '-'} sub="utilisateurs actifs" color="#8B5CF6" />
+      </div>
+      {/* ── ROW 2: Performance & Workload KPIs ── */}
+      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#E8401A', marginRight: 6, verticalAlign: 'middle' }} />PERFORMANCE & CHARGE</span></div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
+        <AnimatedKpi label="Tickets assignes" value={us?.workload?.total_tickets_assignes ?? '-'} sub={`${us?.workload?.tickets_non_resolus ?? 0} en cours`} color="#E8401A" />
+        <AnimatedKpi label="Taux resolution global" value={us?.workload?.taux_resolution_global != null ? `${us.workload.taux_resolution_global}%` : '-'} sub="ingenieurs + agents" color="#10B981" />
+        <AnimatedKpi label="Charge max ingenieur" value={us?.workload?.max_charge_ingenieur ?? '-'} sub={`moy: ${us?.workload?.charge_moyenne_ingenieur ?? '-'}`} color="#F59E0B" />
+        <AnimatedKpi label="Jamais connectes" value={us?.utilisateurs?.never_connected ?? '-'} sub="comptes orphelins" color="#EF4444" />
+      </div>
+      {/* ── Users Table ── */}
     <div style={styles.tableCard}>
       <div style={{ ...styles.toolbar, borderBottom: `1px solid ${COLORS.border}` }}>
         <div style={styles.toolbarLeft}><h2 style={styles.tableTitle}><IconUsers /> Utilisateurs</h2>
@@ -1030,13 +1072,15 @@ export default function AdminDashboard() {
               <th style={styles.th}>Nom</th>
               <th style={styles.th}>Email</th>
               <th style={styles.th}>Rôle</th>
+              <th style={styles.th}>Derniere connexion</th>
+              <th style={styles.th}>Tickets actifs</th>
               <th style={styles.th}>Actif</th>
               <th style={{ ...styles.th, textAlign: 'center' }}>ACTIONS</th>
             </tr>
           </thead>
           <tbody>
             {filteredUsers.length === 0 ? (
-              <tr><td colSpan="7" style={styles.emptyCell}>Aucun utilisateur trouvé.</td></tr>
+              <tr><td colSpan="9" style={styles.emptyCell}>Aucun utilisateur trouvé.</td></tr>
             ) : filteredUsers.map((u) => (
               <tr key={u.code_user} style={styles.tr}
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
@@ -1046,6 +1090,18 @@ export default function AdminDashboard() {
                 <td style={styles.td}>{u.last_name || '-'}</td>
                 <td style={styles.td}>{u.email}</td>
                 <td style={styles.td}>{getRoleBadge(u.role_user)}</td>
+                <td style={styles.td}>
+                  <span style={{ fontSize: 10, color: u.last_login ? 'var(--text-secondary)' : '#EF4444' }}>
+                    {formatRelativeTime(u.last_login)}
+                  </span>
+                </td>
+                <td style={styles.td}>
+                  {(() => {
+                    const pu = us?.per_user?.find(p => p.code_user === u.code_user);
+                    const count = pu?.tickets_actifs ?? 0;
+                    return <span style={{ fontSize: 11, fontWeight: 600, color: count > 0 ? '#2563EB' : 'var(--text-muted)' }}>{count}</span>;
+                  })()}
+                </td>
                 <td style={styles.td}>
                   {u.is_active !== false ? (
                     <span style={{ ...styles.badgeBase, color: '#169742', background: '#dcf8e4' }}>ACTIF</span>
@@ -1081,7 +1137,9 @@ export default function AdminDashboard() {
         </table>
       </div>
     </div>
+    </>
   );
+  };
 
   // ─── MAP VIEW ───
   // Renders the interactive map component showing all network sites with coverage
@@ -1394,10 +1452,7 @@ export default function AdminDashboard() {
                 {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
-            <div style={{ ...styles.inputGroup, gridColumn: '1 / -1' }}>
-              <label style={styles.label}>Nouveau mot de passe (laisser vide pour garder l'actuel)</label>
-              <input type="password" value={editForm.password || ''} onChange={(e) => setEditForm({ ...editForm, password: e.target.value })} style={styles.input} placeholder="••••••••" />
-            </div>
+
           </div>
           <div style={styles.formActions}>
             <button type="button" onClick={() => { setShowEditUserForm(false); setEditingUser(null); }} style={styles.btnCancel}>Annuler</button>

@@ -371,10 +371,19 @@ def assigner_groupe_ticket(request, pk):
     if request.user.role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX, Role.SUPERVISEUR]:
         return Response({'error': 'Permission refusée'}, status=status.HTTP_403_FORBIDDEN)
 
+    was_closed = groupe.statut in ('ferme', 'resolu')
+
     groupe.assigne_a = request.user
+    if was_closed:
+        groupe.statut = 'ouvert'
+        groupe.resolu_le = None
     groupe.save()
 
-    Reclamation.objects.filter(groupe=groupe).update(assigne_a=request.user)
+    rec_update = {'assigne_a': request.user}
+    if was_closed:
+        rec_update['statut'] = 'ouvert'
+        rec_update['resolu_le'] = None
+    Reclamation.objects.filter(groupe=groupe).update(**rec_update)
 
     return Response(GroupeTicketSerializer(groupe).data)
 
@@ -393,4 +402,11 @@ def archiver_groupe_ticket(request, pk):
     groupe.archived_at = timezone.now()
     groupe.archived_by = request.user
     groupe.save()
+
+    now = timezone.now()
+    Reclamation.objects.filter(groupe=groupe, is_archived=False).update(
+        is_archived=True,
+        archived_at=now,
+    )
+
     return Response({'message': 'Ticket groupé archivé', 'id': pk})

@@ -31,7 +31,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             raise serializers.ValidationError(
                 {'detail': 'Ce compte est désactivé. Contactez un administrateur.'}
             )
-        # Also include full user data in the response body for the frontend
+        # Include full user data and must_change_password flag
         data['user'] = UserSerializer(self.user).data
         return data
 
@@ -62,6 +62,8 @@ class UserSerializer(serializers.ModelSerializer):
             'role_user',
             'is_active',
             'is_archived',
+            'last_login',
+            'date_joined',
         ]
         read_only_fields = ['code_user', 'nom_user', 'role_user', 'is_active', 'is_archived']
 
@@ -134,21 +136,19 @@ class UpdateProfileSerializer(serializers.ModelSerializer):
 
 class UpdateUserSerializer(serializers.ModelSerializer):
     """
-    For admin to modify any user's details including their role and password.
+    For admin to modify any user's details (name, email, role).
+    Password changes are not allowed here — users must change
+    their own password via the profile page.
     """
-    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = CustomUser
-        fields = ['first_name', 'last_name', 'email', 'role', 'password']
+        fields = ['first_name', 'last_name', 'email', 'role']
         read_only_fields = []
 
     def update(self, instance, validated_data):
-        password = validated_data.pop('password', None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
-        if password:
-            instance.set_password(password)
         # Keep is_staff/is_superuser in sync with ADMIN role
         if validated_data.get('role') is not None:
             if validated_data['role'] == 'ADMIN':
@@ -159,3 +159,4 @@ class UpdateUserSerializer(serializers.ModelSerializer):
                 instance.is_superuser = False
         instance.save()
         return instance
+

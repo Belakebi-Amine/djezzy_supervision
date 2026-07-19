@@ -3,7 +3,7 @@
  *
  * Main dashboard page for network engineers at Djezzy.
  * Provides three main views:
- *   1. Reclamations – view and manage customer complaint tickets
+ *   1. Tickets – view and manage customer complaint tickets
  *   2. Sites Reseau – manage telecom network sites (status, creation, archiving)
  *   3. Cartographie – map view showing site locations and coverage
  *
@@ -105,6 +105,9 @@ const IconX = (p) => (
 );
 const IconArchive = (p) => (
   <svg {...iconProps} {...p}><path d="M21 4H3M8 2v2M16 2v2M4 7l1 12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2l1-12M10 11v6M14 11v6" /></svg>
+);
+const IconEdit = (p) => (
+  <svg {...iconProps} {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
 );
 
 // Possible ticket statuses and their display labels
@@ -231,7 +234,7 @@ export default function EngineerDashboard() {
       setTickets(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Impossible de charger les reclamations', err);
-      addNotification('Impossible de charger les réclamations.', 'error');
+      addNotification('Impossible de charger les tickets.', 'error');
       setTickets([]);
     } finally {
       setLoading(false);
@@ -455,7 +458,8 @@ export default function EngineerDashboard() {
   }, [fetchGroupeStats]);
 
   const handleAssignerGroupe = useCallback(async (groupeId) => {
-    if (!window.confirm('Vous assigner à ce ticket ? Toutes les réclamations vous seront assignées.')) return;
+    const isFerme = groupeTickets.find(g => g.id === groupeId)?.statut === 'ferme';
+    if (!window.confirm(isFerme ? 'Prendre ce ticket ? Les réclamations seront rouvertes et assignées à vous.' : 'Vous assigner à ce ticket ? Toutes les réclamations vous seront assignées.')) return;
     setUpdatingGroupeId(groupeId);
     try {
       await assignerGroupeTicket(groupeId);
@@ -589,7 +593,7 @@ export default function EngineerDashboard() {
         <div style={styles.menu}>
           <span style={styles.sectionLabel}>PRINCIPAL</span>
           <button style={{ ...styles.navItem, ...(currentView === 'reclamations' ? styles.navItemActive : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('reclamations'); }}>
-            <IconTicket /> Réclamations
+            <IconTicket /> Tickets
           </button>
           <button style={{ ...styles.navItem, ...(currentView === 'sites' ? styles.navItemActive : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('sites'); setSelectedTicket(null); }}>
             <IconSite /> Sites Réseau
@@ -601,7 +605,7 @@ export default function EngineerDashboard() {
         <div style={{ ...styles.menu, marginTop: 8 }}>
           <span style={styles.sectionLabel}>ARCHIVES</span>
           <button style={{ ...styles.navItem, ...(currentView === 'archives' ? styles.navItemActive : {}) }} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('archives'); }}>
-            <IconArchive /> Sites archivés
+            <IconArchive /> Archives
           </button>
         </div>
       </aside>
@@ -610,7 +614,7 @@ export default function EngineerDashboard() {
       <div style={{ ...styles.mainContent, backgroundColor: COLORS.mainBg }}>
         {/* Sticky header bar with dynamic title */}
         <header style={{ position: 'sticky', top: 0, height: 51, display: 'flex', alignItems: 'center', padding: '0 27px', background: COLORS.cardBg, borderBottom: `1px solid ${COLORS.border}`, boxShadow: 'var(--shadow-sm)', zIndex: 10 }}>
-          <h1 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-secondary)' }}>{currentView === 'sites' ? 'Sites Réseau' : currentView === 'cartographie' ? 'Cartographie' : currentView === 'archives' ? 'Sites Archivés' : 'Réclamations'}</h1>
+          <h1 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-secondary)' }}>{currentView === 'sites' ? 'Sites Réseau' : currentView === 'cartographie' ? 'Cartographie' : currentView === 'archives' ? 'Archives' : 'Tickets'}</h1>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 10, color: 'var(--text-muted2)', fontWeight: 500, padding: '4px 10px', background: 'var(--bg-toolbar)', borderRadius: 4 }}>{now()}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8, paddingLeft: 12, borderLeft: '1px solid var(--border-color)' }}>
@@ -776,14 +780,15 @@ export default function EngineerDashboard() {
                       <th style={styles.th}>Nom Site</th>
                       <th style={styles.th}>Wilaya</th>
                       <th style={styles.th}>Commune</th>
+                      <th style={styles.th}>Statut</th>
                       <th style={{ ...styles.th, textAlign: 'center' }}>ACTIONS</th>
                     </tr>
                   </thead>
                   <tbody>
                     {sitesLoading ? (
-                      <tr><td colSpan="5" style={styles.emptyCell}>Chargement des sites...</td></tr>
+                      <tr><td colSpan="6" style={styles.emptyCell}>Chargement des sites...</td></tr>
                     ) : filteredSites.length === 0 ? (
-                      <tr><td colSpan="5" style={styles.emptyCell}>Aucun site trouve.</td></tr>
+                      <tr><td colSpan="6" style={styles.emptyCell}>Aucun site trouve.</td></tr>
                     ) : filteredSites.map((site) => {
                       const isArchived = site.archive;
                       return (
@@ -814,40 +819,25 @@ export default function EngineerDashboard() {
                           <td style={{ ...styles.td, color: isArchived ? '#9CA3AF' : undefined }}>{site.nom}</td>
                           <td style={{ ...styles.td, color: isArchived ? '#9CA3AF' : undefined }}>{site.wilaya}</td>
                           <td style={{ ...styles.td, color: isArchived ? '#9CA3AF' : undefined }}>{site.commune}</td>
-                          {/* Toggle buttons: Actif / Inactif – hidden for archived sites */}
+                          {/* Status badge */}
+                          <td style={styles.td}>
+                            <span style={{ padding: '3px 10px', borderRadius: 4, fontWeight: 700, fontSize: 11, backgroundColor: ST_BG[site.statut] || '#F1F5F9', color: ST[site.statut] || '#64748B' }}>
+                              {SITE_LABELS[site.statut] || site.statut}
+                            </span>
+                          </td>
+                          {/* Actions: modifier + archiver icons */}
                           <td style={{ ...styles.td, textAlign: 'center' }}>
                             {isArchived ? (
                               <span style={{ fontSize: 9, color: '#9CA3AF', fontWeight: 600 }}>Archivé</span>
                             ) : (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
-                              <div style={styles.statusActions}>
-                                {['UP', 'DOWN'].map((s) => {
-                                  const isActive = site.statut === s;
-                                  const isTarget = site.statut !== s;
-                                  return (
-                                    <button
-                                      key={s}
-                                      disabled={!isTarget || togglingSiteId === site.id}
-                                      onClick={() => handleSiteToggle(site.id, site.statut)}
-                                      style={{
-                                        ...styles.statusBtn,
-                                        backgroundColor: isActive ? (s === 'UP' ? '#059669' : '#DC2626') : (isTarget ? '#FFFFFF' : '#FFFFFF'),
-                                        color: isActive ? '#FFFFFF' : (isTarget ? (s === 'UP' ? '#059669' : '#DC2626') : '#D0D0D0'),
-                                        borderColor: isActive ? (s === 'UP' ? '#059669' : '#DC2626') : (isTarget ? (s === 'UP' ? '#059669' : '#DC2626') : '#E5E5E5'),
-                                        cursor: isTarget && togglingSiteId !== site.id ? 'pointer' : 'not-allowed',
-                                        fontWeight: isActive ? 700 : (isTarget ? 600 : 500),
-                                      }}
-                                    >
-                                      {SITE_LABELS[s]}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                              <button onClick={() => setSelectedSite(site)} title="Modifier" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: '3px 8px', fontSize: 10, fontWeight: 600, borderRadius: 4, border: '1px solid #2563EB33', background: '#2563EB0D', color: '#2563EB', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                                Modifier
+                            <div style={styles.statusActions}>
+                              <button onClick={(e) => { e.stopPropagation(); setSelectedSite(site); }} title="Modifier"
+                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 6, border: '1px solid #2563EB33', background: '#2563EB0D', color: '#2563EB', cursor: 'pointer' }}>
+                                <IconEdit style={{ width: 12, height: 12 }} />
                               </button>
-                              <button onClick={() => handleArchiverSite(site.id)} title="Archiver" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: '3px 8px', fontSize: 10, fontWeight: 600, borderRadius: 4, border: '1px solid #DC262633', background: '#DC26260D', color: '#DC2626', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                                Archiver
+                              <button onClick={(e) => { e.stopPropagation(); handleArchiverSite(site.id); }} title="Archiver"
+                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 6, border: '1px solid #DC262633', background: '#DC26260D', color: '#DC2626', cursor: 'pointer' }}>
+                                <IconArchive style={{ width: 12, height: 12 }} />
                               </button>
                             </div>
                             )}
@@ -861,7 +851,7 @@ export default function EngineerDashboard() {
             </div>
           </div>
         )) : currentView === 'archives' ? (
-          /* ---------- Archives View (Sites + Réclamations, read-only) ---------- */
+          /* ---------- Archives View (Sites + Tickets, read-only) ---------- */
           <div style={styles.pageContent}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
               <span style={{ width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg,#64748B22,#64748B0A)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -876,7 +866,7 @@ export default function EngineerDashboard() {
             <div style={{ display: 'flex', gap: 6, background: 'var(--bg-toolbar)', borderRadius: 8, padding: 4, marginBottom: 16 }}>
               {[
                 { key: 'sites', label: 'Sites', icon: <IconSite style={{ width: 13, height: 13 }} />, count: archivedSites.length },
-                { key: 'tickets', label: 'Réclamations', icon: <IconTicket style={{ width: 13, height: 13 }} />, count: archivedTickets.length },
+                { key: 'tickets', label: 'Tickets', icon: <IconTicket style={{ width: 13, height: 13 }} />, count: archivedTickets.length },
               ].map((tab) => (
                 <button key={tab.key} onClick={() => setArchiveTab(tab.key)}
                   style={{ padding: '7px 16px', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
@@ -928,7 +918,7 @@ export default function EngineerDashboard() {
                   archivedTickets.length === 0 ? (
                     <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>
                       <IconArchive style={{ width: 32, height: 32, color: 'var(--text-muted2)', opacity: 0.3, margin: '0 auto 12px' }} />
-                      <div style={{ fontWeight: 600 }}>Aucune réclamation archivée</div>
+                      <div style={{ fontWeight: 600 }}>Aucun ticket archivé</div>
                     </div>
                   ) : (
                     <table style={styles.table}>
@@ -961,7 +951,7 @@ export default function EngineerDashboard() {
             </div>
           </div>
         ) : (
-        /* ---------- Reclamations (Tickets) View ---------- */
+        /* ---------- Tickets View ---------- */
         <div style={styles.pageContent}>
           {/* ─── Stats Row ─── */}
           <div style={styles.statsRow}>
@@ -979,36 +969,15 @@ export default function EngineerDashboard() {
             </div>
             <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#8B5CF6', backgroundColor: COLORS.cardBg, animationDelay: '0.15s' }}>
               <span style={{ ...styles.statNumber, color: '#8B5CF6' }}>{groupeStats.reclamations_total || 0}</span>
-              <span style={styles.statLabel}>Réclamations total</span>
+              <span style={styles.statLabel}>Réclamations</span>
             </div>
           </div>
 
           <div className="fade-in table-card" style={{ ...styles.tableCard, backgroundColor: COLORS.cardBg, animationDelay: '0.1s' }}>
-            {/* Toolbar with view mode toggle, search and filter */}
+            {/* Toolbar with title, search and filter */}
             <div style={{ ...styles.toolbar, borderBottom: `1px solid ${COLORS.border}` }}>
               <div style={styles.toolbarLeft}>
                 <h2 style={{ ...styles.tableTitle, color: '#181c24' }}>Liste des tickets</h2>
-                {/* View mode toggle */}
-                <div style={{ display: 'flex', gap: '2px', marginLeft: '12px', backgroundColor: '#F1F5F9', borderRadius: '6px', padding: '2px' }}>
-                  <button
-                    onClick={() => setViewMode('grouped')}
-                    style={{
-                      padding: '4px 12px', borderRadius: '4px', border: 'none', fontSize: '11px', fontWeight: 600, cursor: 'pointer',
-                      backgroundColor: viewMode === 'grouped' ? '#FFFFFF' : 'transparent',
-                      color: viewMode === 'grouped' ? '#181c24' : '#64748B',
-                      boxShadow: viewMode === 'grouped' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                    }}
-                  >Tickets</button>
-                  <button
-                    onClick={() => setViewMode('individual')}
-                    style={{
-                      padding: '4px 12px', borderRadius: '4px', border: 'none', fontSize: '11px', fontWeight: 600, cursor: 'pointer',
-                      backgroundColor: viewMode === 'individual' ? '#FFFFFF' : 'transparent',
-                      color: viewMode === 'individual' ? '#181c24' : '#64748B',
-                      boxShadow: viewMode === 'individual' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                    }}
-                  >Réclamations</button>
-                </div>
               </div>
 
               <div style={styles.toolbarActions}>
@@ -1032,18 +1001,9 @@ export default function EngineerDashboard() {
             {/* Collapsible filter panel */}
             {showFilters && (
               <div style={{ ...styles.filterArea, backgroundColor: '#fafbfc', borderBottom: `1px solid ${COLORS.border}` }}>
-                <input
-                  type="date"
-                  value={filterDate}
-                  onChange={(e) => setFilterDate(e.target.value)}
-                  style={{ ...styles.filterSelect, backgroundColor: COLORS.inputBg, color: '#4e5561', border: `1px solid ${COLORS.border}` }}
-                />
                 <select value={filterStatut} onChange={(e) => setFilterStatut(e.target.value)} style={{ ...styles.filterSelect, backgroundColor: COLORS.inputBg, color: '#4e5561', border: `1px solid ${COLORS.border}` }}>
                   <option value="">Tous statuts</option>
                   <option value="ouvert">Ouvert</option>
-                   <option value="ouvert">Ouvert</option>
-                    <option value="resolu">Résolu</option>
-                    <option value="ferme">Fermé</option>
                   <option value="ferme">Fermé</option>
                 </select>
                 <select value={filterSiteId} onChange={(e) => setFilterSiteId(e.target.value)} style={{ ...styles.filterSelect, backgroundColor: COLORS.inputBg, color: '#4e5561', border: `1px solid ${COLORS.border}` }}>
@@ -1059,26 +1019,18 @@ export default function EngineerDashboard() {
                   <option value="normale">Normale</option>
                   <option value="basse">Basse</option>
                 </select>
-                {viewMode === 'individual' && (
-                  <select value={filterType} onChange={(e) => setFilterType(e.target.value)} style={{ ...styles.filterSelect, backgroundColor: COLORS.inputBg, color: '#4e5561', border: `1px solid ${COLORS.border}` }}>
-                    <option value="">Tous types</option>
-                    <option value="particulier">Particulier</option>
-                    <option value="entreprise">Entreprise</option>
-                  </select>
-                )}
               </div>
             )}
 
-            {/* ─── GROUPED VIEW: Card Grid ─── */}
-            {viewMode === 'grouped' ? (
-              <div style={{ padding: '20px' }}>
-                {groupeLoading ? (
-                  <div style={{ textAlign: 'center', padding: '40px', color: COLORS.textMuted }}>Chargement des tickets...</div>
-                ) : filteredGroupeTickets.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '40px', color: COLORS.textMuted }}>Aucun ticket trouvé.</div>
-                ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
-                    {filteredGroupeTickets.map((groupe) => {
+            {/* ─── Ticket Cards Grid ─── */}
+            <div style={{ padding: '20px' }}>
+              {groupeLoading ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: COLORS.textMuted }}>Chargement des tickets...</div>
+              ) : filteredGroupeTickets.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: COLORS.textMuted }}>Aucun ticket trouvé.</div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+                  {filteredGroupeTickets.map((groupe) => {
                       const prio = COLORS.priorities[groupe.priorite?.toUpperCase()] || COLORS.priorities.NORMALE;
                       const statutKey = getStatutKey(groupe.statut);
                       const stat = COLORS.status[statutKey] || COLORS.status.OUVERT;
@@ -1144,24 +1096,30 @@ export default function EngineerDashboard() {
                               {statutKey}
                             </span>
                             <div style={{ display: 'flex', gap: '4px' }}>
-                              {groupe.statut !== 'resolu' && groupe.statut !== 'ferme' && (
+                              {groupe.statut === 'ouvert' && (
                                 <button
                                   disabled={updatingGroupeId === groupe.id}
                                   onClick={(e) => { e.stopPropagation(); handleResoudreGroupe(groupe.id); }}
                                   style={{ padding: '4px 10px', borderRadius: '4px', border: '1px solid #15803D33', backgroundColor: '#DCFCE7', color: '#15803D', fontSize: '10px', fontWeight: 600, cursor: 'pointer' }}
                                 >Résoudre</button>
                               )}
-                              {!groupe.assigne_a_display || groupe.assigne_a_display === '-' ? (
+                              {groupe.statut === 'ouvert' && (!groupe.assigne_a_display || groupe.assigne_a_display === '-') ? (
                                 <button
                                   disabled={updatingGroupeId === groupe.id}
                                   onClick={(e) => { e.stopPropagation(); handleAssignerGroupe(groupe.id); }}
                                   style={{ padding: '4px 10px', borderRadius: '4px', border: '1px solid #2563EB33', backgroundColor: '#EFF6FF', color: '#2563EB', fontSize: '10px', fontWeight: 600, cursor: 'pointer' }}
                                 >S'assigner</button>
-                              ) : (
+                              ) : groupe.statut === 'ferme' ? (
+                                <button
+                                  disabled={updatingGroupeId === groupe.id}
+                                  onClick={(e) => { e.stopPropagation(); handleAssignerGroupe(groupe.id); }}
+                                  style={{ padding: '4px 10px', borderRadius: '4px', border: '1px solid #F59E0B33', backgroundColor: '#FEF3C7', color: '#D97706', fontSize: '10px', fontWeight: 600, cursor: 'pointer' }}
+                                >Prendre le ticket</button>
+                              ) : groupe.assigne_a_display && groupe.assigne_a_display !== '-' ? (
                                 <span style={{ fontSize: '10px', color: COLORS.textMuted, padding: '4px 6px' }}>
                                   {groupe.assigne_a_display}
                                 </span>
-                              )}
+                              ) : null}
                             </div>
                           </div>
                         </div>
@@ -1170,256 +1128,10 @@ export default function EngineerDashboard() {
                   </div>
                 )}
               </div>
-            ) : (
-            /* ─── INDIVIDUAL VIEW: Table ─── */
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ ...styles.table, backgroundColor: COLORS.cardBg }}>
-                <thead>
-                    <tr style={styles.thRow}>
-                      <th style={styles.th}>N° Ticket</th>
-                      <th style={styles.th}>Type Client</th>
-                      <th style={styles.th}>Code Site</th>
-                      <th style={styles.th}>Priorité</th>
-                      <th style={styles.th}>Statut</th>
-                      <th style={styles.th}>Date Création</th>
-                      <th style={{ ...styles.th, textAlign: 'center' }}>ACTION</th>
-                    </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <tr><td colSpan="7" style={styles.emptyCell}>Chargement des donnees...</td></tr>
-                  ) : filteredTickets.length === 0 ? (
-                    <tr><td colSpan="7" style={styles.emptyCell}>Aucune reclamation trouvee.</td></tr>
-                  ) : filteredTickets.map((ticket) => {
-                    const prio = COLORS.priorities[ticket.priorite?.toUpperCase()] || COLORS.priorities.NORMALE;
-                    const typ = COLORS.types[ticket.type_client?.toUpperCase()] || COLORS.types.PARTICULIER;
-                    const statutKey = getStatutKey(ticket.statut);
-                    const stat = COLORS.status[statutKey] || COLORS.status.FERME;
-
-                    return (
-                      <tr
-                        key={ticket.id}
-                        style={styles.tr}
-                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#F8FAFC'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
-                      >
-                        <td style={{ ...styles.td, borderLeft: `4px solid ${prio.side}`, fontWeight: 600, cursor: 'pointer' }}
-                          onClick={() => setSelectedTicket(ticket)}>
-                          {ticket.numero_ticket}
-                        </td>
-                        <td style={styles.td}>
-                          <span style={{ ...styles.badgeBase, backgroundColor: typ.bg, color: typ.text, border: `1px solid ${typ.border}`, fontSize: '10px' }}>
-                            {ticket.type_client?.toUpperCase()}
-                          </span>
-                        </td>
-                        <td style={styles.td}>{ticket.site_display}</td>
-                        <td style={styles.td}>
-                          <span style={{ ...styles.badgeBase, backgroundColor: prio.bg, color: prio.text }}>
-                            {ticket.priorite?.toUpperCase()}
-                          </span>
-                        </td>
-                        <td style={styles.td}>
-                          <span style={{ ...styles.badgeBase, backgroundColor: stat.bg, color: stat.text }}>
-                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: stat.dot, marginRight: '6px', display: 'inline-block' }} />
-                            {getStatutKey(ticket.statut)}
-                          </span>
-                        </td>
-                        <td style={{ ...styles.td, color: COLORS.textMuted }}>{formatDateFr(ticket.created_at)}</td>
-                        <td style={{ ...styles.td, textAlign: 'center' }}>
-                          <div style={styles.statusActions}>
-                            {ALL_STATUSES.map((s) => {
-                              const sk = getStatutKey(s);
-                              const sc = COLORS.status[sk] || COLORS.status.OUVERT;
-                              const isCurrent = ticket.statut === s;
-                              const forward = getForwardStatuses(ticket.statut);
-                              const canGo = forward.includes(s);
-                              return (
-                                <button
-                                  key={s}
-                                  disabled={!canGo || updatingId === ticket.id}
-                                  onClick={(e) => { e.stopPropagation(); handleStatusChange(ticket.id, s, ticket.statut); }}
-                                  style={{
-                                    ...styles.statusBtn,
-                                    backgroundColor: isCurrent ? sc.bg : (canGo ? '#FFFFFF' : '#FFFFFF'),
-                                    color: isCurrent ? '#FFFFFF' : (canGo ? sc.text : '#D0D0D0'),
-                                    borderColor: isCurrent ? sc.bg : (canGo ? sc.text : '#E5E5E5'),
-                                    cursor: canGo && updatingId !== ticket.id ? 'pointer' : 'not-allowed',
-                                    fontWeight: isCurrent ? 700 : (canGo ? 600 : 500),
-                                  }}
-                                >
-                                  {ALL_LABELS[s]}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              </div>
-            )}
             </div>
           </div>
         )}
       </div>
-
-      {/* ===== Ticket Detail Modal ===== */}
-      {selectedTicket && (
-        <div className="fade-in" style={styles.overlay} onClick={() => setSelectedTicket(null)}>
-          <div className="scale-in" style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>Ticket {selectedTicket.numero_ticket}</h2>
-              <button style={styles.modalClose} onClick={() => setSelectedTicket(null)}><IconX /></button>
-            </div>
-
-            <div style={styles.modalBody}>
-              {/* Two-column grid: client info + ticket info */}
-              <div style={styles.modalGrid}>
-                <div style={styles.modalSection}>
-                  <h3 style={styles.modalSectionTitle}>Client</h3>
-                  <div style={styles.modalField}>
-                    <span style={styles.modalLabel}>Nom complet</span>
-                    <span style={styles.modalValue}>{selectedTicket.nom_complet_client || '-'}</span>
-                  </div>
-                  <div style={styles.modalField}>
-                    <span style={styles.modalLabel}>Telephone</span>
-                    <span style={styles.modalValue}>{selectedTicket.telephone_client || '-'}</span>
-                  </div>
-                  <div style={styles.modalField}>
-                    <span style={styles.modalLabel}>Email</span>
-                    <span style={styles.modalValue}>{selectedTicket.email_client || '-'}</span>
-                  </div>
-                  <div style={styles.modalField}>
-                    <span style={styles.modalLabel}>Type</span>
-                    <span style={styles.modalValue}>{selectedTicket.type_client || '-'}</span>
-                  </div>
-                </div>
-
-                <div style={styles.modalSection}>
-                  <h3 style={styles.modalSectionTitle}>Ticket</h3>
-                  <div style={styles.modalField}>
-                    <span style={styles.modalLabel}>Statut</span>
-                    <span style={styles.modalValue}>
-                      <span style={{ ...styles.badgeBase, ...COLORS.status[getStatutKey(selectedTicket.statut)] || COLORS.status.FERME }}>
-                        {getStatutKey(selectedTicket.statut)}
-                      </span>
-                    </span>
-                  </div>
-                  <div style={styles.modalField}>
-                    <span style={styles.modalLabel}>Priorite</span>
-                    <span style={styles.modalValue}>
-                      <span style={{ ...styles.badgeBase, ...(COLORS.priorities[selectedTicket.priorite?.toUpperCase()] || COLORS.priorities.NORMALE) }}>
-                        {selectedTicket.priorite?.toUpperCase()}
-                      </span>
-                    </span>
-                  </div>
-                  <div style={styles.modalField}>
-                    <span style={styles.modalLabel}>Site concerne</span>
-                    <span style={styles.modalValue}>{selectedTicket.site_display || '-'}</span>
-                  </div>
-                  {/* Created-by user chip with hover tooltip */}
-                  <div style={styles.modalField}>
-                    <span style={styles.modalLabel}>Cree par</span>
-                    {selectedTicket.cree_par ? (
-                      <span style={styles.userChip}
-                        onMouseEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); setHoveredUser({ user: selectedTicket.cree_par, rect: r }); }}
-                        onMouseLeave={() => setHoveredUser(null)}
-                      >
-                        {selectedTicket.cree_par.code_user}
-                      </span>
-                    ) : (
-                      <span style={styles.modalValue}>{selectedTicket.cree_par?.code_user || '-'}</span>
-                    )}
-                  </div>
-                  {/* Assigned-to user chip with hover tooltip */}
-                  <div style={styles.modalField}>
-                    <span style={styles.modalLabel}>Assigne a</span>
-                    {selectedTicket.assigne_a ? (
-                      <span style={styles.userChip}
-                        onMouseEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(); setHoveredUser({ user: selectedTicket.assigne_a, rect: r }); }}
-                        onMouseLeave={() => setHoveredUser(null)}
-                      >
-                        {selectedTicket.assigne_a_display}
-                      </span>
-                    ) : (
-                      <span style={styles.modalValue}>{selectedTicket.assigne_a_display || '-'}</span>
-                    )}
-                  </div>
-                  <div style={styles.modalField}>
-                    <span style={styles.modalLabel}>Date creation</span>
-                    <span style={styles.modalValue}>{formatDateTimeFr(selectedTicket.created_at)}</span>
-                  </div>
-                  {/* Show resolution date only if the ticket was resolved */}
-                  {selectedTicket.resolu_le && (
-                    <div style={styles.modalField}>
-                      <span style={styles.modalLabel}>Resolu le</span>
-                      <span style={styles.modalValue}>{formatDateTimeFr(selectedTicket.resolu_le)}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* AI-generated keywords section */}
-              <div style={styles.modalSection}>
-                <h3 style={styles.modalSectionTitle}>Mots-cles saisis</h3>
-                <p style={styles.modalText}>{selectedTicket.mots_cles_ia || 'Aucun mot-cle saisi.'}</p>
-              </div>
-
-              {/* Ticket description (if present) */}
-              {selectedTicket.description && (
-                <div style={styles.modalSection}>
-                  <h3 style={styles.modalSectionTitle}>Description</h3>
-                  <p style={styles.modalText}>{selectedTicket.description}</p>
-                </div>
-              )}
-
-            </div>
-
-            {/* Modal footer with status transition buttons */}
-            <div style={styles.modalFooter}>
-              <div style={styles.statusActions}>
-                {ALL_STATUSES.map((s) => {
-                  const sk = getStatutKey(s);
-                  const sc = COLORS.status[sk] || COLORS.status.OUVERT;
-                  const isCurrent = selectedTicket.statut === s;
-                  const forward = getForwardStatuses(selectedTicket.statut);
-                  const canGo = forward.includes(s);
-                  return (
-                    <button
-                      key={s}
-                      disabled={!canGo || updatingId === selectedTicket.id}
-                      onClick={() => handleStatusChange(selectedTicket.id, s, selectedTicket.statut)}
-                      style={{
-                        ...styles.statusBtn,
-                        backgroundColor: isCurrent ? sc.bg : (canGo ? '#FFFFFF' : '#FFFFFF'),
-                        color: isCurrent ? '#FFFFFF' : (canGo ? sc.text : '#D0D0D0'),
-                        borderColor: isCurrent ? sc.bg : (canGo ? sc.text : '#E5E5E5'),
-                        cursor: canGo && updatingId !== selectedTicket.id ? 'pointer' : 'not-allowed',
-                        fontWeight: isCurrent ? 700 : (canGo ? 600 : 500),
-                      }}
-                    >
-                      {ALL_LABELS[s]}
-                    </button>
-                  );
-                })}
-              </div>
-              <button style={styles.btnCancel} onClick={() => setSelectedTicket(null)}>Fermer</button>
-            </div>
-          </div>
-          {/* User tooltip – positioned near the hovered user chip */}
-          {hoveredUser && (
-            <div style={{ ...styles.userTooltip, top: hoveredUser.rect.bottom + 6, left: hoveredUser.rect.left }}>
-              <div style={styles.userTooltipArrow} />
-              <div style={styles.userTooltipName}>{hoveredUser.user.nom_user || hoveredUser.user.code_user}</div>
-              <div style={styles.userTooltipDetail}>{hoveredUser.user.code_user}</div>
-              <div style={styles.userTooltipDetail}>{hoveredUser.user.email}</div>
-              <div style={styles.userTooltipDetail}>{hoveredUser.user.role_user || hoveredUser.user.role}</div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ===== Site Detail Modal ===== */}
       {selectedSite && (
@@ -1619,7 +1331,7 @@ export default function EngineerDashboard() {
 
               {/* Reclamations list */}
               <div style={styles.modalSection}>
-                <h3 style={styles.modalSectionTitle}>Réclamations ({selectedGroupe.reclamations?.length || selectedGroupe.reclamations_count || 0})</h3>
+                <h3 style={styles.modalSectionTitle}>Tickets ({selectedGroupe.reclamations?.length || selectedGroupe.reclamations_count || 0})</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '300px', overflowY: 'auto' }}>
                   {selectedGroupe.reclamations?.map((rec) => {
                     const recPrio = COLORS.priorities[rec.priorite?.toUpperCase()] || COLORS.priorities.NORMALE;
@@ -1671,7 +1383,7 @@ export default function EngineerDashboard() {
             {/* Modal footer */}
             <div style={styles.modalFooter}>
               <div style={{ display: 'flex', gap: '8px' }}>
-                {selectedGroupe.statut !== 'resolu' && selectedGroupe.statut !== 'ferme' && (
+                {selectedGroupe.statut === 'ouvert' && (
                   <button
                     disabled={updatingGroupeId === selectedGroupe.id}
                     onClick={() => handleResoudreGroupe(selectedGroupe.id)}
@@ -1681,7 +1393,17 @@ export default function EngineerDashboard() {
                     Résoudre le ticket
                   </button>
                 )}
-                {(!selectedGroupe.assigne_a_display || selectedGroupe.assigne_a_display === '-') && selectedGroupe.statut !== 'resolu' && (
+                {selectedGroupe.statut === 'ferme' && (
+                  <button
+                    disabled={updatingGroupeId === selectedGroupe.id}
+                    onClick={() => handleAssignerGroupe(selectedGroupe.id)}
+                    style={{ display: 'flex', alignItems: 'center', backgroundColor: '#FEF3C7', color: '#D97706', border: '1px solid #FDE68A', padding: '10px 20px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    <IconUser style={{ marginRight: '6px' }} />
+                    Prendre le ticket
+                  </button>
+                )}
+                {selectedGroupe.statut === 'ouvert' && (!selectedGroupe.assigne_a_display || selectedGroupe.assigne_a_display === '-') && (
                   <button
                     disabled={updatingGroupeId === selectedGroupe.id}
                     onClick={() => handleAssignerGroupe(selectedGroupe.id)}

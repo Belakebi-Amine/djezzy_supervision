@@ -224,7 +224,7 @@ export default function CallCenter() {
     }
   }, [currentView, fetchTickets]);
 
-  // ─── Auto-refresh every 5 seconds ───
+  // ─── Auto-refresh every 5 seconds (transparent) ───
   useEffect(() => {
     const interval = setInterval(() => {
       fetchTickets();
@@ -307,6 +307,11 @@ export default function CallCenter() {
       if (String(sid) !== String(filterSiteId)) return false;
     }
     return true;
+  }).sort((a, b) => {
+    const typeOrder = { entreprise: 0, particulier: 1 };
+    const ta = typeOrder[(a.type_client || '').toLowerCase()] ?? 2;
+    const tb = typeOrder[(b.type_client || '').toLowerCase()] ?? 2;
+    return ta - tb;
   });
 
   // Normalize the backend statut value to uppercase with spaces for display and lookup
@@ -338,7 +343,7 @@ export default function CallCenter() {
         {/* Top header with page title or back navigation */}
         <header style={styles.topHeader}>
           <h1 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-secondary)' }}>
-            {currentView === 'nouveau-ticket' ? 'Nouveau Ticket' : currentView === 'traites' ? 'Archives — Tickets Traités' : 'Réclamations — Tickets Non Traités'}
+            {currentView === 'nouveau-ticket' ? 'Nouveau Ticket' : currentView === 'traites' ? 'Archives — Tickets Traités' : 'Tickets Non Traités'}
           </h1>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 10, color: 'var(--text-muted2)', fontWeight: 500, padding: '4px 10px', background: 'var(--bg-toolbar)', borderRadius: 4 }}>{now()}</span>
@@ -369,7 +374,7 @@ export default function CallCenter() {
                 </div>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Telephone</label>
-                  <input type="tel" name="telephone" value={formData.telephone} onChange={handleInputChange} placeholder="05 XX XX XX XX" pattern="0[5-7]\d{8}" maxLength="10" style={styles.input} required title="Le numero doit commencer par 05, 06 ou 07 et contenir 10 chiffres" />
+                  <input type="tel" name="telephone" value={formData.telephone} onChange={handleInputChange} placeholder="0X XX XX XX XX" pattern="0\d{9}" maxLength="10" style={styles.input} required title="Le numero doit commencer par 0 et contenir 10 chiffres" />
                 </div>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Email</label>
@@ -472,7 +477,7 @@ export default function CallCenter() {
             <div style={styles.toolbar}>
               <div style={styles.toolbarLeft}>
                 <h2 style={styles.tableTitle}>
-                  {currentView === 'non-traites' ? 'Réclamations en cours' : 'Réclamations résolues'}
+                  {currentView === 'non-traites' ? 'Tickets en cours' : 'Tickets résolus'}
                 </h2>
               </div>
 
@@ -557,7 +562,7 @@ export default function CallCenter() {
                   {loading ? (
                     <tr><td colSpan="7" style={styles.emptyCell}>Chargement des donnees...</td></tr>
                   ) : filteredTickets.length === 0 ? (
-                    <tr><td colSpan="7" style={styles.emptyCell}>Aucune reclamation trouvee.</td></tr>
+                    <tr><td colSpan="7" style={styles.emptyCell}>Aucun ticket trouvé.</td></tr>
                   ) : filteredTickets.map((ticket) => {
                     // Resolve color config for priority, status, and client type badges
                     const prio = COLORS.priorities[ticket.priorite?.toUpperCase()] || COLORS.priorities.NORMALE;

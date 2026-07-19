@@ -107,3 +107,4 @@ class CustomUser(AbstractUser):
 
     def __str__(self):
         return f"{self.code_user} - {self.nom_user} ({self.get_role_display()})"
+
