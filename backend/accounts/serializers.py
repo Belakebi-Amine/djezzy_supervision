@@ -88,11 +88,16 @@ class RegisterSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        """Creates user with hashed password (password2 is removed before save)."""
+        """Creates user with hashed password (password2 is removed before save).
+        Users with ADMIN role are automatically granted Django superuser access."""
         validated_data.pop('password2')
         password = validated_data.pop('password')
         user = CustomUser(**validated_data)
         user.set_password(password)
+        # Admin role = full Django superuser access (is_staff + is_superuser)
+        if validated_data.get('role') == 'ADMIN':
+            user.is_staff = True
+            user.is_superuser = True
         user.save()
         return user
 
@@ -144,5 +149,13 @@ class UpdateUserSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         if password:
             instance.set_password(password)
+        # Keep is_staff/is_superuser in sync with ADMIN role
+        if validated_data.get('role') is not None:
+            if validated_data['role'] == 'ADMIN':
+                instance.is_staff = True
+                instance.is_superuser = True
+            else:
+                instance.is_staff = False
+                instance.is_superuser = False
         instance.save()
         return instance

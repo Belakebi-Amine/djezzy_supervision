@@ -568,7 +568,10 @@ export default function EngineerDashboard() {
     }
     return true;
   }).sort((a, b) => {
-    // Sort by priority, then by date (most recent first)
+    // Sort: entreprise tickets first, then by priority, then by date
+    const entA = a.has_entreprise ? 0 : 1;
+    const entB = b.has_entreprise ? 0 : 1;
+    if (entA !== entB) return entA - entB;
     const prioA = PRIO_ORDER[a.priorite] ?? 4;
     const prioB = PRIO_ORDER[b.priorite] ?? 4;
     if (prioA !== prioB) return prioA - prioB;
@@ -1038,7 +1041,9 @@ export default function EngineerDashboard() {
                 <select value={filterStatut} onChange={(e) => setFilterStatut(e.target.value)} style={{ ...styles.filterSelect, backgroundColor: COLORS.inputBg, color: '#4e5561', border: `1px solid ${COLORS.border}` }}>
                   <option value="">Tous statuts</option>
                   <option value="ouvert">Ouvert</option>
-                  <option value="en_cours">En cours</option>
+                   <option value="ouvert">Ouvert</option>
+                    <option value="resolu">Résolu</option>
+                    <option value="ferme">Fermé</option>
                   <option value="ferme">Fermé</option>
                 </select>
                 <select value={filterSiteId} onChange={(e) => setFilterSiteId(e.target.value)} style={{ ...styles.filterSelect, backgroundColor: COLORS.inputBg, color: '#4e5561', border: `1px solid ${COLORS.border}` }}>
@@ -1098,12 +1103,19 @@ export default function EngineerDashboard() {
                           onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
                           onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.08)'; e.currentTarget.style.transform = 'none'; }}
                         >
-                          {/* Header: ticket number + priority badge */}
+                          {/* Header: ticket number + badges */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span style={{ fontSize: '11px', fontWeight: 600, color: COLORS.textMuted }}>{groupe.numero_ticket}</span>
-                            <span style={{ padding: '3px 8px', borderRadius: '4px', fontWeight: 700, fontSize: '9px', backgroundColor: prio.bg, color: prio.text }}>
-                              {groupe.priorite?.toUpperCase()}
-                            </span>
+                            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                              {groupe.has_entreprise && (
+                                <span style={{ padding: '3px 8px', borderRadius: '4px', fontWeight: 700, fontSize: '9px', backgroundColor: '#FFF3E0', color: '#E65100', border: '1px solid #FFB74D' }}>
+                                  ENTREPRISE
+                                </span>
+                              )}
+                              <span style={{ padding: '3px 8px', borderRadius: '4px', fontWeight: 700, fontSize: '9px', backgroundColor: prio.bg, color: prio.text }}>
+                                {groupe.priorite?.toUpperCase()}
+                              </span>
+                            </div>
                           </div>
 
                           {/* Title */}

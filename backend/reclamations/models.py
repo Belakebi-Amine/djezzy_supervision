@@ -5,10 +5,23 @@
 # visible to engineers, grouping multiple customer reclamations
 # about the same issue at the same site.
 # ─────────────────────────────────────────────────────────────
+import re
 from django.db import models
 from django.conf import settings
+from django.core.validators import RegexValidator
 from django.utils import timezone
 from sites_reseau.models import SiteReseau
+
+
+# ── Validators ───────────────────────────────────────────────
+phone_validator = RegexValidator(
+    regex=r'^0[5-7]\d{8}$',
+    message='Le numéro doit être un numéro de téléphone valide (05/06/07 + 8 chiffres).',
+)
+name_validator = RegexValidator(
+    regex=r'^[a-zA-Z\sàâéèêëïîôùûüÿçœæ\-]+$',
+    message='Ce champ ne doit contenir que des lettres.',
+)
 
 
 # Priority numeric mapping for averaging
@@ -43,7 +56,6 @@ class GroupeTicket(models.Model):
 
     STATUT_CHOICES = [
         ('ouvert',    'Ouvert'),
-        ('en_cours',  'En cours'),
         ('resolu',    'Résolu'),
         ('ferme',     'Fermé'),
     ]
@@ -142,6 +154,56 @@ class GroupeTicket(models.Model):
         super().save(*args, **kwargs)
 
 
+class Client(models.Model):
+    """
+    Represents a Djezzy customer. Each client is identified by
+    their phone number (unique, starts with 05/06/07).
+    """
+
+    TYPE_CLIENT_CHOICES = [
+        ('particulier', 'Particulier'),
+        ('entreprise',  'Entreprise'),
+    ]
+
+    numero = models.CharField(
+        max_length=20,
+        unique=True,
+        validators=[phone_validator],
+        verbose_name='Numéro de téléphone',
+    )
+    prenom = models.CharField(
+        max_length=200,
+        validators=[name_validator],
+        verbose_name='Prénom',
+    )
+    nom = models.CharField(
+        max_length=200,
+        validators=[name_validator],
+        verbose_name='Nom',
+    )
+    type_client = models.CharField(
+        max_length=12,
+        choices=TYPE_CLIENT_CHOICES,
+        default='particulier',
+        verbose_name='Type de client',
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Client'
+        verbose_name_plural = 'Clients'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.prenom} {self.nom} ({self.numero})"
+
+    @property
+    def nom_complet(self):
+        return f"{self.prenom} {self.nom}"
+
+
 class Reclamation(models.Model):
     """
     Individual customer complaint. Linked to a GroupeTicket which
@@ -167,6 +229,14 @@ class Reclamation(models.Model):
     ]
 
     numero_ticket = models.CharField(max_length=20, unique=True, editable=False)
+
+    client = models.ForeignKey(
+        Client,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='reclamations',
+        verbose_name='Client',
+    )
 
     nom_client = models.CharField(max_length=200, verbose_name='Nom du client')
     telephone_client = models.CharField(max_length=20, verbose_name='Téléphone client')
@@ -248,8 +318,7 @@ class Reclamation(models.Model):
             self.priorite = calculer_priorite(self.mots_cles_ia)
 
         if not self.numero_ticket:
-            import re
-            existing = Reclamation.objects.filter(numero_ticket__regex=r'^TK\d+$').values_list('numero_ticket', flat=True)
+            existing = Reclamation.objects.filter(numero_ticket__regex=r'^R\d+$').values_list('numero_ticket', flat=True)
             max_num = 0
             for code in existing:
                 try:
@@ -258,7 +327,7 @@ class Reclamation(models.Model):
                         max_num = num
                 except ValueError:
                     continue
-            self.numero_ticket = f'TK{str(max_num + 1).zfill(6)}'
+            self.numero_ticket = f'R{str(max_num + 1).zfill(4)}'
 
         if self.statut == 'resolu' and not self.resolu_le:
             self.resolu_le = timezone.now()

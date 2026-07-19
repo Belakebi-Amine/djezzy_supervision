@@ -17,6 +17,7 @@ from rest_framework import status
 from reclamations.models import Reclamation
 from sites_reseau.models import SiteReseau
 from accounts.models import CustomUser, Role
+from accounts.serializers import UserSerializer
 from .models import RapportIA
 
 # French day names for the weekly ticket distribution chart
@@ -555,3 +556,98 @@ def liste_rapports_archives(request):
         rapport.archived_by = None
         rapport.save()
         return Response({'message': 'Rapport restauré', 'id': rapport.id})
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 5. ADMIN ARCHIVE VIEW (unified)
+#
+# Returns archived reclamations, grouped tickets, and AI reports
+# in a single endpoint for the admin archives tab.
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def consulter_archive(request):
+    """
+    Unified archive view for admin. Returns all archived items:
+    reclamations, grouped tickets, and AI reports.
+    """
+    if request.user.role != 'ADMIN':
+        return Response({'error': 'Permission refusée.'}, status=status.HTTP_403_FORBIDDEN)
+
+    reclamations_archived = Reclamation.objects.filter(is_archived=True).select_related('site', 'cree_par', 'client')
+    from reclamations.models import GroupeTicket
+    groupes_archived = GroupeTicket.objects.filter(is_archived=True).select_related('site', 'cree_par', 'assigne_a')
+    rapports_archived = RapportIA.objects.filter(is_archived=True).select_related('cree_par')
+
+    from reclamations.serializers import ReclamationSerializer, GroupeTicketSerializer
+    from .serializers import RapportIASerializer
+
+    return Response({
+        'reclamations': ReclamationSerializer(reclamations_archived, many=True).data,
+        'tickets': GroupeTicketSerializer(groupes_archived, many=True).data,
+        'rapports': RapportIASerializer(rapports_archived, many=True).data,
+    })
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 6. USER PERFORMANCE (supervisor)
+#
+# Returns detailed performance stats for a specific user.
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def consulter_performance(request, code_user):
+    """
+    Returns detailed performance stats for a specific user.
+    Available to supervisors and admins.
+    """
+    if request.user.role not in ('ADMIN', 'SUPERVISEUR'):
+        return Response({'error': 'Permission refusée.'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        user = CustomUser.objects.get(code_user=code_user)
+    except CustomUser.DoesNotExist:
+        return Response({'error': 'Utilisateur introuvable'}, status=status.HTTP_404_NOT_FOUND)
+
+    jours_param = request.query_params.get('jours', '30')
+    try:
+        nb_jours = int(jours_param)
+    except ValueError:
+        nb_jours = 30
+    date_limite = timezone.now() - timedelta(days=nb_jours)
+
+    total_assignes = Reclamation.objects.filter(assigne_a=user, created_at__gte=date_limite).count()
+    resolus = Reclamation.objects.filter(assigne_a=user, statut='resolu', created_at__gte=date_limite).count()
+    ouverts = Reclamation.objects.filter(assigne_a=user, statut='ouvert', created_at__gte=date_limite).count()
+    fermes = Reclamation.objects.filter(assigne_a=user, statut='ferme', created_at__gte=date_limite).count()
+
+    delai_stats = Reclamation.objects.filter(
+        assigne_a=user, statut='resolu', resolu_le__isnull=False, created_at__gte=date_limite
+    ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
+
+    creees = Reclamation.objects.filter(cree_par=user, created_at__gte=date_limite).count()
+
+    from reclamations.models import GroupeTicket
+    tickets_assignes = GroupeTicket.objects.filter(assigne_a=user, created_at__gte=date_limite).count()
+    tickets_resolus = GroupeTicket.objects.filter(assigne_a=user, statut='resolu', created_at__gte=date_limite).count()
+
+    return Response({
+        'utilisateur': UserSerializer(user).data,
+        'periode_jours': nb_jours,
+        'reclamations': {
+            'total_assignes': total_assignes,
+            'resolus': resolus,
+            'ouverts': ouverts,
+            'fermes': fermes,
+            'taux_resolution': round((resolus / total_assignes) * 100, 1) if total_assignes > 0 else 0,
+            'delai_moyen': _format_duree(delai_stats['duree__avg']),
+        },
+        'tickets_groupes': {
+            'total_assignes': tickets_assignes,
+            'resolus': tickets_resolus,
+            'taux_resolution': round((tickets_resolus / tickets_assignes) * 100, 1) if tickets_assignes > 0 else 0,
+        },
+        'creees': creees,
+    })

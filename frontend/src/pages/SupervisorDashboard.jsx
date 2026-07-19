@@ -837,23 +837,28 @@ export default function SupervisorDashboard() {
                           </span>
                         )}
                       </div>
-                       {/* Pre-made prompt buttons */}
+                        {/* Pre-made prompt buttons */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted3)' }}>Choisir un type de rapport :</span>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {/* Vue Globale - Button special */}
+                          <button onClick={() => setPrompt('Vue globale : fais un bilan strategique complet du reseau avec diagnostic, alertes, zones critiques et plan d\'action prioritaire')}
+                            style={{ fontSize: 11, padding: '6px 14px', borderRadius: 14, border: prompt.includes('Vue globale') ? '2px solid #7C3AED' : '2px solid #7C3AED', background: prompt.includes('Vue globale') ? 'rgba(124,58,237,0.15)' : 'transparent', color: prompt.includes('Vue globale') ? '#7C3AED' : '#7C3AED', cursor: 'pointer', fontWeight: 700, transition: 'all 0.15s', fontFamily: 'inherit', letterSpacing: '0.3px' }}>
+                            Vue Globale
+                          </button>
                           {[
-                            { label: 'Synthèse 90j avec KPI', prompt: 'Rapport synthétique des 90 derniers jours avec KPI principaux' },
-                            { label: 'Sites les plus impactés', prompt: 'Analyse des sites les plus impactés et recommandations' },
-                            { label: 'Analyse par commune', prompt: 'Évolution des réclamations par commune avec tendances' },
-                            { label: 'Tendances et recommandations', prompt: 'Tendances des réclamations et recommandations d\'amélioration' },
-                            { label: 'Évolution mensuelle', prompt: 'Évolution mensuelle des réclamations avec comparaison' },
-                            { label: 'Bilan par wilaya', prompt: 'Bilan des réclamations par wilaya avec top 10 des zones' },
-                            { label: 'Performance des agents', prompt: 'Analyse de la performance des agents de call center : temps de traitement, nombre de résolutions, et satisfaction' },
-                            { label: 'Analyse des priorités', prompt: 'Répartition des réclamations par niveau de priorité avec tendances et recommandations' },
-                            { label: 'Top 10 des problèmes', prompt: 'Les 10 types de problèmes les plus fréquents avec analyse détaillée et solutions proposées' },
-                            { label: 'Comparaison mensuelle', prompt: 'Comparaison détaillée entre le mois en cours et le mois précédent avec écarts et explications' },
-                            { label: 'Taux de résolution', prompt: 'Analyse du taux de résolution des réclamations : délai moyen, taux de succès, et points d\'amélioration' },
-                            { label: 'Sites UP/DOWN', prompt: 'État des sites réseau : répartition UP/DOWN, sites critiques, et plan de remédiation' },
+                            { label: 'Synthese 90j avec KPI', prompt: 'Analyse les KPI principaux des 90 derniers jours. Quels sont les chiffres cles? Y a-t-il des tendances preoccupantes? Quel est le verdict global?' },
+                            { label: 'Sites les plus impactes', prompt: 'Quels sites BTS sont le plus impactes et pourquoi? Analyse les causes probables (pannes, charge, localisation) et propose des actions correctives specifiques.' },
+                            { label: 'Analyse par commune', prompt: 'Comment les reclamations se repartissent-elles par commune? Identifie les zones a risque et explique les facteurs geographiques qui influencent les problemes.' },
+                            { label: 'Tendances et recommandations', prompt: 'Quelles tendances observes-tu dans les reclamations? Les problemes s\'aggravent-ils ou s\'ameliorant-ils? Propose des actions concrètes basees sur les donnees.' },
+                            { label: 'Evolution mensuelle', prompt: 'Compare le mois en cours au mois precedent. Quels changements significatifs observes-tu? Quelles sont les causes probables de ces variations?' },
+                            { label: 'Bilan par wilaya', prompt: 'Quelles wilayas concentrent le plus de reclamations? Pourquoi ces zones sont-elles plus affectees? Quelles actions prioritaires pour chaque zone critique?' },
+                            { label: 'Performance des agents', prompt: 'Analyse la performance des agents de call center. Qui performe bien? Qui a besoin d\'accompagnement? Le delai de resolution est-il acceptable?' },
+                            { label: 'Analyse des priorites', prompt: 'Comment les tickets se repartissent-ils par priorite? Les tickets critiques sont-ils traits assez vite? Y a-t-il des tickets bloques?' },
+                            { label: 'Top 10 des problemes', prompt: 'Quels sont les 10 types de problemes les plus frequents? Quelles sont les causes racines et quelles solutions proposes-tu pour chacun?' },
+                            { label: 'Comparaison mensuelle', prompt: 'Compare detaillement le mois en cours au mois precedent. Quels ecarts significatifs? Quelles sont les explications et quelles actions en decoulent?' },
+                            { label: 'Taux de resolution', prompt: 'Analyse en profondeur le taux de resolution. Le delai moyen est-il acceptable? Y a-t-il des goulets d\'echangage? Quels sont les points d\'amelioration?' },
+                            { label: 'Sites UP/DOWN', prompt: 'Quel est l\'etat reel du reseau? Les sites DOWN sont-ils localises geographiquement? Y a-t-il un pattern (technologie, zone, heure)?' },
                           ].map((s) => (
                             <button key={s.label} onClick={() => setPrompt(s.prompt)}
                               style={{ fontSize: 11, padding: '6px 14px', borderRadius: 14, border: prompt === s.prompt ? '2px solid #E8401A' : '1px solid var(--border-color)', background: prompt === s.prompt ? 'rgba(232,64,26,0.1)' : 'var(--bg-hover)', color: prompt === s.prompt ? '#E8401A' : 'var(--text-muted3)', cursor: 'pointer', fontWeight: 600, transition: 'all 0.15s', fontFamily: 'inherit' }}>

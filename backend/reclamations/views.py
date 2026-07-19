@@ -11,6 +11,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.utils import timezone
 from django.db.models import Count, Q
+from django.utils import timezone as tz
 from .models import Reclamation, GroupeTicket
 from .serializers import (
     ReclamationSerializer, CommentaireSerializer,
@@ -22,7 +23,7 @@ from accounts.permissions import IsAgentOrAdmin, IsAdminEngineerOrSupervisor
 from keywords_config import get_all_keywords, calculer_score
 
 STATUTS_VALIDES = {'ouvert', 'resolu', 'ferme'}
-ALIAS_NON_TRAITE = {'non-traité', 'non-traite', 'non-traites', 'nouveau', 'en_cours', 'en cours'}
+ALIAS_NON_TRAITE = {'non-traité', 'non-traite', 'non-traites', 'nouveau'}
 ALIAS_TRAITE = {'traité', 'traite', 'traites', 'résolu', 'resolu', 'fermé', 'ferme'}
 
 
@@ -46,8 +47,14 @@ def _statuts_depuis_param(statut_filter):
 def liste_reclamations(request):
     statut_filter = request.query_params.get('statut')
     archived_filter = request.query_params.get('archived', '').lower()
+    priorite_filter = request.query_params.get('priorite')
+    client_filter = request.query_params.get('client')
+    mots_cles_filter = request.query_params.get('mots_cles')
+    site_filter = request.query_params.get('site_id')
+    date_debut = request.query_params.get('date_debut')
+    date_fin = request.query_params.get('date_fin')
 
-    reclamations = Reclamation.objects.select_related('site', 'cree_par', 'assigne_a', 'groupe').all()
+    reclamations = Reclamation.objects.select_related('site', 'cree_par', 'assigne_a', 'groupe', 'client').all()
 
     if archived_filter == 'true':
         reclamations = reclamations.filter(is_archived=True)
@@ -60,6 +67,29 @@ def liste_reclamations(request):
             reclamations = reclamations.filter(statut__in=statuts)
         else:
             reclamations = reclamations.filter(statut__iexact=statut_filter.strip().lower())
+
+    if priorite_filter:
+        reclamations = reclamations.filter(priorite__iexact=priorite_filter.strip().lower())
+
+    if client_filter:
+        reclamations = reclamations.filter(
+            Q(nom_client__icontains=client_filter) |
+            Q(telephone_client__icontains=client_filter) |
+            Q(client__nom__icontains=client_filter) |
+            Q(client__prenom__icontains=client_filter) |
+            Q(client__numero__icontains=client_filter)
+        )
+
+    if mots_cles_filter:
+        reclamations = reclamations.filter(mots_cles_ia__icontains=mots_cles_filter)
+
+    if site_filter:
+        reclamations = reclamations.filter(site_id=site_filter)
+
+    if date_debut:
+        reclamations = reclamations.filter(created_at__date__gte=date_debut)
+    if date_fin:
+        reclamations = reclamations.filter(created_at__date__lte=date_fin)
 
     serializer = ReclamationSerializer(reclamations, many=True)
     return Response(serializer.data)
@@ -85,7 +115,7 @@ def creer_reclamation(request):
 @permission_classes([IsAuthenticated])
 def detail_reclamation(request, pk):
     try:
-        reclamation = Reclamation.objects.select_related('groupe').get(pk=pk)
+        reclamation = Reclamation.objects.select_related('groupe', 'client').get(pk=pk)
     except Reclamation.DoesNotExist:
         return Response({'error': 'Ticket introuvable'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -187,8 +217,12 @@ def liste_groupe_tickets(request):
     site_filter = request.query_params.get('site_id')
     search = request.query_params.get('search', '').strip()
     archived_filter = request.query_params.get('archived', '').lower()
+    priorite_filter = request.query_params.get('priorite')
+    assigne_filter = request.query_params.get('assigne_a_id')
+    date_debut = request.query_params.get('date_debut')
+    date_fin = request.query_params.get('date_fin')
 
-    groupes = GroupeTicket.objects.select_related('site', 'cree_par', 'assigne_a').all()
+    groupes = GroupeTicket.objects.select_related('site', 'cree_par', 'assigne_a').prefetch_related('reclamations').all()
 
     if archived_filter == 'true':
         groupes = groupes.filter(is_archived=True)
@@ -199,10 +233,10 @@ def liste_groupe_tickets(request):
         tokens = [t.strip().lower() for t in statut_filter.split(',') if t.strip()]
         statuts = set()
         for token in tokens:
-            if token in ('ouvert', 'en_cours', 'resolu', 'ferme'):
+            if token in ('ouvert', 'resolu', 'ferme'):
                 statuts.add(token)
             elif token in ALIAS_NON_TRAITE:
-                statuts.update({'ouvert', 'en_cours'})
+                statuts.update({'ouvert'})
             elif token in ALIAS_TRAITE:
                 statuts.update({'resolu', 'ferme'})
         if statuts:
@@ -210,6 +244,17 @@ def liste_groupe_tickets(request):
 
     if site_filter:
         groupes = groupes.filter(site_id=site_filter)
+
+    if priorite_filter:
+        groupes = groupes.filter(priorite__iexact=priorite_filter.strip().lower())
+
+    if assigne_filter:
+        groupes = groupes.filter(assigne_a_id=assigne_filter)
+
+    if date_debut:
+        groupes = groupes.filter(created_at__date__gte=date_debut)
+    if date_fin:
+        groupes = groupes.filter(created_at__date__lte=date_fin)
 
     if search:
         groupes = groupes.filter(
@@ -228,7 +273,7 @@ def liste_groupe_tickets(request):
 @permission_classes([IsAuthenticated])
 def stats_groupe_tickets(request):
     now = timezone.now()
-    ouverts = GroupeTicket.objects.filter(statut__in=['ouvert', 'en_cours'], is_archived=False).count()
+    ouverts = GroupeTicket.objects.filter(statut='ouvert', is_archived=False).count()
     total = GroupeTicket.objects.filter(is_archived=False).count()
     resolus = GroupeTicket.objects.filter(statut__in=['resolu', 'ferme'], is_archived=False).count()
 

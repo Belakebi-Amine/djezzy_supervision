@@ -108,7 +108,7 @@ def trouver_ou_creer_groupe(reclamation):
 
     candidats = GroupeTicket.objects.filter(
         site=reclamation.site,
-        statut__in=['ouvert', 'en_cours'],
+        statut__in=['ouvert'],
         created_at__gte=cutoff,
         is_archived=False,
     )

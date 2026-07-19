@@ -206,7 +206,7 @@ export default function CallCenter() {
     try {
       // Map view name to backend status filter:
       // 'non-traites' -> open/in-progress/closed; 'traites' -> resolved
-      const statut = currentView === 'non-traites' ? 'ouvert,en_cours,ferme' : 'resolu';
+      const statut = currentView === 'non-traites' ? 'ouvert,ferme' : 'resolu';
       const data = await getTickets(statut);
       setTickets(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -365,11 +365,11 @@ export default function CallCenter() {
               <div style={styles.formGrid}>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Nom Client</label>
-                  <input type="text" name="nom_client" value={formData.nom_client} onChange={handleInputChange} placeholder="Nom et prenom" style={styles.input} required />
+                  <input type="text" name="nom_client" value={formData.nom_client} onChange={handleInputChange} placeholder="Nom et prenom" pattern="[a-zA-Z\sàâéèêëïîôùûüÿçœæ\-]+" style={styles.input} required title="Le nom ne doit contenir que des lettres" />
                 </div>
                 <div style={styles.inputGroup}>
-                  <label style={styles.label}>Téléphone</label>
-                  <input type="text" name="telephone" value={formData.telephone} onChange={handleInputChange} placeholder="0X XX XX XX XX" style={styles.input} required />
+                  <label style={styles.label}>Telephone</label>
+                  <input type="tel" name="telephone" value={formData.telephone} onChange={handleInputChange} placeholder="05 XX XX XX XX" pattern="0[5-7]\d{8}" maxLength="10" style={styles.input} required title="Le numero doit commencer par 05, 06 ou 07 et contenir 10 chiffres" />
                 </div>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Email</label>

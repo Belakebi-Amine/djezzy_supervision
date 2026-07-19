@@ -20,6 +20,7 @@ from .views import (
     delete_user_view,
     liste_agents_cc,
     liste_ingenieurs,
+    reinitialiser_mot_de_passe_view,
 )
 
 urlpatterns = [
@@ -43,4 +44,5 @@ urlpatterns = [
     path('users/<str:code_user>/toggle-active/', toggle_active_view, name='toggle_active'),
     path('users/<str:code_user>/restore/', restore_user_view, name='restore_user'),
     path('users/<str:code_user>/delete/', delete_user_view, name='delete_user'),
+    path('reset-password/', reinitialiser_mot_de_passe_view, name='reset_password'),
 ]

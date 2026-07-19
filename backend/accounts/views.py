@@ -3,6 +3,9 @@
 # API views for user management: authentication (JWT), profile,
 # password changes, and admin CRUD operations on users.
 # ─────────────────────────────────────────────────────────────
+import secrets
+import string
+from django.db.models import Q
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -103,8 +106,32 @@ def update_profile_view(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdmin])
 def list_users_view(request):
-    """Returns all users. Admin-only endpoint for user management panel."""
+    """Returns filtered users. Admin-only endpoint for user management panel.
+    Query params: ?role=, ?search=, ?is_active=, ?archived="""
     users = CustomUser.objects.all().order_by('id')
+
+    role_filter = request.query_params.get('role')
+    if role_filter:
+        users = users.filter(role=role_filter)
+
+    search = request.query_params.get('search', '').strip()
+    if search:
+        users = users.filter(
+            Q(username__icontains=search) |
+            Q(email__icontains=search) |
+            Q(code_user__icontains=search) |
+            Q(first_name__icontains=search) |
+            Q(last_name__icontains=search)
+        )
+
+    is_active = request.query_params.get('is_active')
+    if is_active is not None:
+        users = users.filter(is_active=is_active.lower() == 'true')
+
+    archived = request.query_params.get('archived')
+    if archived is not None:
+        users = users.filter(is_archived=archived.lower() == 'true')
+
     return Response(UserSerializer(users, many=True).data)
 
 
@@ -142,17 +169,33 @@ def liste_ingenieurs(request):
 
 # ── Admin: Archive / Restore / Delete Users ────────────────
 
+def _desassigner_tickets_non_resolus(user):
+    """
+    When a user's role changes or they are archived, unresolved tickets
+    assigned to them are unassigned so other users can work on them.
+    Only affects tickets with statut='ouvert'.
+    Resolved tickets keep the assignment (historical record).
+    """
+    from reclamations.models import Reclamation, GroupeTicket
+
+    Reclamation.objects.filter(assigne_a=user, statut='ouvert').update(assigne_a=None)
+    GroupeTicket.objects.filter(assigne_a=user, statut='ouvert').update(assigne_a=None)
+
+
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated, IsAdmin])
 def archive_user_view(request, code_user):
     """
-    Archives a user by setting is_archived=True.
-    The user disappears from the UI and goes to the archives tab.
+    Archives a user: sets is_archived=True AND is_active=False.
+    Archive = deactivate + hide from list.
+    Also desassigns unresolved tickets if user is an engineer.
     """
     try:
         user = CustomUser.objects.get(code_user=code_user)
         user.is_archived = True
-        user.save(update_fields=['is_archived'])
+        user.is_active = False
+        user.save(update_fields=['is_archived', 'is_active'])
+        _desassigner_tickets_non_resolus(user)
         return Response({'message': f'Utilisateur {user.code_user} archivé'})
     except CustomUser.DoesNotExist:
         return Response({'error': 'Utilisateur introuvable'}, status=status.HTTP_404_NOT_FOUND)
@@ -184,15 +227,20 @@ def toggle_active_view(request, code_user):
 def update_user_view(request, code_user):
     """
     Admin endpoint to modify another user's info (name, email, role).
+    When role changes, unresolved tickets are desassigned.
     """
     try:
         user = CustomUser.objects.get(code_user=code_user)
     except CustomUser.DoesNotExist:
         return Response({'error': 'Utilisateur introuvable'}, status=status.HTTP_404_NOT_FOUND)
 
+    old_role = user.role
     serializer = UpdateUserSerializer(user, data=request.data, partial=True)
     if serializer.is_valid():
         serializer.save()
+        new_role = serializer.instance.role
+        if old_role != new_role:
+            _desassigner_tickets_non_resolus(user)
         return Response({
             'message': f'Utilisateur {code_user} mis à jour',
             'user': UserSerializer(user).data,
@@ -203,11 +251,12 @@ def update_user_view(request, code_user):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsAdmin])
 def restore_user_view(request, code_user):
-    """Restores an archived user by setting is_archived=False."""
+    """Restores an archived user: sets is_archived=False AND is_active=True."""
     try:
         user = CustomUser.objects.get(code_user=code_user)
         user.is_archived = False
-        user.save(update_fields=['is_archived'])
+        user.is_active = True
+        user.save(update_fields=['is_archived', 'is_active'])
         return Response({
             'message': f'Utilisateur {user.code_user} restauré',
             'user': UserSerializer(user).data,
@@ -231,3 +280,31 @@ def delete_user_view(request, code_user):
         return Response({'message': f'Utilisateur {code_user} supprimé définitivement'})
     except CustomUser.DoesNotExist:
         return Response({'error': 'Utilisateur introuvable'}, status=status.HTTP_404_NOT_FOUND)
+
+
+# ── Admin: Reset Password ──────────────────────────────────
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsAdmin])
+def reinitialiser_mot_de_passe_view(request):
+    """
+    Admin resets a user's password by email.
+    Generates a random temporary password and returns it.
+    """
+    email = request.data.get('email', '').strip()
+    if not email:
+        return Response({'error': 'Email requis'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = CustomUser.objects.get(email=email)
+    except CustomUser.DoesNotExist:
+        return Response({'error': 'Aucun utilisateur trouvé avec cet email'}, status=status.HTTP_404_NOT_FOUND)
+
+    temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
+    user.set_password(temp_password)
+    user.save(update_fields=['password'])
+
+    return Response({
+        'message': f'Mot de passe réinitialisé pour {user.code_user}',
+        'nouveau_mot_de_passe': temp_password,
+    })

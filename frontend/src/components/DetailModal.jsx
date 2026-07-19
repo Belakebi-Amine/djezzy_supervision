@@ -297,7 +297,7 @@ export default function DetailModal({ type, data, onClose, stats, reporting }) {
       setItems(Array.isArray(result) ? result : [result].filter(Boolean));
     } catch (e) { addNotification('Erreur lors du chargement des données.', 'error'); setItems([]); }
     finally { setLoading(false); }
-  }, [type, data, filterPrio]);
+  }, [type, data, filterPrio, addNotification]);
 
   useEffect(() => { setTitle(getTitle()); fetchItems(); }, [getTitle, fetchItems]);
 

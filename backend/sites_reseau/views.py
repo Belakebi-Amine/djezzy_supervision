@@ -8,6 +8,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from django.db.models import Q
 from .models import SiteReseau
 from .serializers import SiteReseauSerializer
 from accounts.models import Role
@@ -18,17 +19,14 @@ from accounts.permissions import IsEngineerOrAdmin, IsAdminEngineerOrSupervisor
 @permission_classes([IsAuthenticated])
 def liste_sites(request):
     """
-    Lists all non-archived network sites. Supports query params:
-    - ?statut=DOWN to filter by status (used for critical alerts)
-    - ?archive=true to include archived sites (admin only)
-    Used by: engineer dashboard, cartography, ticket assignment.
+    Lists network sites. Supports query params:
+    - ?statut=DOWN to filter by status
+    - ?archive=true to include archived sites
+    - ?archived_only=true for only archived sites
+    - ?wilaya=, ?commune=, ?technologie=, ?search=
     """
     sites_queryset = SiteReseau.objects.all()
 
-    # Support three modes:
-    # ?archived_only=true  → only archived sites (for admin archives tab)
-    # ?archive=true        → ALL sites including archived (for engineer inline view)
-    # (default)            → only non-archived sites
     archived_only = request.query_params.get('archived_only', 'false').lower() == 'true'
     show_all = request.query_params.get('archive', 'false').lower() == 'true'
 
@@ -37,10 +35,31 @@ def liste_sites(request):
     elif not show_all:
         sites_queryset = sites_queryset.filter(archive=False)
 
-    # Optional status filter
     statut_filtre = request.query_params.get('statut', None)
     if statut_filtre is not None:
         sites_queryset = sites_queryset.filter(statut__iexact=statut_filtre)
+
+    wilaya_filter = request.query_params.get('wilaya')
+    if wilaya_filter:
+        sites_queryset = sites_queryset.filter(wilaya__icontains=wilaya_filter)
+
+    commune_filter = request.query_params.get('commune')
+    if commune_filter:
+        sites_queryset = sites_queryset.filter(commune__icontains=commune_filter)
+
+    technologie_filter = request.query_params.get('technologie')
+    if technologie_filter:
+        sites_queryset = sites_queryset.filter(technologie__iexact=technologie_filter)
+
+    search = request.query_params.get('search', '').strip()
+    if search:
+        sites_queryset = sites_queryset.filter(
+            Q(nom__icontains=search) |
+            Q(codeSite__icontains=search) |
+            Q(wilaya__icontains=search) |
+            Q(commune__icontains=search) |
+            Q(adresse__icontains=search)
+        )
 
     serializer = SiteReseauSerializer(sites_queryset, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)

@@ -588,24 +588,99 @@ def generer_rapport_ia(prompt_utilisateur, date_debut=None, date_fin=None):
                 f"Top mots-cles: {', '.join(k['mots_cles_ia'] + '(' + str(k['nb']) + ')' for k in donnees['top_keywords'][:7])}\n"
             )
 
-            prompt = f"""Tu es un analyste reseau expert pour Djezzy, operateur mobile en Algerie.
-Redige un rapport professionnel en francais en HTML.
+            # Detect if this is a "vue globale" request
+            is_vglobale = any(w in prompt_utilisateur.lower() for w in [
+                'vue globale', 'vue d\'ensemble', 'bilan complet', 'etat general',
+                'synthese globale', 'diagnostic complet', 'vue strategic',
+            ])
 
-Donnees :
+            if is_vglobale:
+                prompt = f"""Tu es le directeur reseau de Djezzy, operateur mobile en Algerie.
+Tu t'adresses a la direction generale pour un bilan strategique.
+
+DONNEES BRUTES DE LA PERIODE:
 {resume}
 
-Demande : {prompt_utilisateur}
+ANALYSE ET REDIGE UN RAPPORT STRATEGIQUE:
 
-Consignes :
-- Francais, HTML inline CSS, pas de balises html/head/body.
-- Sections: KPI, etat reseau, tickets, recommandations.
-- Concis, 1 page A4."""
+1. SYNTHESE EXECUTIVE (3-4 phrases): Quel est le verdict global? Le reseau va-t-il bien ou
+   des problemes urgents existent-ils? Sois direct et cite les chiffres cles.
+
+2. SANTE DU RESEAU: Diagnostic technique approfondi. Disponibilite reelle vs objectif.
+   Quels types de sites (4G/5G) sont le plus affectes? Y a-t-il des correlations entre
+   les sites DOWN et les zones geographiques?
+
+3. ANALYSE DES RECLAMATIONS: Que disent les tickets sur la qualite de service?
+   Les clients se plaignent de quoi specifiquement? Les mots-cles revelent-ils un
+   probleme systemique ou des incidents isoles?
+
+4. PERFORMANCE DES EQUIPES: Qui performe bien? Qui a besoin d'accompagnement?
+   Le delai de resolution est-il acceptable? Y a-t des goulets d'echangement?
+
+5. ZONES CRITIQUES: Quelles wilayas/nodes necessitent une intervention prioritaire?
+   Pourquoi ces zones sont-elles plus affectees?
+
+6. TENDANCES: Les choses s'ameliorent ou se degradent sur la periode?
+   Quels signaux faibles doit-on surveiller?
+
+7. PLAN D'ACTION: 5 actions concretes avec priorite (haute/moyenne/basse) et
+   responsable suggere. Chaque action doit etre specifique et mesurable.
+
+8. ALERTES: Points necessitant une attention IMMEDIATE (dans les 24-48h).
+
+INSTRUCTIONS CRITIQUES:
+- Base TOUT sur les donnees, jamais de Generalites vides
+- Cite des chiffres, des noms, des lieux SPECIFIQUES
+- Identifie les CAUSES PROBABLES, pas seulement les symptomes
+- Chaque constat doit avoir un "pourquoi" et un "quoi faire"
+- HTML inline CSS, sans balises html/head/body
+- Sections avec couleurs par priorite (rouge=alerte, orange=attention, vert=OK)
+- 2-3 pages A4 maximum"""
+            else:
+                prompt = f"""Tu es un expert analyste reseau senior chez Djezzy, operateur mobile
+en Algerie. Tu analyises les donnees du reseau et tu dois produire un rapport
+qui REFLECHIT, pas simplement qui affiche des chiffres.
+
+DONNEES BRUTES DE LA PERIODE:
+{resume}
+
+DEMANDE DE L'UTILISATEUR:
+{prompt_utilisateur}
+
+INSTRUCTIONS CRITIQUES - Tu dois REMPLIR CHACUN de ces points:
+
+1. DIAGNOSTIC: Qu'est-ce que ces donnees disent VRAIMENT sur l'etat du reseau?
+   Ne te contente pas de repeter les chiffres. EXPLIQUE-LES.
+
+2. ANOMALIES: Y a-t-il des chiffres suspects? Un taux de resolution anormalement
+   bas? Une wilaya qui explose? Des tickets qui s'accumulent sans resolution?
+   IDENTIFIE LES ECARTS.
+
+3. CORRELATIONS: Relie les donnees entre elles. Ex: "La baisse du taux de
+   resolution coincide avec l'augmentation des tickets sur Oran, ce qui
+   suggere un probleme de capacity sur cette zone."
+
+4. CAUSES PROBABLES: Pourquoi ces choses se produisent-elles?
+   Propose 2-3 hypotheses basees sur les donnees.
+
+5. ACTIONS CONCRETES: Pas de "ameliorer la qualite". Plutot: "Assigner 2
+   ingenieurs supplementaires sur la wilaya X cette semaine" ou
+   "Escalader le ticket Y vers le management".
+
+FORMAT:
+- HTML inline CSS, sans balises html/head/body
+- Commence par un RENSEIGNEMENT (2-3 phrases: verdict + chiffre cle)
+- Organise en sections logiques de ton CHOIX (pas imposees)
+- Utilise des tableaux pour comparaisons, des couleurs pour alertes
+- Termine par "Vision de l'expert": ton analyse globale personnelle
+- Sois SPECIFIQUE: cite les wilayas, les ingenieurs, les chiffres exacts
+- 1.5 a 2 pages A4 maximum"""
 
             response = client.chat.completions.create(
                 model=MISTRAL_MODEL,
                 messages=[{'role': 'user', 'content': prompt}],
-                temperature=0.3,
-                max_tokens=1024,
+                temperature=0.7,
+                max_tokens=2048,
             )
             html = response.choices[0].message.content.strip()
             if html.startswith('```html'):

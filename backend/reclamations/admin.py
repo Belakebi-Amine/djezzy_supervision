@@ -1,10 +1,18 @@
 ﻿# reclamations/admin.py
 # ─────────────────────────────────────────────────────────────
 # Django admin configuration for reclamation tickets, grouped
-# tickets, and comments.
+# tickets, clients, and comments.
 # ─────────────────────────────────────────────────────────────
 from django.contrib import admin
-from .models import Reclamation, CommentaireTicket, GroupeTicket
+from .models import Reclamation, CommentaireTicket, GroupeTicket, Client
+
+
+@admin.register(Client)
+class ClientAdmin(admin.ModelAdmin):
+    list_display = ['numero', 'prenom', 'nom', 'type_client', 'created_at']
+    list_filter = ['type_client']
+    search_fields = ['numero', 'prenom', 'nom']
+    readonly_fields = ['created_at', 'updated_at']
 
 
 @admin.register(GroupeTicket)
@@ -42,7 +50,7 @@ class ReclamationAdmin(admin.ModelAdmin):
             'fields': ['numero_ticket', 'statut', 'priorite']
         }),
         ('Informations Client', {
-            'fields': ['nom_client', 'telephone_client', 'email_client', 'type_client']
+            'fields': ['client', 'nom_client', 'telephone_client', 'email_client', 'type_client']
         }),
         ('Liaison Réseau & Groupement', {
             'fields': ['site', 'groupe']
