@@ -1,3 +1,11 @@
+// ========================================================
+// Hooks d'animations et d'effets visuels
+// --------------------------------------------------------
+// - useCountUp    : compteur animé (compte de 0 à la cible)
+// - useRipple     : effet d'ondulation au clic
+// - spawnParticles : explosion de particules colorées au clic
+// ========================================================
+
 import { useState, useEffect, useRef } from 'react';
 
 // Animated counter: smoothly counts from 0 to target value

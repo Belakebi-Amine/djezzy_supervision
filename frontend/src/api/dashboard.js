@@ -251,3 +251,36 @@ export const restoreRapportIA = async (id) => {
     if (!response.ok) throw new Error(`Erreur restauration [${response.status}]`);
     return await response.json();
 };
+
+export const getSystemInfo = async () => {
+    const response = await fetch(`${API_URL}/dashboard/system-info/`, {
+        headers: await getHeaders(),
+    });
+    if (!response.ok) throw new Error(`Erreur system-info [${response.status}]`);
+    return await response.json();
+};
+
+export const getSystemHealth = async () => {
+    const response = await fetch(`${API_URL}/audit/health/`, {
+        headers: await getHeaders(),
+    });
+    if (!response.ok) throw new Error(`Erreur system-health [${response.status}]`);
+    return await response.json();
+};
+
+export const getAuditLogs = async (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    const response = await fetch(`${API_URL}/audit/logs/?${qs}`, {
+        headers: await getHeaders(),
+    });
+    if (!response.ok) throw new Error(`Erreur audit-logs [${response.status}]`);
+    return await response.json();
+};
+
+export const getAuditStats = async () => {
+    const response = await fetch(`${API_URL}/audit/stats/`, {
+        headers: await getHeaders(),
+    });
+    if (!response.ok) throw new Error(`Erreur audit-stats [${response.status}]`);
+    return await response.json();
+};

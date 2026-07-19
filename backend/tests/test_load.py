@@ -1,3 +1,5 @@
+"""Tests de charge pour mesurer les performances des endpoints API."""
+
 import time
 import statistics
 from django.test import TransactionTestCase, Client

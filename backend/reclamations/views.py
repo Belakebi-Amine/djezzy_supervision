@@ -21,6 +21,12 @@ from .services import trouver_ou_creer_groupe
 from accounts.models import Role
 from accounts.permissions import IsAgentOrAdmin, IsAdminEngineerOrSupervisor
 from keywords_config import get_all_keywords, calculer_score
+from audit_log.models import ActivityLog
+
+
+def _get_ip(request):
+    ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
+    return ip or request.META.get('REMOTE_ADDR', '')
 
 STATUTS_VALIDES = {'ouvert', 'resolu', 'ferme'}
 ALIAS_NON_TRAITE = {'non-traité', 'non-traite', 'non-traites', 'nouveau'}
@@ -107,6 +113,7 @@ def creer_reclamation(request):
             import logging
             logging.getLogger(__name__).warning("Erreur regroupement: %s", e)
         reclamation.refresh_from_db()
+        ActivityLog.log('create_ticket', user=request.user, details={'numero': reclamation.numero_ticket or f'R{reclamation.pk}', 'client': reclamation.nom_client or ''}, ip=_get_ip(request))
         return Response(ReclamationSerializer(reclamation).data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -141,6 +148,7 @@ def detail_reclamation(request, pk):
                 reclamation.assigne_a = request.user
                 reclamation.save()
 
+            ActivityLog.log('update_ticket', user=request.user, details={'numero': reclamation.numero_ticket or f'R{reclamation.pk}', 'champs': list(request.data.keys())}, ip=_get_ip(request))
             return Response(ReclamationSerializer(reclamation).data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -173,6 +181,7 @@ def archiver_reclamation(request, pk):
     reclamation.archived_at = timezone.now()
     reclamation.archived_by = request.user
     reclamation.save()
+    ActivityLog.log('archive_ticket', user=request.user, details={'numero': reclamation.numero_ticket or f'R{reclamation.pk}'}, ip=_get_ip(request))
     return Response({'message': 'Ticket archivé', 'id': pk})
 
 
@@ -189,6 +198,7 @@ def desarchiver_reclamation(request, pk):
     reclamation.archived_at = None
     reclamation.archived_by = None
     reclamation.save()
+    ActivityLog.log('restore_ticket', user=request.user, details={'numero': reclamation.numero_ticket or f'R{reclamation.pk}'}, ip=_get_ip(request))
     return Response({'message': 'Ticket désarchivé', 'id': pk})
 
 
@@ -275,7 +285,8 @@ def stats_groupe_tickets(request):
     now = timezone.now()
     ouverts = GroupeTicket.objects.filter(statut='ouvert', is_archived=False).count()
     total = GroupeTicket.objects.filter(is_archived=False).count()
-    resolus = GroupeTicket.objects.filter(statut__in=['resolu', 'ferme'], is_archived=False).count()
+    resolus = GroupeTicket.objects.filter(statut='resolu', is_archived=False).count()
+    fermes = GroupeTicket.objects.filter(statut='ferme', is_archived=False).count()
 
     top_site = (
         GroupeTicket.objects.filter(is_archived=False)
@@ -291,6 +302,7 @@ def stats_groupe_tickets(request):
         'tickets_ouverts': ouverts,
         'tickets_total': total,
         'tickets_resolus': resolus,
+        'tickets_fermes': fermes,
         'reclamations_total': reclamations_total,
         'top_site': top_site,
     })
@@ -336,6 +348,7 @@ def modifier_groupe_ticket(request, pk):
             groupe.save()
             Reclamation.objects.filter(groupe=groupe).update(assigne_a=request.user)
 
+        ActivityLog.log('update_ticket', user=request.user, details={'numero': groupe.numero_ticket, 'champs': list(request.data.keys())}, ip=_get_ip(request))
         return Response(GroupeTicketSerializer(groupe).data, status=status.HTTP_200_OK)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -357,6 +370,7 @@ def resoudre_groupe_ticket(request, pk):
 
     Reclamation.objects.filter(groupe=groupe).update(statut='resolu')
 
+    ActivityLog.log('resolve_ticket', user=request.user, details={'numero': groupe.numero_ticket}, ip=_get_ip(request))
     return Response(GroupeTicketSerializer(groupe).data)
 
 
@@ -385,6 +399,7 @@ def assigner_groupe_ticket(request, pk):
         rec_update['resolu_le'] = None
     Reclamation.objects.filter(groupe=groupe).update(**rec_update)
 
+    ActivityLog.log('assign_ticket', user=request.user, details={'numero': groupe.numero_ticket, 'a': request.user.code_user}, ip=_get_ip(request))
     return Response(GroupeTicketSerializer(groupe).data)
 
 
@@ -409,4 +424,5 @@ def archiver_groupe_ticket(request, pk):
         archived_at=now,
     )
 
+    ActivityLog.log('archive_ticket', user=request.user, details={'numero': groupe.numero_ticket, 'type': 'groupe'}, ip=_get_ip(request))
     return Response({'message': 'Ticket groupé archivé', 'id': pk})

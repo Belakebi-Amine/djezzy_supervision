@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'backend.sites_reseau.apps.SitesReseauConfig',
     'backend.cartographie.apps.CartographieConfig',
     'backend.dashboard.apps.DashboardConfig',
+    'backend.audit_log.apps.AuditLogConfig',
 ]
 
 # ─── Middleware ────────────────────────────────────────────
@@ -50,6 +51,7 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  # Must be first for CORS to work
     'django.middleware.security.SecurityMiddleware',
     'config.middleware.AdminIPRestrictionMiddleware',  # Block /admin/ from non-whitelisted IPs
+    'backend.audit_log.middleware.AuditTimingMiddleware',  # Track request timing
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',

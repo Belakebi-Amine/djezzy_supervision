@@ -1,3 +1,14 @@
+// ========================================================
+// Modale de détail - Graphiques et listes de tickets
+// --------------------------------------------------------
+// Affiche des informations détaillées selon le contexte :
+//   - evolution    : courbe d'évolution des tickets
+//   - priorite     : camembert de répartition par priorité
+//   - delai        : barres des délais de résolution
+//   - top_site     : tickets liés à un site spécifique
+//   - commune      : disponibilité par commune
+// ========================================================
+
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   LineChart, Line, BarChart, Bar,
@@ -72,16 +83,19 @@ const S = {
   },
 };
 
+// --- Constantes de couleurs pour les priorités, statuts et sites ---
 const PC = { critique: '#DC2626', haute: '#F59E0B', normale: '#2563EB', basse: '#10B981' };
 const SC = { ouvert: '#0284C7', resolu: '#10B981', ferme: '#DC2626' };
 const SITE_C = { UP: '#10B981', DOWN: '#DC2626' };
 const PAL = ['#E8401A', '#2563EB', '#10B981', '#F59E0B', '#8B5CF6'];
 
+// --- Composant Badge : affiche un texte avec une couleur selon le map ---
 const Badge = ({ text, map }) => {
   const c = map?.[text?.toLowerCase()] || '#64748B';
   return <span style={S.badge(c)}>{text}</span>;
 };
 
+// --- Composant Tooltip personnalisé pour les graphiques Recharts ---
 const Tip = ({ active, payload, label }) => {
   if (!active || !payload) return null;
   return (
@@ -99,6 +113,7 @@ const StatBox = ({ label, value, color }) => (
   </div>
 );
 
+// --- Ligne de ticket dans le tableau, cliquable pour voir les détails ---
 function TicketRow({ ticket }) {
   const [show, setShow] = useState(false);
   return (
@@ -132,6 +147,7 @@ function TicketRow({ ticket }) {
   );
 }
 
+// --- Ligne de site dans le tableau, cliquable pour modifier le statut ---
 function SiteRow({ site, onUpdated }) {
   const [editing, setEditing] = useState(false);
   const [statut, setStatut] = useState(site.statut || site.statut_site || '');
@@ -140,6 +156,7 @@ function SiteRow({ site, onUpdated }) {
 
   useEffect(() => { setStatut(site.statut || site.statut_site || ''); }, [site.statut, site.statut_site]);
 
+  // --- Sauvegarde du nouveau statut du site via l'API ---
   const handleSave = async () => {
     setSaving(true);
     try { const u = await updateSite(site.id, { statut }); onUpdated(u); setEditing(false); }
@@ -178,6 +195,7 @@ function SiteRow({ site, onUpdated }) {
   );
 }
 
+// --- Utilitaire : convertit une chaîne de date en objet Date ---
 function parseEvoDate(jourStr) {
   if (!jourStr) return null;
   const d = new Date(jourStr);
@@ -185,6 +203,7 @@ function parseEvoDate(jourStr) {
   return null;
 }
 
+// --- Composant principal de la modale de détail ---
 export default function DetailModal({ type, data, onClose, stats, reporting }) {
   const { addNotification } = useNotification();
   const [items, setItems] = useState([]);
@@ -192,6 +211,7 @@ export default function DetailModal({ type, data, onClose, stats, reporting }) {
   const [title, setTitle] = useState('');
   const [filterPrio, setFilterPrio] = useState((type === 'priorite' && data?.name) || (type === 'delai' && data?.priorite) || '');
 
+  // --- Préparation des données pour les graphiques ---
   const evo = (stats?.graphiques?.evolution_tickets ?? []).map((d) => {
     const dd = parseEvoDate(d.jour);
     return { ...d, _raw: d.jour, jour: dd ? dd.toLocaleDateString('fr', { day: '2-digit', month: 'short' }) : d.jour, _rawDate: dd };
@@ -231,6 +251,7 @@ export default function DetailModal({ type, data, onClose, stats, reporting }) {
     }
   }, [type, data, filterPrio]);
 
+  // --- Chargement des tickets/sites selon le type de détail choisi ---
   const fetchItems = useCallback(async () => {
     setLoading(true);
     try {
@@ -303,6 +324,7 @@ export default function DetailModal({ type, data, onClose, stats, reporting }) {
 
   const handleUpdate = (u) => setItems((prev) => prev.map((it) => (it.id === u.id ? u : it)));
 
+  // --- Rendu du graphique adapté au type de détail ---
   const renderChart = () => {
     switch (type) {
       case 'evolution':
@@ -399,6 +421,7 @@ export default function DetailModal({ type, data, onClose, stats, reporting }) {
     }
   };
 
+  // --- Rendu des boîtes de statistiques selon le type ---
   const renderStats = () => {
     switch (type) {
       case 'evolution':

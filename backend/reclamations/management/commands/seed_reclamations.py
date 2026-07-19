@@ -1,3 +1,8 @@
+"""Commande de seeding pour générer des réclamations de démonstration.
+
+Crée 100 tickets (50 ouverts, 20 résolus, 30 fermés)
+répartis entre les agents CC et 4 ingénieurs réseau.
+"""
 import random
 from datetime import timedelta
 from django.core.management.base import BaseCommand
@@ -55,6 +60,7 @@ DESCRIPTIONS = [
 
 
 class Command(BaseCommand):
+    """Commande de seeding : crée 100 réclamations réalistes pour la démo."""
     help = "Seed: 50 ouvert, 20 resolu, 30 ferme. 4 ingenieurs."
 
     def handle(self, *args, **options):

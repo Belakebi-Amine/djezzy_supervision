@@ -1,3 +1,5 @@
+"""Tests de gestion des réclamations (CRUD, filtres, archivage, commentaires)."""
+
 import pytest
 from django.test import TestCase, Client
 from django.contrib.auth import get_user_model

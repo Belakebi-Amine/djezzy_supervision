@@ -35,6 +35,29 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     """
     serializer_class = CustomTokenObtainPairSerializer
 
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == 200:
+            from audit_log.models import ActivityLog
+            user_data = response.data
+            code = user_data.get('code_user', '')
+            ActivityLog.log('login', user=self._get_user_from_token(code), ip=self._get_ip(request))
+        else:
+            from audit_log.models import ActivityLog
+            ActivityLog.log('login_failed', details={'email': request.data.get('email', '')}, ip=self._get_ip(request))
+        return response
+
+    def _get_user_from_token(self, code):
+        try:
+            return CustomUser.objects.get(code_user=code)
+        except CustomUser.DoesNotExist:
+            return None
+
+    @staticmethod
+    def _get_ip(request):
+        ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
+        return ip or request.META.get('REMOTE_ADDR', '')
+
 
 # ── Logout ─────────────────────────────────────────────────
 
@@ -49,6 +72,9 @@ def logout_view(request):
             token.blacklist()
     except Exception:
         pass
+    from audit_log.models import ActivityLog
+    ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or request.META.get('REMOTE_ADDR', '')
+    ActivityLog.log('logout', user=request.user, ip=ip)
     logout(request)
     return Response({'message': 'Déconnexion réussie'})
 
@@ -94,6 +120,9 @@ def update_profile_view(request):
     serializer = UpdateProfileSerializer(request.user, data=request.data, partial=True)
     if serializer.is_valid():
         request.user.mettreAJourProfil(serializer.validated_data)
+        from audit_log.models import ActivityLog
+        ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or request.META.get('REMOTE_ADDR', '')
+        ActivityLog.log('update_user', user=request.user, details={'code': request.user.code_user, 'champs': list(request.data.keys())}, ip=ip)
         return Response({
             'message': 'Profil mis à jour',
             'user': UserSerializer(request.user).data
@@ -250,6 +279,9 @@ def register_view(request):
     serializer = RegisterSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
+        from audit_log.models import ActivityLog
+        ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or request.META.get('REMOTE_ADDR', '')
+        ActivityLog.log('create_user', user=request.user, details={'code': user.code_user, 'role': user.role}, ip=ip)
         return Response(
             {'message': 'Utilisateur créé', 'user': UserSerializer(user).data},
             status=status.HTTP_201_CREATED
@@ -304,6 +336,9 @@ def archive_user_view(request, code_user):
         user.is_active = False
         user.save(update_fields=['is_archived', 'is_active'])
         _desassigner_tickets_non_resolus(user)
+        from audit_log.models import ActivityLog
+        ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or request.META.get('REMOTE_ADDR', '')
+        ActivityLog.log('archive_user', user=request.user, details={'code': code_user}, ip=ip)
         return Response({'message': f'Utilisateur {user.code_user} archivé'})
     except CustomUser.DoesNotExist:
         return Response({'error': 'Utilisateur introuvable'}, status=status.HTTP_404_NOT_FOUND)
@@ -321,6 +356,9 @@ def toggle_active_view(request, code_user):
         user.is_active = not user.is_active
         user.save(update_fields=['is_active'])
         status_text = 'activé' if user.is_active else 'désactivé'
+        from audit_log.models import ActivityLog
+        ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or request.META.get('REMOTE_ADDR', '')
+        ActivityLog.log('toggle_user', user=request.user, details={'code': code_user, 'action': status_text}, ip=ip)
         return Response({
             'message': f'Utilisateur {user.code_user} {status_text}',
             'is_active': user.is_active,
@@ -349,6 +387,9 @@ def update_user_view(request, code_user):
         new_role = serializer.instance.role
         if old_role != new_role:
             _desassigner_tickets_non_resolus(user)
+        from audit_log.models import ActivityLog
+        ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or request.META.get('REMOTE_ADDR', '')
+        ActivityLog.log('update_user', user=request.user, details={'code': code_user, 'champs': list(request.data.keys())}, ip=ip)
         return Response({
             'message': f'Utilisateur {code_user} mis à jour',
             'user': UserSerializer(user).data,
@@ -365,6 +406,9 @@ def restore_user_view(request, code_user):
         user.is_archived = False
         user.is_active = True
         user.save(update_fields=['is_archived', 'is_active'])
+        from audit_log.models import ActivityLog
+        ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or request.META.get('REMOTE_ADDR', '')
+        ActivityLog.log('restore_user', user=request.user, details={'code': code_user}, ip=ip)
         return Response({
             'message': f'Utilisateur {user.code_user} restauré',
             'user': UserSerializer(user).data,
@@ -384,7 +428,10 @@ def delete_user_view(request, code_user):
         user = CustomUser.objects.get(code_user=code_user)
         if user == request.user:
             return Response({'error': 'Vous ne pouvez pas vous supprimer vous-même'}, status=status.HTTP_400_BAD_REQUEST)
+        from audit_log.models import ActivityLog
+        ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or request.META.get('REMOTE_ADDR', '')
         user.delete()
+        ActivityLog.log('delete_user', user=request.user, details={'code': code_user}, ip=ip)
         return Response({'message': f'Utilisateur {code_user} supprimé définitivement'})
     except CustomUser.DoesNotExist:
         return Response({'error': 'Utilisateur introuvable'}, status=status.HTTP_404_NOT_FOUND)
@@ -411,6 +458,10 @@ def reinitialiser_mot_de_passe_view(request):
     temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
     user.set_password(temp_password)
     user.save(update_fields=['password'])
+
+    from audit_log.models import ActivityLog
+    ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or request.META.get('REMOTE_ADDR', '')
+    ActivityLog.log('reset_password', user=request.user, details={'code': user.code_user}, ip=ip)
 
     return Response({
         'message': f'Mot de passe réinitialisé pour {user.code_user}',

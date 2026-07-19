@@ -13,6 +13,12 @@ from .models import SiteReseau
 from .serializers import SiteReseauSerializer
 from accounts.models import Role
 from accounts.permissions import IsEngineerOrAdmin, IsAdminEngineerOrSupervisor
+from audit_log.models import ActivityLog
+
+
+def _get_ip(request):
+    ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
+    return ip or request.META.get('REMOTE_ADDR', '')
 
 
 @api_view(['GET'])
@@ -72,7 +78,9 @@ def creer_site(request):
     serializer = SiteReseauSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        site_data = serializer.data
+        ActivityLog.log('create_site', user=request.user, details={'code': site_data.get('codeSite', ''), 'nom': site_data.get('nom', '')}, ip=_get_ip(request))
+        return Response(site_data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -101,13 +109,16 @@ def detail_site(request, pk):
         serializer = SiteReseauSerializer(site, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            ActivityLog.log('update_site', user=request.user, details={'code': site.codeSite, 'champs': list(request.data.keys())}, ip=_get_ip(request))
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     if request.method == 'DELETE':
         if request.user.role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX]:
             return Response({'error': 'Seuls les admins et ingénieurs peuvent supprimer'}, status=status.HTTP_403_FORBIDDEN)
+        site_code = site.codeSite
         site.delete()
+        ActivityLog.log('delete_site', user=request.user, details={'code': site_code}, ip=_get_ip(request))
         return Response({'message': 'Site supprimé avec succès'}, status=status.HTTP_204_NO_CONTENT)
 
 
@@ -125,6 +136,7 @@ def archiver_site(request, pk):
 
     site.archiverSite()
     serializer = SiteReseauSerializer(site)
+    ActivityLog.log('archive_site', user=request.user, details={'code': site.codeSite, 'nom': site.nom}, ip=_get_ip(request))
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 
@@ -142,4 +154,5 @@ def desarchiver_site(request, pk):
 
     site.desarchiverSite()
     serializer = SiteReseauSerializer(site)
+    ActivityLog.log('restore_site', user=request.user, details={'code': site.codeSite, 'nom': site.nom}, ip=_get_ip(request))
     return Response(serializer.data, status=status.HTTP_200_OK)

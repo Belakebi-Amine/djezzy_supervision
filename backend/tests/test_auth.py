@@ -1,3 +1,5 @@
+"""Tests de l'authentification JWT (connexion, rafraîchissement, déconnexion)."""
+
 import pytest
 from django.test import TestCase, Client
 from django.urls import reverse

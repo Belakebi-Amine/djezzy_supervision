@@ -148,7 +148,7 @@ class GroupeTicket(models.Model):
 
         if self.statut == 'resolu' and not self.resolu_le:
             self.resolu_le = timezone.now()
-        elif self.statut != 'resolu':
+        elif self.statut == 'ouvert':
             self.resolu_le = None
 
         super().save(*args, **kwargs)
@@ -331,7 +331,7 @@ class Reclamation(models.Model):
 
         if self.statut == 'resolu' and not self.resolu_le:
             self.resolu_le = timezone.now()
-        elif self.statut != 'resolu':
+        elif self.statut == 'ouvert':
             self.resolu_le = None
 
         super().save(*args, **kwargs)

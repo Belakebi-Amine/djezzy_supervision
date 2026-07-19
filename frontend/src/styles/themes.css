@@ -1,3 +1,11 @@
+/* ========================================================
+   Thème global - Djezzy Hub
+   --------------------------------------------------------
+   Variables CSS pour la sidebar, les cartes, les textes,
+   les bordures, les ombres et la couleur d'accent.
+   Utilisé par tous les composants via var(--nom_variable).
+   ======================================================== */
+
 :root {
   --bg-sidebar: #181a20;
   --bg-sidebar-hover: #22252e;

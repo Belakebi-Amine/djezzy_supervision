@@ -1,3 +1,5 @@
+"""Tests de gestion des utilisateurs (CRUD, archivage, réinitialisation mot de passe)."""
+
 import pytest
 from django.test import TestCase, Client
 from django.contrib.auth import get_user_model

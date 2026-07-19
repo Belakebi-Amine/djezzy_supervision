@@ -1,3 +1,13 @@
+// ========================================================
+// Page de connexion - Djezzy Hub
+// --------------------------------------------------------
+// Gère l'authentification de l'utilisateur :
+//   1. Vérifie si un token existe déjà (redirection auto)
+//   2. Envoie les identifiants au backend Django
+//   3. Décode le JWT pour extraire le rôle
+//   4. Redirige vers le tableau de bord correspondant
+// ========================================================
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -13,6 +23,7 @@ const Login = () => {
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
 
+    // --- Vérification automatique du token au chargement ---
     useEffect(() => {
         const token = localStorage.getItem('token') || localStorage.getItem('access_token');
         if (token) {
@@ -30,6 +41,7 @@ const Login = () => {
         }
     }, [navigate]);
 
+    // --- Décode un token JWT sans vérification côté client ---
     const decodeJWT = (token) => {
         try {
             const base64Url = token.split('.')[1];
@@ -40,6 +52,7 @@ const Login = () => {
         }
     };
 
+    // --- Gestion de la soumission du formulaire de connexion ---
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
@@ -65,6 +78,7 @@ const Login = () => {
 
             const decoded = response.data.access ? decodeJWT(response.data.access) : null;
 
+            // --- Extraction du rôle : d'abord dans le JWT, puis dans la réponse, puis via /me/ ---
             let userRole = null;
 
             if (decoded) {
@@ -88,6 +102,7 @@ const Login = () => {
                 else userRole = "Agent Call Center";
             }
 
+            // --- Redirection selon le rôle normalisé ---
             const normalizedRole = userRole ? userRole.toString().toLowerCase().trim() : "";
 
             if (normalizedRole.includes("call center") || normalizedRole.includes("agent")) {
@@ -201,6 +216,7 @@ const Login = () => {
     );
 };
 
+// --- Styles en ligne du formulaire de connexion ---
 const S = {
     container: {
         display: 'flex',
@@ -403,6 +419,7 @@ const S = {
     },
 };
 
+// --- Injection des animations CSS pour la page de login ---
 const styleSheet = document.createElement('style');
 styleSheet.textContent = `
     @keyframes loginPulse {

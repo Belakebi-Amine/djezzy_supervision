@@ -1,13 +1,18 @@
+"""Configuration de l'application 'reclamations' (gestion des tickets)."""
+
 import threading
 from django.apps import AppConfig
 
 class ReclamationsConfig(AppConfig):
+    """Configuration pour l'app de gestion des réclamations."""
     default_auto_field = 'django.db.models.BigAutoField' 
     name = 'reclamations'
 
     def ready(self):
+        """Lance l'archivage automatique au démarrage du serveur."""
         # Run auto-archive once on server startup in a background thread
         def _auto_archive():
+            """Archive automatiquement les réclamations et rapports anciens."""
             import logging
             logger = logging.getLogger(__name__)
             try:

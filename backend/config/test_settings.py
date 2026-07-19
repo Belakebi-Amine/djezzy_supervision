@@ -1,3 +1,8 @@
+"""Paramètres de configuration pour les tests unitaires.
+
+Utilise SQLite en mémoire, désactive le rate limiting et
+les validateurs de mots de passe pour accélérer les tests.
+"""
 from .settings import *
 
 DATABASES = {

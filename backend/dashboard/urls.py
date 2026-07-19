@@ -8,6 +8,7 @@ from .views import (
     statistiques, stats_reporting, liste_sites_carto,
     generer_rapport_ia, liste_rapports_ia, detail_rapport_ia,
     liste_rapports_archives, consulter_archive, consulter_performance,
+    system_info,
 )
 
 urlpatterns = [
@@ -20,4 +21,5 @@ urlpatterns = [
     path('rapport-ia/archives/', liste_rapports_archives, name='liste-rapports-archives'),
     path('archives/', consulter_archive, name='consulter-archive'),
     path('performance/<str:code_user>/', consulter_performance, name='consulter-performance'),
+    path('system-info/', system_info, name='system-info'),
 ]

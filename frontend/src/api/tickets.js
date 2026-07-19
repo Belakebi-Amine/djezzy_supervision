@@ -75,11 +75,12 @@ const checkAuthAndRedirect = (status) => {
  * Fetches reclamation tickets with optional status filtering.
  * @param {string} statut - Comma-separated statuses (e.g., 'ouvert,resolu')
  */
-export const getTickets = async (statut = '') => {
+export const getTickets = async (statut = '', archived = '') => {
     let url = `${API_URL}/reclamations/`;
-    if (statut) {
-        url += `?statut=${encodeURIComponent(statut)}`;
-    }
+    const params = [];
+    if (statut) params.push(`statut=${encodeURIComponent(statut)}`);
+    if (archived) params.push(`archived=${encodeURIComponent(archived)}`);
+    if (params.length) url += '?' + params.join('&');
 
     const response = await fetch(url, { method: 'GET', headers: await getHeaders() });
     if (!response.ok) {

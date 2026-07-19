@@ -1,8 +1,17 @@
+// ========================================================
+// Composant Carte interactive (Leaflet)
+// --------------------------------------------------------
+// Affiche les sites réseau sur une carte OpenStreetMap.
+// Chaque site est marqué en vert (UP) ou rouge (DOWN).
+// Un cercle de couverture s'affiche au survol d'un marker.
+// ========================================================
+
 import { useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
+// --- Crée une icône de marker personnalisée avec une couleur donnée ---
 const createIcon = (color) =>
   L.divIcon({
     html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3)"></div>`,
@@ -15,6 +24,7 @@ const createIcon = (color) =>
 const UP_ICON = createIcon('#23a54a');
 const DOWN_ICON = createIcon('#e30620');
 
+// --- Composant interne : ajuste la vue de la carte pour inclure tous les sites ---
 function FitBounds({ sites }) {
   const map = useMap();
   const fitted = useRef(false);

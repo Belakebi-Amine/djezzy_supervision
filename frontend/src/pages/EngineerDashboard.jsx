@@ -44,10 +44,10 @@ const COLORS = {
   },
   // Badge color schemes for ticket status
   status: {
-    OUVERT: { bg: '#BAE6FD', text: '#0369A1', dot: '#0284C7' },
+    OUVERT: { bg: '#DBEAFE', text: '#1D4ED8', dot: '#2563EB' },
     'EN COURS': { bg: '#FDE68A', text: '#B45309', dot: '#D97706' },
     RESOLU: { bg: '#A7F3D0', text: '#047857', dot: '#15803D' },
-    FERME: { bg: '#FECACA', text: '#B91C1C', dot: '#DC2626' },
+    FERME: { bg: '#F1F5F9', text: '#64748B', dot: '#94A3B8' },
   },
 };
 
@@ -157,7 +157,7 @@ export default function EngineerDashboard() {
 
   // --- Grouped Tickets State ---
   const [groupeTickets, setGroupeTickets] = useState([]);
-  const [groupeStats, setGroupeStats] = useState({ tickets_ouverts: 0, tickets_total: 0, tickets_resolus: 0, reclamations_total: 0, top_site: null });
+  const [groupeStats, setGroupeStats] = useState({ tickets_ouverts: 0, tickets_total: 0, tickets_resolus: 0, tickets_fermes: 0, reclamations_total: 0, top_site: null });
   const [groupeLoading, setGroupeLoading] = useState(false);
   const [selectedGroupe, setSelectedGroupe] = useState(null);
   const [updatingGroupeId, setUpdatingGroupeId] = useState(null);
@@ -226,15 +226,15 @@ export default function EngineerDashboard() {
     getSites().then(setSites).catch(() => setSites([]));
   }, []);
 
-  // Fetch all tickets from the backend
+  // Fetch all tickets from the backend (include archived so ferme tickets are visible)
   const fetchTickets = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getTickets();
+      const data = await getTickets('', 'all');
       setTickets(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Impossible de charger les reclamations', err);
-      addNotification('Impossible de charger les tickets.', 'error');
+      addNotification('Impossible de charger les réclamations.', 'error');
       setTickets([]);
     } finally {
       setLoading(false);
@@ -244,7 +244,7 @@ export default function EngineerDashboard() {
   // Silent background refresh (no loading spinner)
   const refreshTickets = useCallback(async () => {
     try {
-      const data = await getTickets();
+      const data = await getTickets('', 'all');
       if (Array.isArray(data)) setTickets(data);
     } catch {}
   }, []);
@@ -254,11 +254,11 @@ export default function EngineerDashboard() {
     fetchTickets();
   }, [fetchTickets]);
 
-  // ─── Fetch grouped tickets ───
+  // ─── Fetch grouped tickets (include archived so ferme groups are visible) ───
   const fetchGroupeTickets = useCallback(async () => {
     setGroupeLoading(true);
     try {
-      const data = await getGroupeTickets();
+      const data = await getGroupeTickets({ archived: 'all' });
       setGroupeTickets(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Impossible de charger les tickets groupés', err);
@@ -272,7 +272,7 @@ export default function EngineerDashboard() {
   // Silent background refresh for grouped tickets
   const refreshGroupeTickets = useCallback(async () => {
     try {
-      const data = await getGroupeTickets();
+      const data = await getGroupeTickets({ archived: 'all' });
       if (Array.isArray(data)) setGroupeTickets(data);
     } catch {}
   }, []);
@@ -961,11 +961,11 @@ export default function EngineerDashboard() {
             </div>
             <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#D97706', backgroundColor: COLORS.cardBg, animationDelay: '0.05s' }}>
               <span style={{ ...styles.statNumber, color: '#D97706' }}>{groupeStats.tickets_ouverts || 0}</span>
-              <span style={styles.statLabel}>Tickets ouverts</span>
+              <span style={styles.statLabel}>Ouverts</span>
             </div>
             <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#15803D', backgroundColor: COLORS.cardBg, animationDelay: '0.1s' }}>
               <span style={{ ...styles.statNumber, color: '#15803D' }}>{groupeStats.tickets_resolus || 0}</span>
-              <span style={styles.statLabel}>Tickets résolus</span>
+              <span style={styles.statLabel}>Résolus</span>
             </div>
             <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#8B5CF6', backgroundColor: COLORS.cardBg, animationDelay: '0.15s' }}>
               <span style={{ ...styles.statNumber, color: '#8B5CF6' }}>{groupeStats.reclamations_total || 0}</span>
@@ -1029,7 +1029,7 @@ export default function EngineerDashboard() {
               ) : filteredGroupeTickets.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px', color: COLORS.textMuted }}>Aucun ticket trouvé.</div>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '14px' }}>
                   {filteredGroupeTickets.map((groupe) => {
                       const prio = COLORS.priorities[groupe.priorite?.toUpperCase()] || COLORS.priorities.NORMALE;
                       const statutKey = getStatutKey(groupe.statut);
@@ -1041,85 +1041,97 @@ export default function EngineerDashboard() {
                           onClick={() => setSelectedGroupe(groupe)}
                           style={{
                             backgroundColor: '#FFFFFF',
-                            borderRadius: '10px',
-                            boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+                            borderRadius: '12px',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
                             border: `1px solid ${COLORS.border}`,
                             borderLeft: `4px solid ${prio.side}`,
-                            padding: '16px',
+                            padding: '0',
                             cursor: 'pointer',
-                            transition: 'all 0.15s ease',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '10px',
+                            transition: 'all 0.2s ease',
+                            overflow: 'hidden',
                           }}
-                          onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.08)'; e.currentTarget.style.transform = 'none'; }}
+                          onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.1)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)'; e.currentTarget.style.transform = 'none'; }}
                         >
-                          {/* Header: ticket number + badges */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '11px', fontWeight: 600, color: COLORS.textMuted }}>{groupe.numero_ticket}</span>
-                            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                              {groupe.has_entreprise && (
-                                <span style={{ padding: '3px 8px', borderRadius: '4px', fontWeight: 700, fontSize: '9px', backgroundColor: '#FFF3E0', color: '#E65100', border: '1px solid #FFB74D' }}>
-                                  ENTREPRISE
+                          {/* Top color band */}
+                          <div style={{ height: '3px', background: `linear-gradient(90deg, ${prio.side}, ${prio.side}44)` }} />
+
+                          <div style={{ padding: '14px 18px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            {/* Header: ticket number + badges */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '11px', fontWeight: 700, color: COLORS.textMuted, letterSpacing: '0.3px' }}>{groupe.numero_ticket}</span>
+                              <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                                {groupe.has_entreprise && (
+                                  <span style={{ padding: '2px 7px', borderRadius: '4px', fontWeight: 700, fontSize: '9px', backgroundColor: '#FFF3E0', color: '#E65100', border: '1px solid #FFB74D' }}>
+                                    ENT
+                                  </span>
+                                )}
+                                <span style={{ padding: '2px 7px', borderRadius: '4px', fontWeight: 700, fontSize: '9px', backgroundColor: prio.bg, color: prio.text }}>
+                                  {groupe.priorite?.toUpperCase()}
                                 </span>
-                              )}
-                              <span style={{ padding: '3px 8px', borderRadius: '4px', fontWeight: 700, fontSize: '9px', backgroundColor: prio.bg, color: prio.text }}>
-                                {groupe.priorite?.toUpperCase()}
-                              </span>
+                              </div>
                             </div>
-                          </div>
 
-                          {/* Title */}
-                          <div style={{ fontSize: '14px', fontWeight: 700, color: COLORS.textDark, lineHeight: '1.3' }}>
-                            {groupe.titre}
-                          </div>
+                            {/* Title */}
+                            <div style={{ fontSize: '14px', fontWeight: 700, color: COLORS.textDark, lineHeight: '1.35', minHeight: '38px' }}>
+                              {groupe.titre}
+                            </div>
 
-                          {/* Site name */}
-                          <div style={{ fontSize: '12px', color: COLORS.textMuted, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <IconSite style={{ width: 12, height: 12 }} />
-                            {groupe.site_display}
-                          </div>
+                            {/* Site name */}
+                            <div style={{ fontSize: '12px', color: COLORS.textMuted, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <IconSite style={{ width: 13, height: 13, opacity: 0.6 }} />
+                              <span>{groupe.site_display}</span>
+                            </div>
 
-                          {/* Date + reclamations count */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '11px', color: COLORS.textMuted }}>{formatDateFr(groupe.premier_signalement || groupe.created_at)}</span>
-                            <span style={{ padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 600, backgroundColor: '#F1F5F9', color: '#475569' }}>
-                              {groupe.reclamations_count || groupe.nombre_reclamations} récl.
-                            </span>
-                          </div>
+                            {/* Divider */}
+                            <div style={{ height: '1px', background: COLORS.border, margin: '0 -2px' }} />
 
-                          {/* Status badge + action buttons */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: '4px', fontWeight: 700, fontSize: '10px', backgroundColor: stat.bg, color: stat.text }}>
-                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: stat.dot, marginRight: '6px', display: 'inline-block' }} />
-                              {statutKey}
-                            </span>
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                              {groupe.statut === 'ouvert' && (
-                                <button
-                                  disabled={updatingGroupeId === groupe.id}
-                                  onClick={(e) => { e.stopPropagation(); handleResoudreGroupe(groupe.id); }}
-                                  style={{ padding: '4px 10px', borderRadius: '4px', border: '1px solid #15803D33', backgroundColor: '#DCFCE7', color: '#15803D', fontSize: '10px', fontWeight: 600, cursor: 'pointer' }}
-                                >Résoudre</button>
-                              )}
-                              {groupe.statut === 'ouvert' && (!groupe.assigne_a_display || groupe.assigne_a_display === '-') ? (
-                                <button
-                                  disabled={updatingGroupeId === groupe.id}
-                                  onClick={(e) => { e.stopPropagation(); handleAssignerGroupe(groupe.id); }}
-                                  style={{ padding: '4px 10px', borderRadius: '4px', border: '1px solid #2563EB33', backgroundColor: '#EFF6FF', color: '#2563EB', fontSize: '10px', fontWeight: 600, cursor: 'pointer' }}
-                                >S'assigner</button>
-                              ) : groupe.statut === 'ferme' ? (
-                                <button
-                                  disabled={updatingGroupeId === groupe.id}
-                                  onClick={(e) => { e.stopPropagation(); handleAssignerGroupe(groupe.id); }}
-                                  style={{ padding: '4px 10px', borderRadius: '4px', border: '1px solid #F59E0B33', backgroundColor: '#FEF3C7', color: '#D97706', fontSize: '10px', fontWeight: 600, cursor: 'pointer' }}
-                                >Prendre le ticket</button>
-                              ) : groupe.assigne_a_display && groupe.assigne_a_display !== '-' ? (
-                                <span style={{ fontSize: '10px', color: COLORS.textMuted, padding: '4px 6px' }}>
-                                  {groupe.assigne_a_display}
+                            {/* Bottom row: date, recl count, status */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: '6px', fontWeight: 700, fontSize: '10px', backgroundColor: stat.bg, color: stat.text, gap: '5px' }}>
+                                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: stat.dot, display: 'inline-block' }} />
+                                  {statutKey}
                                 </span>
-                              ) : null}
+                                <span style={{ fontSize: '10px', color: COLORS.textMuted }}>
+                                  {groupe.reclamations_count || groupe.nombre_reclamations} récl.
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '10px', color: COLORS.textMuted }}>{formatDateFr(groupe.premier_signalement || groupe.created_at)}</span>
+                                <div style={{ display: 'flex', gap: '3px' }}>
+                                  {groupe.statut === 'ouvert' && (
+                                    <button
+                                      disabled={updatingGroupeId === groupe.id}
+                                      onClick={(e) => { e.stopPropagation(); handleResoudreGroupe(groupe.id); }}
+                                      style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #15803D33', backgroundColor: '#DCFCE7', color: '#15803D', fontSize: '10px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' }}
+                                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#BBF7D0'; }}
+                                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#DCFCE7'; }}
+                                    >Résoudre</button>
+                                  )}
+                                  {groupe.statut === 'ouvert' && (!groupe.assigne_a_display || groupe.assigne_a_display === '-') ? (
+                                    <button
+                                      disabled={updatingGroupeId === groupe.id}
+                                      onClick={(e) => { e.stopPropagation(); handleAssignerGroupe(groupe.id); }}
+                                      style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #2563EB33', backgroundColor: '#EFF6FF', color: '#2563EB', fontSize: '10px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' }}
+                                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#DBEAFE'; }}
+                                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#EFF6FF'; }}
+                                    >S'assigner</button>
+                                  ) : groupe.statut === 'ferme' ? (
+                                    <button
+                                      disabled={updatingGroupeId === groupe.id}
+                                      onClick={(e) => { e.stopPropagation(); handleAssignerGroupe(groupe.id); }}
+                                      style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #F59E0B33', backgroundColor: '#FEF3C7', color: '#D97706', fontSize: '10px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' }}
+                                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#FDE68A'; }}
+                                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#FEF3C7'; }}
+                                    >Prendre</button>
+                                  ) : groupe.assigne_a_display && groupe.assigne_a_display !== '-' ? (
+                                    <span style={{ fontSize: '10px', color: COLORS.textMuted, padding: '2px 6px', backgroundColor: '#F1F5F9', borderRadius: '4px' }}>
+                                      {groupe.assigne_a_display}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </div>
                             </div>
                           </div>
                         </div>

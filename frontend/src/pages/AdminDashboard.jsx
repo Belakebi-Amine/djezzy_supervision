@@ -17,14 +17,15 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LineChart, Line, BarChart, Bar, Cell, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from 'recharts';
+import { LineChart, Line, BarChart, Bar, AreaChart, Area, Cell, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from 'recharts';
 import DOMPurify from 'dompurify';
 import html2pdf from 'html2pdf.js';
 import { useCountUp, useRipple, spawnParticles } from '../hooks/useAnimations';
 import { useNotification } from '../context/NotificationContext';
 import {
   getDashboardStats, getDashboardReporting,
-  getRapportsIA, getArchivedRapports, restoreRapportIA,
+  getRapportsIA, getArchivedRapports, restoreRapportIA, getSystemInfo,
+  getSystemHealth, getAuditLogs, getAuditStats,
 } from '../api/dashboard';
 import { getSites, getUsers, getUserStats, createUser, getTickets, createTicket, updateTicket, createSite, updateSiteStatus, archiverSite, archiveUser, toggleActiveUser, updateUser, restoreUser, getTokenRole, getArchivedTickets, archiverReclamation, desarchiverReclamation, getArchivedSites, restoreSite, getKeywords } from '../api/tickets';
 import MapComponent from '../components/Map';
@@ -137,6 +138,7 @@ const IconArchive = (p) => <svg {...iconProps} {...p}><path d="M21 4H3M8 2v2M16 
 const IconTrash = (p) => <svg {...iconProps} {...p}><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
 const IconEdit = (p) => <svg {...iconProps} {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>;
 const IconBan = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="12" r="10" /><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" /></svg>;
+const IconClock = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>;
 
 // ─── Utility: normalize status string for color lookup ───
 const getStatutKey = (statut) => statut?.replace('_', ' ').toUpperCase();
@@ -287,6 +289,17 @@ export default function AdminDashboard() {
   const [perfRole, setPerfRole] = useState('ingenieurs');
   const [perfUser, setPerfUser] = useState(null);
 
+  // ─── System info (server/DB) ───
+  const [systemInfo, setSystemInfo] = useState(null);
+
+  // ─── System health (real-time) + audit trail ───
+  const [systemHealth, setSystemHealth] = useState(null);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [auditLogTotal, setAuditLogTotal] = useState(0);
+  const [auditStats, setAuditStats] = useState(null);
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditFilter, setAuditFilter] = useState({ action: '', search: '' });
+
   // ─── Filter visibility and filter values ───
   const [showSiteFilters, setShowSiteFilters] = useState(false);
   const [siteFilterWilaya, setSiteFilterWilaya] = useState('');
@@ -333,24 +346,48 @@ export default function AdminDashboard() {
     try { const d = await getRapportsIA(); setAllRapports(Array.isArray(d) ? d : []); } catch { setAllRapports([]); }
     finally { setLoadingRapports(false); }
   }, []);
+  const fetchSystemInfo = useCallback(async () => {
+    try { const d = await getSystemInfo(); setSystemInfo(d); } catch { setSystemInfo(null); }
+  }, []);
+  const fetchSystemHealth = useCallback(async () => {
+    try { const d = await getSystemHealth(); setSystemHealth(d); } catch { setSystemHealth(null); }
+  }, []);
+  const fetchAuditLogs = useCallback(async () => {
+    try {
+      const params = { page: auditPage, page_size: 20 };
+      if (auditFilter.action === '__system__') params.user_role = 'SYSTEM';
+      else if (auditFilter.action) params.action = auditFilter.action;
+      if (auditFilter.search) params.search = auditFilter.search;
+      const d = await getAuditLogs(params);
+      setAuditLogs(d.results || []);
+      setAuditLogTotal(d.total || 0);
+    } catch { setAuditLogs([]); setAuditLogTotal(0); }
+  }, [auditPage, auditFilter]);
+  const fetchAuditStats = useCallback(async () => {
+    try { const d = await getAuditStats(); setAuditStats(d); } catch { setAuditStats(null); }
+  }, []);
 
   // ─── Initial data load on mount and when period changes ───
   useEffect(() => {
-    fetchStats(); fetchSites(); fetchUsers(); fetchTickets(); fetchUserStats();
+    fetchStats(); fetchSites(); fetchUsers(); fetchTickets(); fetchUserStats(); fetchSystemInfo(); fetchSystemHealth(); fetchAuditLogs(); fetchAuditStats();
     getKeywords().then(setTicketKeywordsData).catch(() => setTicketKeywordsData({}));
-  }, [fetchStats, fetchSites, fetchUsers, fetchTickets, fetchUserStats]);
+  }, [fetchStats, fetchSites, fetchUsers, fetchTickets, fetchUserStats, fetchSystemInfo, fetchSystemHealth, fetchAuditLogs, fetchAuditStats]);
 
   // ─── Auto-refresh every 5 seconds ───
   useEffect(() => {
     const interval = setInterval(() => {
       fetchStats(); fetchSites(); fetchTickets();
     }, 5000);
-    // Refresh user stats less frequently (every 30s)
-    const userInterval = setInterval(() => {
-      fetchUserStats();
+    // Refresh system health every 10s
+    const healthInterval = setInterval(() => {
+      fetchSystemHealth();
+    }, 10000);
+    // Refresh audit data every 30s
+    const auditInterval = setInterval(() => {
+      fetchAuditLogs(); fetchAuditStats(); fetchUserStats();
     }, 30000);
-    return () => { clearInterval(interval); clearInterval(userInterval); };
-  }, [fetchStats, fetchSites, fetchTickets, fetchUserStats]);
+    return () => { clearInterval(interval); clearInterval(healthInterval); clearInterval(auditInterval); };
+  }, [fetchStats, fetchSites, fetchTickets, fetchSystemHealth, fetchAuditLogs, fetchAuditStats, fetchUserStats]);
 
   // Load archived data when archive view is active
   const fetchArchivedData = useCallback(async () => {
@@ -420,12 +457,18 @@ export default function AdminDashboard() {
     }
   }, []);
 
+  const handleRestoreRapport = useCallback(async (r) => {
+    try {
+      await restoreRapportIA(r.id);
+      setArchivedRapports((prev) => prev.filter((x) => x.id !== r.id));
+      addNotification('Rapport restauré', 'success');
+    } catch { addNotification('Erreur lors de la restauration.', 'error'); }
+  }, [addNotification]);
+
   // ─── Derived / computed data ───
   // Count users per role for the dashboard breakdown
   const roleCounts = {};
   users.forEach((u) => { const r = ROLE_LABELS[u.role_user] || u.role_user || 'INCONNU'; roleCounts[r] = (roleCounts[r] || 0) + 1; });
-  const ticketsOuvert = tickets.filter((t) => t.statut === 'ouvert').length;
-  const ticketsResolu = tickets.filter((t) => t.statut === 'resolu').length;
 
   // filteredRapports – search-filtered list of supervisor reports
   const filteredRapports = allRapports.filter((r) => {
@@ -473,12 +516,6 @@ export default function AdminDashboard() {
   const wilayas = reporting?.tableau_complet_wilayas ?? [];
   const jourSemaine = stats?.graphiques?.tickets_par_jour_semaine ?? [];
   const delaiParPrio = stats?.graphiques?.delai_moyen_par_priorite ?? {};
-
-  // ─── Key Performance Indicators (technical KPIs) ───
-  const dispoGlobale = stats?.reseau_global?.disponibilite_globale ?? '100%';
-  const tauxResolution = stats?.tickets?.taux_resolution ?? '0%';
-  const delaiMoyen = stats?.tickets?.delai_moyen_resolution ?? 'N/A';
-  const ouvertsCritiques = stats?.tickets?.ouverts_critiques ?? 0;
 
   // ─── Performance data: parse average delay from "Xh Ym" format to decimal hours ───
   const employes = (stats?.stats_employes ?? []).map((e) => {
@@ -749,6 +786,15 @@ export default function AdminDashboard() {
             <Icon /> {label}
           </button>
         ))}
+      <span style={{ ...styles.sectionLabel, marginTop: 16 }}>SYSTÈME</span>
+      {[
+        { key: 'audit', label: 'Journal d\'activité', icon: IconClock },
+      ].map(({ key, label, icon: Icon }) => (
+          <button key={key} onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView(key); }}
+            style={{ ...styles.navItem, ...(currentView === key ? styles.navItemActive : {}) }}>
+            <Icon /> {label}
+          </button>
+        ))}
       <span style={{ ...styles.sectionLabel, marginTop: 16 }}>ARCHIVES</span>
       {[
         { key: 'archives', label: 'Archives', icon: IconArchive },
@@ -762,28 +808,76 @@ export default function AdminDashboard() {
     </aside>
   );
 
-  // ─── DASHBOARD (Technical NOC View) ───
+  // ─── DASHBOARD (Premium Admin NOC View) ───
+  const ACTION_ICONS = {
+    login: { color: '#10B981', label: 'Connexion' }, logout: { color: '#6B7280', label: 'Déconnexion' },
+    login_failed: { color: '#DC2626', label: 'Connexion échouée' },
+    create_ticket: { color: '#3B82F6', label: 'Création réclamation' }, update_ticket: { color: '#F59E0B', label: 'Modification réclamation' },
+    archive_ticket: { color: '#A855F7', label: 'Archivage réclamation' }, restore_ticket: { color: '#10B981', label: 'Restauration réclamation' },
+    resolve_ticket: { color: '#10B981', label: 'Résolution ticket' }, assign_ticket: { color: '#2563EB', label: 'Assignation ticket' },
+    create_user: { color: '#10B981', label: 'Création utilisateur' }, update_user: { color: '#F59E0B', label: 'Modification utilisateur' },
+    archive_user: { color: '#A855F7', label: 'Archivage utilisateur' }, toggle_user: { color: '#E8401A', label: 'Activation/Désactivation' },
+    restore_user: { color: '#10B981', label: 'Restauration utilisateur' }, delete_user: { color: '#DC2626', label: 'Suppression utilisateur' },
+    reset_password: { color: '#F59E0B', label: 'Réinitialisation mot de passe' },
+    create_site: { color: '#10B981', label: 'Création site' }, update_site: { color: '#F59E0B', label: 'Modification site' },
+    archive_site: { color: '#A855F7', label: 'Archivage site' }, restore_site: { color: '#10B981', label: 'Restauration site' },
+    delete_site: { color: '#DC2626', label: 'Suppression site' }, toggle_site: { color: '#E8401A', label: 'Changement statut site' },
+    generate_rapport: { color: '#7C3AED', label: 'Génération rapport IA' },
+    save_rapport: { color: '#7C3AED', label: 'Sauvegarde rapport IA' }, delete_rapport: { color: '#DC2626', label: 'Suppression rapport IA' },
+    restore_rapport: { color: '#10B981', label: 'Restauration rapport IA' },
+  };
+  const timeAgo = (dateStr) => {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "à l'instant";
+    if (mins < 60) return `il y a ${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `il y a ${hrs}h`;
+    const days = Math.floor(hrs / 24);
+    return `il y a ${days}j`;
+  };
+
   const dashboardView = () => (
     <>
-      {/* ── ROW 0 : KPIs Techniques enrichis ── */}
-      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: COLORS.accent, marginRight: 6, verticalAlign: 'middle' }} />KPIs RÉSEAU</span></div>
+      {/* ── ROW 0 : SANTÉ SYSTÈME (real-time) ── */}
+      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#10B981', marginRight: 6, verticalAlign: 'middle', animation: 'pulse 2s infinite' }} />SANTÉ SYSTÈME</span></div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
-        <AnimatedKpi label="Disponibilité" value={dispoGlobale} sub="réseau global" color={parseFloat(dispoGlobale) >= 95 ? '#10B981' : parseFloat(dispoGlobale) >= 80 ? '#F59E0B' : '#EF4444'} />
-        <AnimatedKpi label="Taux Résolution" value={tauxResolution} sub={`${ticketsResolu} résolus`} color={parseFloat(tauxResolution) >= 80 ? '#10B981' : parseFloat(tauxResolution) >= 50 ? '#F59E0B' : '#EF4444'} />
-        <AnimatedKpi label="Tickets Ouverts" value={ticketsOuvert} sub={ouvertsCritiques > 0 ? `${ouvertsCritiques} critiques !` : 'aucun critique'} color={ouvertsCritiques > 0 ? '#DC2626' : COLORS.accent} />
-        <AnimatedKpi label="Délai Moyen" value={delaiMoyen} sub="résolution" color="#8B5CF6" />
+        {[
+          { label: 'Uptime', value: systemHealth?.uptime ?? '—', sub: 'depuis démarrage', color: '#10B981', icon: '●' },
+          { label: 'Latence API', value: systemHealth?.db_latency_ms != null ? `${systemHealth.db_latency_ms}ms` : '—', sub: 'réponse base', color: (systemHealth?.db_latency_ms ?? 0) < 100 ? '#10B981' : (systemHealth?.db_latency_ms ?? 0) < 500 ? '#F59E0B' : '#DC2626', icon: '⚡' },
+          { label: 'Utilisateurs', value: systemHealth?.total_users ?? '—', sub: `${systemHealth?.active_users_count ?? 0} actifs`, color: '#3B82F6', icon: '👥' },
+          { label: 'Utilisateurs Actifs', value: systemHealth?.active_users ?? '—', sub: `${systemHealth?.online_today ?? 0} aujourd'hui`, color: '#10B981', icon: '⚡' },
+        ].map((kpi, i) => (
+          <div key={i} className="fade-in" style={{ animationDelay: `${i * 0.04}s`, background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: '16px 18px', borderLeft: `4px solid ${kpi.color}`, boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ fontSize: 10, color: 'var(--text-muted3)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: 0.3 }}>{kpi.label}</span>
+              <span style={{ fontSize: 14 }}>{kpi.icon}</span>
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>{kpi.value}</div>
+            <div style={{ fontSize: 10, color: kpi.color, marginTop: 4, fontWeight: 500 }}>{kpi.sub}</div>
+          </div>
+        ))}
       </div>
 
-      {/* ── ROW 1 : Activité + Performance (2 graphs side by side) ── */}
-      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#8B5CF6', marginRight: 6, verticalAlign: 'middle' }} />ACTIVITÉ & PERFORMANCE</span></div>
+      {/* ── ROW 1 : RÉSEAU & TICKETS ── */}
+      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#E8401A', marginRight: 6, verticalAlign: 'middle' }} />RÉSEAU & TICKETS</span></div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
-        <AnimatedKpi label="Utilisateurs" value={users.filter((u) => !u.is_archived).length} sub={`${users.filter((u) => u.is_active && !u.is_archived).length} actifs`} color="#2563EB" />
-        <AnimatedKpi label="Agents CC" value={users.filter((u) => u.role_user === 'AGENT_CALL_CENTER').length} sub="call center" color="#E8401A" />
-        <AnimatedKpi label="Ingénieurs" value={users.filter((u) => u.role_user === 'INGENIEUR_RESEAUX').length} sub="réseau" color="#10B981" />
-        <AnimatedKpi label="Superviseurs" value={users.filter((u) => u.role_user === 'SUPERVISEUR').length} sub="superviseurs" color="#F59E0B" />
+        {[
+          { label: 'Sites UP', value: systemHealth?.reseau?.up ?? '—', sub: `/ ${systemHealth?.reseau?.total ?? 0} total`, color: '#10B981' },
+          { label: 'Sites DOWN', value: systemHealth?.reseau?.down ?? 0, sub: systemHealth?.reseau?.down > 0 ? 'aintenance requise' : 'aucun', color: '#DC2626' },
+          { label: 'Tickets Ouverts', value: systemHealth?.tickets?.ouverts ?? '—', sub: `${systemHealth?.tickets?.ouverts_non_assignes ?? 0} non assignés`, color: '#F59E0B' },
+          { label: 'Taux Résolution', value: systemHealth?.tickets?.taux_resolution ?? '—', sub: `${systemHealth?.tickets?.resolus ?? 0} résolus`, color: '#10B981' },
+        ].map((kpi, i) => (
+          <div key={i} className="fade-in" style={{ animationDelay: `${i * 0.04}s`, background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: '16px 18px', borderLeft: `4px solid ${kpi.color}`, boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+            <span style={{ fontSize: 10, color: 'var(--text-muted3)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: 0.3 }}>{kpi.label}</span>
+            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2, marginTop: 6 }}>{kpi.value}</div>
+            <div style={{ fontSize: 10, color: kpi.color, marginTop: 4, fontWeight: 500 }}>{kpi.sub}</div>
+          </div>
+        ))}
       </div>
+
+      {/* ── ROW 2 : Performance Charts ── */}
       <div style={styles.chartsRow}>
-        {/* Agent call center activity */}
         <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
           <div style={styles.ch}><span style={styles.cht}>Activité Call Center</span><InfoPopup text="Tickets créés vs résolus par agent call center." /></div>
           <div style={styles.cb}>
@@ -808,7 +902,6 @@ export default function AdminDashboard() {
               </ResponsiveContainer>}
           </div>
         </div>
-        {/* Engineer performance */}
         <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
           <div style={styles.ch}><span style={styles.cht}>Performance Ingénieurs</span><InfoPopup text="Tickets assignés vs résolus par ingénieur réseau." /></div>
           <div style={styles.cb}>
@@ -836,72 +929,57 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* ── ROW 2 : Tendance ── */}
-      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#3B82F6', marginRight: 6, verticalAlign: 'middle' }} />TENDANCE</span></div>
-      <div style={styles.chartsRow}>
-        <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
-          <div style={styles.ch}><span style={styles.cht}>Évolution des tickets</span><InfoPopup text="Nombre total de tickets créés par jour." /></div>
-          <div style={styles.cb}>
-            {evo.length === 0 ? <div style={styles.empty}>Aucune donnée</div>
-            : <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={evo} margin={{ top: 8, right: 20, left: 0, bottom: 8 }}
-                  onClick={(e) => e?.activePayload && setDetail({ type: 'evolution', data: e.activePayload[0].payload })}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" vertical={false} />
-                  <XAxis dataKey="jour" tick={{ fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} interval="preserveStartEnd" />
-                  <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} width={25} />
-                  <RechartsTooltip content={<Tip />} />
-                  <Line type="monotone" dataKey="total" stroke={COLORS.accent} strokeWidth={2.5} dot={{ r: 2 }} activeDot={{ r: 6 }} name="Tickets" />
-                </LineChart>
-              </ResponsiveContainer>}
-          </div>
-        </div>
-      </div>
-
-      {/* ── ROW 5 : Tableau suivi Wilayas ── */}
-      {wilayas.length > 0 && (
+      {/* ── ROW 3 : Activité Système ── */}
+      {auditStats?.daily_actions && (
         <>
-          <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#EC4899', marginRight: 6, verticalAlign: 'middle' }} />SUIVI PAR WILAYA</span></div>
-          <div className="fade-in" style={{ ...styles.tableCard, marginBottom: 24 }}>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ ...styles.table, minWidth: 900 }}>
-                <thead>
-                  <tr style={styles.thRow}>
-                    <th style={styles.th}>WILAYA</th>
-                    <th style={styles.th}>SITES</th>
-                    <th style={styles.th}>DOWN</th>
-                    <th style={styles.th}>TICKETS OUVERTS</th>
-                    <th style={styles.th}>DISPONIBILITÉ</th>
-                    <th style={styles.th}>DÉLAI MOYEN</th>
-                    <th style={styles.th}>TENDANCE</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {wilayas.map((w) => (
-                    <tr key={w.wilaya} style={styles.tr}
-                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}>
-                      <td style={{ ...styles.td, fontWeight: 600 }}>{w.wilaya}</td>
-                      <td style={styles.td}>{w.total_sites}</td>
-                      <td style={{ ...styles.td, color: w.sites_down > 0 ? '#DC2626' : '#10B981', fontWeight: 600 }}>{w.sites_down}</td>
-                      <td style={{ ...styles.td, color: w.tickets_ouverts > 0 ? '#D97706' : 'inherit', fontWeight: w.tickets_ouverts > 0 ? 600 : 400 }}>{w.tickets_ouverts}</td>
-                      <td style={styles.td}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ flex: 1, height: 6, background: '#E5E7EB', borderRadius: 3, overflow: 'hidden', maxWidth: 80 }}>
-                            <div style={{ height: '100%', width: `${w.taux_dispo_num}%`, background: dispoColor(w.taux_dispo_num), borderRadius: 3, transition: 'width 0.3s' }} />
-                          </div>
-                          <span style={{ fontSize: 10, fontWeight: 600, color: dispoColor(w.taux_dispo_num) }}>{w.taux_disponibilite}</span>
-                        </div>
-                      </td>
-                      <td style={styles.td}>{w.delai_moyen_resolution}</td>
-                      <td style={styles.td}>
-                        <span style={{ ...styles.badgeBase, backgroundColor: w.tendance === 'En hausse' ? '#DCFCE7' : w.tendance === 'En baisse' ? '#FEE2E2' : '#F1F5F9', color: w.tendance === 'En hausse' ? '#15803D' : w.tendance === 'En baisse' ? '#DC2626' : '#64748B' }}>
-                          {w.tendance === 'En hausse' ? '↑' : w.tendance === 'En baisse' ? '↓' : '→'} {w.tendance}
-                        </span>
-                      </td>
-                    </tr>
+          <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#8B5CF6', marginRight: 6, verticalAlign: 'middle' }} />ACTIVITÉ SYSTÈME (7 JOURS)</span></div>
+          <div style={styles.chartsRow}>
+            <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
+              <div style={styles.ch}>
+                <span style={styles.cht}>Tendance des actions</span>
+                <span style={{ fontSize: 9, color: 'var(--text-muted2)', marginLeft: 'auto', cursor: 'pointer' }}
+                  onClick={() => setCurrentView('audit')}>Voir tout →</span>
+              </div>
+              <div style={styles.cb}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={auditStats.daily_actions} margin={{ top: 5, right: 10, left: -5, bottom: 5 }}>
+                    <defs>
+                      <linearGradient id="gradAudit" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#8B5CF6" stopOpacity={0.3} />
+                        <stop offset="100%" stopColor="#8B5CF6" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid stroke="#f5f5f5" vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} tickFormatter={(v) => v.slice(5)} />
+                    <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} width={25} />
+                    <RechartsTooltip content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      return <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 6, padding: '8px 14px', fontSize: 12 }}>
+                        <p style={{ margin: 0, fontWeight: 700 }}>{payload[0].payload.date}</p>
+                        <p style={{ margin: '2px 0', color: '#8B5CF6' }}>{payload[0].value} actions</p>
+                      </div>;
+                    }} />
+                    <Area type="monotone" dataKey="count" stroke="#8B5CF6" strokeWidth={2} fill="url(#gradAudit)" name="Actions" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            {/* Top active users */}
+            <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
+              <div style={styles.ch}><span style={styles.cht}>Utilisateurs Actifs (30j)</span></div>
+              <div style={{ ...styles.cb, overflowY: 'auto', padding: '8px 14px' }}>
+                {(auditStats?.top_users ?? []).length === 0 ? <div style={styles.empty}>Aucune donnée</div>
+                : auditStats.top_users.map((u, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: i < auditStats.top_users.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
+                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#E8401A20', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#E8401A', flexShrink: 0 }}>{i + 1}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>{u.user_code} — {u.user_name}</div>
+                        <div style={{ fontSize: 9, color: 'var(--text-muted2)' }}>{u.user_role === 'SYSTEM' ? 'Système' : u.user_role}</div>
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#E8401A' }}>{u.count}</span>
+                    </div>
                   ))}
-                </tbody>
-              </table>
+              </div>
             </div>
           </div>
         </>
@@ -909,6 +987,118 @@ export default function AdminDashboard() {
     </>
   );
 
+  // ─── AUDIT TRAIL (Full View) ───
+  const ACTION_COLORS = {
+    login: '#10B981', logout: '#6B7280', login_failed: '#DC2626',
+    create_ticket: '#3B82F6', update_ticket: '#F59E0B', archive_ticket: '#A855F7', restore_ticket: '#10B981',
+    resolve_ticket: '#10B981', assign_ticket: '#2563EB',
+    create_user: '#10B981', update_user: '#F59E0B', archive_user: '#A855F7', toggle_user: '#E8401A',
+    restore_user: '#10B981', delete_user: '#DC2626', reset_password: '#F59E0B',
+    create_site: '#10B981', update_site: '#F59E0B', archive_site: '#A855F7', restore_site: '#10B981',
+    delete_site: '#DC2626', toggle_site: '#E8401A',
+    generate_rapport: '#7C3AED', save_rapport: '#7C3AED', delete_rapport: '#DC2626', restore_rapport: '#10B981',
+  };
+
+  const auditView = () => (
+    <>
+      {/* Audit Stats Summary */}
+      {auditStats && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 20 }}>
+          <div className="fade-in" style={{ background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: '16px 18px', borderLeft: '4px solid #8B5CF6' }}>
+            <span style={{ fontSize: 10, color: 'var(--text-muted3)', textTransform: 'uppercase', fontWeight: 600 }}>Actions totales (30j)</span>
+            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', marginTop: 6 }}>{auditStats.daily_actions?.reduce((a, d) => a + d.count, 0) ?? 0}</div>
+          </div>
+          <div className="fade-in" style={{ background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: '16px 18px', borderLeft: '4px solid #10B981' }}>
+            <span style={{ fontSize: 10, color: 'var(--text-muted3)', textTransform: 'uppercase', fontWeight: 600 }}>Utilisateurs actifs</span>
+            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', marginTop: 6 }}>{auditStats.top_users?.length ?? 0}</div>
+          </div>
+          <div className="fade-in" style={{ background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: '16px 18px', borderLeft: '4px solid #DC2626' }}>
+            <span style={{ fontSize: 10, color: 'var(--text-muted3)', textTransform: 'uppercase', fontWeight: 600 }}>Types d'actions</span>
+            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', marginTop: 6 }}>{auditStats.action_distribution?.length ?? 0}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Filter Bar */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: '10px 16px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>Filtres</span>
+        <select value={auditFilter.action} onChange={(e) => { setAuditFilter((p) => ({ ...p, action: e.target.value })); setAuditPage(1); }}
+          style={{ padding: '5px 10px', fontSize: 11, borderRadius: 6, border: `1px solid ${COLORS.border}`, background: 'var(--bg-card)', color: 'var(--text-primary)', fontFamily: 'inherit', outline: 'none' }}>
+          <option value="">Toutes les actions</option>
+          <option value="__system__">Actions système</option>
+          {Object.entries(ACTION_ICONS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </select>
+        <input type="text" placeholder="Rechercher utilisateur, action, détails..." value={auditFilter.search}
+          onChange={(e) => { setAuditFilter((p) => ({ ...p, search: e.target.value })); setAuditPage(1); }}
+          style={{ padding: '5px 10px', fontSize: 11, borderRadius: 6, border: `1px solid ${COLORS.border}`, background: 'var(--bg-card)', color: 'var(--text-primary)', fontFamily: 'inherit', outline: 'none', width: 280 }} />
+        <span style={{ fontSize: 10, color: 'var(--text-muted2)', marginLeft: 'auto' }}>{auditLogTotal} résultats</span>
+      </div>
+
+      {/* Logs Table */}
+      <div className="fade-in" style={{ background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+            <thead>
+              <tr>
+                {['HEURE', 'UTILISATEUR', 'RÔLE', 'ACTION', 'DÉTAILS', 'IP'].map((h) => (
+                  <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', borderBottom: `1px solid ${COLORS.border}`, textTransform: 'uppercase', letterSpacing: 0.5, whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {auditLogs.length === 0 ? (
+                <tr><td colSpan="6" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>Aucun journal trouvé.</td></tr>
+              ) : auditLogs.map((log) => {
+                const color = ACTION_COLORS[log.action] || '#6B7280';
+                return (
+                  <tr key={log.id}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
+                    style={{ transition: 'background-color 0.15s' }}>
+                    <td style={{ padding: '10px 14px', whiteSpace: 'nowrap', color: 'var(--text-muted2)' }}>{new Date(log.created_at).toLocaleString('fr', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
+                    <td style={{ padding: '10px 14px' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 600, fontSize: 11 }}>
+                        {log.user_code || '—'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 14px' }}>
+                      <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 9, fontWeight: 600,
+                        background: log.user_role === 'SYSTEM' ? '#F3E8FF' : log.user_role === 'ADMIN' ? '#FEE2E2' : log.user_role === 'SUPERVISEUR' ? '#FEF3C7' : log.user_role === 'INGENIEUR_RESEAUX' ? '#DCFCE7' : log.user_role === 'AGENT_CALL_CENTER' ? '#DBEAFE' : '#E2E8F0',
+                        color: log.user_role === 'SYSTEM' ? '#7C3AED' : log.user_role === 'ADMIN' ? '#DC2626' : log.user_role === 'SUPERVISEUR' ? '#D97706' : log.user_role === 'INGENIEUR_RESEAUX' ? '#15803D' : log.user_role === 'AGENT_CALL_CENTER' ? '#2563EB' : '#475569' }}>
+                        {log.user_role === 'SYSTEM' ? 'SYSTÈME' : log.user_role || '—'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 14px' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                        <span style={{ fontWeight: 500 }}>{log.action_display}</span>
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 14px', maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-muted2)', fontSize: 10 }}>
+                      {log.details && Object.keys(log.details).length > 0
+                        ? Object.entries(log.details).map(([k, v]) => `${k}: ${v}`).join(' · ')
+                        : '—'}
+                    </td>
+                    <td style={{ padding: '10px 14px', color: 'var(--text-muted2)', fontSize: 10, fontFamily: 'monospace' }}>{log.ip_address || '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {/* Pagination */}
+        {auditLogTotal > 20 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 16px', borderTop: `1px solid ${COLORS.border}` }}>
+            <button disabled={auditPage <= 1} onClick={() => setAuditPage((p) => p - 1)}
+              style={{ padding: '4px 12px', fontSize: 11, border: `1px solid ${COLORS.border}`, borderRadius: 4, background: 'var(--bg-card)', color: auditPage <= 1 ? 'var(--text-muted3)' : 'var(--text-primary)', cursor: auditPage <= 1 ? 'default' : 'pointer', fontFamily: 'inherit' }}>← Préc</button>
+            <span style={{ fontSize: 10, color: 'var(--text-muted2)' }}>Page {auditPage} / {Math.ceil(auditLogTotal / 20)}</span>
+            <button disabled={auditPage >= Math.ceil(auditLogTotal / 20)} onClick={() => setAuditPage((p) => p + 1)}
+              style={{ padding: '4px 12px', fontSize: 11, border: `1px solid ${COLORS.border}`, borderRadius: 4, background: 'var(--bg-card)', color: auditPage >= Math.ceil(auditLogTotal / 20) ? 'var(--text-muted3)' : 'var(--text-primary)', cursor: auditPage >= Math.ceil(auditLogTotal / 20) ? 'default' : 'pointer', fontFamily: 'inherit' }}>Suiv →</button>
+          </div>
+        )}
+      </div>
+    </>
+  );
   // ─── SITES VIEW ───
   // Displays network site management with summary cards, filters, and toggle/archive actions
   const sitesView = () => (
@@ -1029,22 +1219,6 @@ export default function AdminDashboard() {
   const usersView = () => {
     const us = userStats;
     return (<>
-      {/* ── ROW 1: System Health KPIs ── */}
-      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#10B981', marginRight: 6, verticalAlign: 'middle' }} />SANTE SYSTEME</span></div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
-        <AnimatedKpi label="Utilisateurs actifs" value={us?.utilisateurs?.actifs ?? '-'} sub={`${us?.utilisateurs?.total ?? '-'} total`} color="#10B981" />
-        <AnimatedKpi label="Derniere connexion" value={formatRelativeTime(us?.utilisateurs?.most_recent_login)} sub="la plus recente" color="#2563EB" />
-        <AnimatedKpi label="Inactifs 30j+" value={us?.utilisateurs?.dormant_30j ?? '-'} sub="comptes dormants" color="#F59E0B" />
-        <AnimatedKpi label="Sessions 24h" value={us?.utilisateurs?.connected_24h ?? '-'} sub="utilisateurs actifs" color="#8B5CF6" />
-      </div>
-      {/* ── ROW 2: Performance & Workload KPIs ── */}
-      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#E8401A', marginRight: 6, verticalAlign: 'middle' }} />PERFORMANCE & CHARGE</span></div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
-        <AnimatedKpi label="Tickets assignes" value={us?.workload?.total_tickets_assignes ?? '-'} sub={`${us?.workload?.tickets_non_resolus ?? 0} en cours`} color="#E8401A" />
-        <AnimatedKpi label="Taux resolution global" value={us?.workload?.taux_resolution_global != null ? `${us.workload.taux_resolution_global}%` : '-'} sub="ingenieurs + agents" color="#10B981" />
-        <AnimatedKpi label="Charge max ingenieur" value={us?.workload?.max_charge_ingenieur ?? '-'} sub={`moy: ${us?.workload?.charge_moyenne_ingenieur ?? '-'}`} color="#F59E0B" />
-        <AnimatedKpi label="Jamais connectes" value={us?.utilisateurs?.never_connected ?? '-'} sub="comptes orphelins" color="#EF4444" />
-      </div>
       {/* ── Users Table ── */}
     <div style={styles.tableCard}>
       <div style={{ ...styles.toolbar, borderBottom: `1px solid ${COLORS.border}` }}>
@@ -1072,36 +1246,21 @@ export default function AdminDashboard() {
               <th style={styles.th}>Nom</th>
               <th style={styles.th}>Email</th>
               <th style={styles.th}>Rôle</th>
-              <th style={styles.th}>Derniere connexion</th>
-              <th style={styles.th}>Tickets actifs</th>
               <th style={styles.th}>Actif</th>
               <th style={{ ...styles.th, textAlign: 'center' }}>ACTIONS</th>
             </tr>
           </thead>
           <tbody>
             {filteredUsers.length === 0 ? (
-              <tr><td colSpan="9" style={styles.emptyCell}>Aucun utilisateur trouvé.</td></tr>
+              <tr><td colSpan="6" style={styles.emptyCell}>Aucun utilisateur trouvé.</td></tr>
             ) : filteredUsers.map((u) => (
               <tr key={u.code_user} style={styles.tr}
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = ''}>
                 <td style={{ ...styles.td, fontWeight: 600 }}>{u.code_user}</td>
                 <td style={styles.td}>{u.first_name || '-'}</td>
-                <td style={styles.td}>{u.last_name || '-'}</td>
                 <td style={styles.td}>{u.email}</td>
                 <td style={styles.td}>{getRoleBadge(u.role_user)}</td>
-                <td style={styles.td}>
-                  <span style={{ fontSize: 10, color: u.last_login ? 'var(--text-secondary)' : '#EF4444' }}>
-                    {formatRelativeTime(u.last_login)}
-                  </span>
-                </td>
-                <td style={styles.td}>
-                  {(() => {
-                    const pu = us?.per_user?.find(p => p.code_user === u.code_user);
-                    const count = pu?.tickets_actifs ?? 0;
-                    return <span style={{ fontSize: 11, fontWeight: 600, color: count > 0 ? '#2563EB' : 'var(--text-muted)' }}>{count}</span>;
-                  })()}
-                </td>
                 <td style={styles.td}>
                   {u.is_active !== false ? (
                     <span style={{ ...styles.badgeBase, color: '#169742', background: '#dcf8e4' }}>ACTIF</span>
@@ -1161,6 +1320,7 @@ export default function AdminDashboard() {
     const tabs = [
       { key: 'users', label: 'Utilisateurs', icon: <IconUsers style={{ width: 13, height: 13 }} />, count: users.filter(u => u.is_archived).length },
       { key: 'sites', label: 'Sites', icon: <IconSite style={{ width: 13, height: 13 }} />, count: archivedSites.length },
+      { key: 'rapports', label: 'Rapports IA', icon: <IconReport style={{ width: 13, height: 13 }} />, count: archivedRapports.length },
     ];
     return (
     <div>
@@ -1239,6 +1399,32 @@ export default function AdminDashboard() {
                     </td>
                     <td style={{ ...styles.td, textAlign: 'center' }}>
                       <button onClick={() => handleRestoreSite(s)}
+                        style={{ background: '#05966918', border: '1px solid #05966933', borderRadius: 4, cursor: 'pointer', padding: '4px 10px', color: '#059669', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>Restaurer</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {archiveTab === 'rapports' && (
+            <table style={styles.table}>
+              <thead><tr style={styles.thRow}>
+                <th style={styles.th}>Titre</th><th style={styles.th}>Auteur</th><th style={styles.th}>Date création</th><th style={styles.th}>Archivé le</th><th style={{ ...styles.th, textAlign: 'center' }}>Action</th>
+              </tr></thead>
+              <tbody>
+                {archivedRapports.length === 0 ? (
+                  <tr><td colSpan={5} style={styles.emptyCell}>Aucun rapport archivé</td></tr>
+                ) : archivedRapports.map((r) => (
+                  <tr key={r.id} style={styles.tr}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
+                    onClick={() => { setSelectedRapport(r); }}>
+                    <td style={{ ...styles.td, fontWeight: 600, cursor: 'pointer' }}>{r.titre || 'Sans titre'}</td>
+                    <td style={styles.td}>{r.cree_par?.nom_user || '—'}</td>
+                    <td style={styles.td}>{new Date(r.created_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                    <td style={styles.td}>{r.archived_at ? new Date(r.archived_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
+                    <td style={{ ...styles.td, textAlign: 'center' }}>
+                      <button onClick={(e) => { e.stopPropagation(); handleRestoreRapport(r); }}
                         style={{ background: '#05966918', border: '1px solid #05966933', borderRadius: 4, cursor: 'pointer', padding: '4px 10px', color: '#059669', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>Restaurer</button>
                     </td>
                   </tr>
@@ -1343,24 +1529,10 @@ export default function AdminDashboard() {
                 </div>
               </>
             ) : (
-              <>
-                <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-hover)', borderRadius: 8, border: `1px solid ${COLORS.border}`, textAlign: 'center' }}>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: '#E8401A' }}>{selectedPerfUser.tickets_crees}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Créés</div>
-                </div>
-                <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-hover)', borderRadius: 8, border: `1px solid ${COLORS.border}`, textAlign: 'center' }}>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: '#F59E0B' }}>{selectedPerfUser.ouverts}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Ouverts</div>
-                </div>
-                <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-hover)', borderRadius: 8, border: `1px solid ${COLORS.border}`, textAlign: 'center' }}>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: '#10B981' }}>{selectedPerfUser.resolus}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Résolus</div>
-                </div>
-                <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-hover)', borderRadius: 8, border: `1px solid ${COLORS.border}`, textAlign: 'center' }}>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-muted3)' }}>{selectedPerfUser.fermes}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Fermés</div>
-                </div>
-              </>
+              <div style={{ flex: 1, minWidth: 120, padding: '14px 18px', background: 'var(--bg-hover)', borderRadius: 8, border: `1px solid ${COLORS.border}`, textAlign: 'center' }}>
+                <div style={{ fontSize: 24, fontWeight: 700, color: '#E8401A' }}>{selectedPerfUser.tickets_crees}</div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 2 }}>Tickets créés</div>
+              </div>
             )}
           </div>
           {/* Performance bar chart for selected user */}
@@ -1382,9 +1554,6 @@ export default function AdminDashboard() {
                   <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} width={25} />
                   <RechartsTooltip content={<Tip />} />
                   <Bar dataKey="tickets_crees" radius={[4, 4, 0, 0]} fill="#E8401A" name="Créés" />
-                  <Bar dataKey="ouverts" radius={[4, 4, 0, 0]} fill="#F59E0B" name="Ouverts" />
-                  <Bar dataKey="resolus" radius={[4, 4, 0, 0]} fill="#10B981" name="Résolus" />
-                  <Bar dataKey="fermes" radius={[4, 4, 0, 0]} fill="var(--text-muted3)" name="Fermés" />
                 </BarChart>
               )}
             </ResponsiveContainer>
@@ -1785,7 +1954,7 @@ export default function AdminDashboard() {
   const VIEW_TITLE = {
     dashboard: 'Dashboard', tickets: 'Réclamations',
     sites: 'Sites Réseau', users: 'Utilisateurs', reports: 'Rapports (SV)',
-    performance: 'Performance Équipe', archives: 'Archives',
+    performance: 'Performance Équipe', archives: 'Archives', audit: 'Journal d\'activité',
   };
 
   // ─── MAIN RENDER ───
@@ -1819,6 +1988,7 @@ export default function AdminDashboard() {
           {currentView === 'users' && usersView()}
           {currentView === 'performance' && performanceView()}
           {currentView === 'archives' && archivesView()}
+          {currentView === 'audit' && auditView()}
         </div>
       </main>
       {/* ─── Modals (rendered conditionally) ─── */}

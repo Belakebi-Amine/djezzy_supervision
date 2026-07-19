@@ -2,7 +2,7 @@
  * SupervisorDashboard.jsx
  *
  * Main dashboard component for the supervisor role in Djezzy Hub.
- * Displays KPIs, ticket evolution charts, priority distribution,
+ * Displays KPIs, réclamation evolution charts, priority distribution,
  * site availability by commune, a 5G site map, and an AI-powered
  * report generation / management feature.
  *
@@ -497,6 +497,11 @@ export default function SupervisorDashboard() {
     return { ...e, label: `${e.nom} (${e.code})`, delai_h: m ? parseInt(m[1]) + parseInt(m[2]) / 60 : 0 };
   });
   const agentsCC = (stats?.stats_agents_cc ?? []).map((a) => ({ ...a, label: `${a.nom} (${a.code})` }));
+
+  // Wilaya-level reporting data
+  const wilayas = reporting?.tableau_complet_wilayas ?? [];
+
+  const dispoColor = (v) => v >= 95 ? '#15803D' : v >= 80 ? '#F59E0B' : '#DC2626';
   const perfUsers = perfRole === 'ingenieurs' ? employes : agentsCC;
   const selectedPerfUser = perfUsers.find((u) => u.code === perfUser) || null;
 
@@ -802,10 +807,6 @@ export default function SupervisorDashboard() {
                             style={{ background: '#05966918', border: '1px solid #05966933', borderRadius: 4, cursor: 'pointer', padding: '4px 8px', color: '#059669', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }} title="Télécharger PDF">
                             <IconDownload style={{ width: 12, height: 12 }} />
                           </button>
-                          <button onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); e.preventDefault(); handleDeleteReport(r.id); }}
-                            style={{ background: '#DC262618', border: '1px solid #DC262633', borderRadius: 4, cursor: 'pointer', padding: '4px 8px', color: '#DC2626', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }} title="Supprimer">
-                            <IconTrash style={{ width: 12, height: 12 }} />
-                          </button>
                         </div>
                       </div>
                     ))}
@@ -854,7 +855,7 @@ export default function SupervisorDashboard() {
                             { label: 'Evolution mensuelle', prompt: 'Compare le mois en cours au mois precedent. Quels changements significatifs observes-tu? Quelles sont les causes probables de ces variations?' },
                             { label: 'Bilan par wilaya', prompt: 'Quelles wilayas concentrent le plus de reclamations? Pourquoi ces zones sont-elles plus affectees? Quelles actions prioritaires pour chaque zone critique?' },
                             { label: 'Performance des agents', prompt: 'Analyse la performance des agents de call center. Qui performe bien? Qui a besoin d\'accompagnement? Le delai de resolution est-il acceptable?' },
-                            { label: 'Analyse des priorites', prompt: 'Comment les tickets se repartissent-ils par priorite? Les tickets critiques sont-ils traits assez vite? Y a-t-il des tickets bloques?' },
+                            { label: 'Analyse des priorites', prompt: 'Comment les réclamations se répartissent-elles par priorité? Les réclamations critiques sont-elles traitées assez vite? Y a-t-il des réclamations bloquées?' },
                             { label: 'Top 10 des problemes', prompt: 'Quels sont les 10 types de problemes les plus frequents? Quelles sont les causes racines et quelles solutions proposes-tu pour chacun?' },
                             { label: 'Comparaison mensuelle', prompt: 'Compare detaillement le mois en cours au mois precedent. Quels ecarts significatifs? Quelles sont les explications et quelles actions en decoulent?' },
                             { label: 'Taux de resolution', prompt: 'Analyse en profondeur le taux de resolution. Le delai moyen est-il acceptable? Y a-t-il des goulets d\'echangage? Quels sont les points d\'amelioration?' },
@@ -1108,9 +1109,9 @@ export default function SupervisorDashboard() {
           <div style={S.chartsRow}>
             <div className="fade-in chart-card" style={{ animationDelay: '0s', ...S.chart, width: '100%' }}>
               <div style={S.ch}>
-                <span style={S.cht}>Évolution des tickets</span>
+                <span style={S.cht}>Évolution des réclamations</span>
                 <span style={S.chs}>cliquez sur un point</span>
-                <InfoPopup text="Nombre total de tickets créés par jour sur la période. Cliquez pour voir le détail." />
+                <InfoPopup text="Nombre total de réclamations créées par jour sur la période. Cliquez pour voir le détail." />
               </div>
               <div style={S.cb}>
                 {evo.length === 0 ? <div style={S.empty}>Aucune donnée</div>
@@ -1122,7 +1123,7 @@ export default function SupervisorDashboard() {
                       <XAxis dataKey="jour" tick={{ fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} interval="preserveStartEnd" />
                       <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} width={25} />
                       <Tooltip content={<Tip />} />
-                      <Line type="monotone" dataKey="total" stroke="#E8401A" strokeWidth={2.5} dot={{ r: 2, fill: '#E8401A' }} activeDot={{ r: 6 }} name="Tickets" />
+                      <Line type="monotone" dataKey="total" stroke="#E8401A" strokeWidth={2.5} dot={{ r: 2, fill: '#E8401A' }} activeDot={{ r: 6 }} name="Réclamations" />
                     </LineChart>
                   </div>}
               </div>
@@ -1134,7 +1135,7 @@ export default function SupervisorDashboard() {
             <div className="fade-in chart-card" style={{ animationDelay: '0.08s', ...S.chart, flex: 1 }}>
               <div style={S.ch}>
                 <span style={S.cht}>Répartition par priorité</span>
-                <InfoPopup text="Distribution des tickets par niveau de priorité." />
+                <InfoPopup text="Distribution des réclamations par niveau de priorité." />
               </div>
               <div style={{ ...S.cb, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                 {(() => {
@@ -1161,7 +1162,7 @@ export default function SupervisorDashboard() {
                             const d = payload[0].payload;
                             return <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 6, padding: '8px 14px', fontSize: 12 }}>
                               <p style={{ margin: 0, fontWeight: 700, color: d.color }}>{d.name}</p>
-                              <p style={{ margin: '2px 0', color: 'var(--text-muted3)' }}>{d.value} tickets ({total > 0 ? Math.round((d.value / total) * 100) : 0}%)</p>
+                              <p style={{ margin: '2px 0', color: 'var(--text-muted3)' }}>{d.value} réclamations ({total > 0 ? Math.round((d.value / total) * 100) : 0}%)</p>
                             </div>;
                           }} />
                         </PieChart>
@@ -1184,7 +1185,7 @@ export default function SupervisorDashboard() {
             <div className="fade-in chart-card" style={{ animationDelay: '0.12s', ...S.chart, flex: 1 }}>
               <div style={S.ch}>
                 <span style={S.cht}>Top sites impactés</span>
-                <InfoPopup text="Sites avec le plus de tickets sur la période." />
+                <InfoPopup text="Sites avec le plus de réclamations sur la période." />
               </div>
               <div style={S.cb}>
                 {(stats?.graphiques?.top_sites_impactes ?? []).length === 0 ? <div style={S.empty}>Aucune donnée</div>
@@ -1199,10 +1200,10 @@ export default function SupervisorDashboard() {
                         return <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 6, padding: '8px 14px', fontSize: 12 }}>
                           <p style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)' }}>{d.nom}</p>
                           <p style={{ margin: '2px 0', color: 'var(--text-muted3)', fontSize: 10 }}>Code: {d.codeSite}</p>
-                          <p style={{ margin: '2px 0', color: '#E8401A' }}>{d.num_reclamations} tickets</p>
+                          <p style={{ margin: '2px 0', color: '#E8401A' }}>{d.num_reclamations} réclamations</p>
                         </div>;
                       }} />
-                      <Bar dataKey="num_reclamations" radius={[0, 4, 4, 0]} fill="#E8401A" name="Tickets" />
+                      <Bar dataKey="num_reclamations" radius={[0, 4, 4, 0]} fill="#E8401A" name="Réclamations" />
                     </BarChart>
                   </ResponsiveContainer>}
               </div>
@@ -1247,6 +1248,53 @@ export default function SupervisorDashboard() {
           </div>
 
           <div style={{ height: 30 }} />
+
+          {/* ─── ROW 4: Suivi par Wilaya ─── */}
+          {wilayas.length > 0 && (
+            <>
+              <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#EC4899', marginRight: 6, verticalAlign: 'middle' }} />SUIVI PAR WILAYA</span></div>
+              <div className="fade-in" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 8, marginBottom: 24, overflow: 'hidden' }}>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                    <thead>
+                      <tr>
+                        {['WILAYA', 'SITES', 'DOWN', 'RÉCLAMATIONS OUVERTES', 'DISPONIBILITÉ', 'DÉLAI MOYEN', 'TENDANCE'].map((h) => (
+                          <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', borderBottom: '1px solid var(--border-color)', textTransform: 'uppercase', letterSpacing: 0.5, whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {wilayas.map((w) => (
+                        <tr key={w.wilaya}
+                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
+                          style={{ transition: 'background-color 0.15s' }}>
+                          <td style={{ padding: '10px 14px', fontWeight: 600 }}>{w.wilaya}</td>
+                          <td style={{ padding: '10px 14px' }}>{w.total_sites}</td>
+                          <td style={{ padding: '10px 14px', color: w.sites_down > 0 ? '#DC2626' : '#10B981', fontWeight: 600 }}>{w.sites_down}</td>
+                          <td style={{ padding: '10px 14px', color: w.tickets_ouverts > 0 ? '#D97706' : 'inherit', fontWeight: w.tickets_ouverts > 0 ? 600 : 400 }}>{w.tickets_ouverts}</td>
+                          <td style={{ padding: '10px 14px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div style={{ flex: 1, height: 6, background: '#E5E7EB', borderRadius: 3, overflow: 'hidden', maxWidth: 80 }}>
+                                <div style={{ height: '100%', width: `${w.taux_dispo_num}%`, background: dispoColor(w.taux_dispo_num), borderRadius: 3, transition: 'width 0.3s' }} />
+                              </div>
+                              <span style={{ fontSize: 10, fontWeight: 600, color: dispoColor(w.taux_dispo_num) }}>{w.taux_disponibilite}</span>
+                            </div>
+                          </td>
+                          <td style={{ padding: '10px 14px' }}>{w.delai_moyen_resolution}</td>
+                          <td style={{ padding: '10px 14px' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 600, backgroundColor: w.tendance === 'En hausse' ? '#DCFCE7' : w.tendance === 'En baisse' ? '#FEE2E2' : '#F1F5F9', color: w.tendance === 'En hausse' ? '#15803D' : w.tendance === 'En baisse' ? '#DC2626' : '#64748B' }}>
+                              {w.tendance === 'En hausse' ? '↑' : w.tendance === 'En baisse' ? '↓' : '→'} {w.tendance}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
       </div>

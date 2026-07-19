@@ -1,3 +1,5 @@
+"""Tests de gestion des sites réseau (liste, filtres, création, archivage)."""
+
 import pytest
 from django.test import TestCase, Client
 from django.contrib.auth import get_user_model

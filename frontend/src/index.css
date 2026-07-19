@@ -1,3 +1,11 @@
+/* ========================================================
+   Styles globaux de l'application Djezzy Hub
+   --------------------------------------------------------
+   Réinitialisation de base, polices, transitions,
+   animations (fade-in, pulse, ripple, etc.) et styles
+   de composants réutilisables (cartes, boutons, tables).
+   ======================================================== */
+
 * {
   box-sizing: border-box;
 }

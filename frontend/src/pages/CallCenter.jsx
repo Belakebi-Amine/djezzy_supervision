@@ -224,13 +224,22 @@ export default function CallCenter() {
     }
   }, [currentView, fetchTickets]);
 
+  /* Silent background refresh (no loading spinner) */
+  const refreshTickets = useCallback(async () => {
+    try {
+      const statut = currentView === 'non-traites' ? 'ouvert,ferme' : 'resolu';
+      const data = await getTickets(statut);
+      if (Array.isArray(data)) setTickets(data);
+    } catch {}
+  }, [currentView]);
+
   // ─── Auto-refresh every 5 seconds (transparent) ───
   useEffect(() => {
     const interval = setInterval(() => {
-      fetchTickets();
+      refreshTickets();
     }, 5000);
     return () => clearInterval(interval);
-  }, [fetchTickets]);
+  }, [refreshTickets]);
 
   /* Submit the new ticket form to the API */
   const handleCreateTicket = async (e) => {
@@ -249,9 +258,9 @@ export default function CallCenter() {
       setFormData(INITIAL_FORM);
       setSelectedKeywords([]);
       setCurrentView('non-traites');
-      addNotification('Ticket créé avec succès');
+      addNotification('Réclamation créée avec succès');
     } catch (err) {
-      addNotification('Erreur lors de la création du ticket.', 'error');
+      addNotification('Erreur lors de la création de la réclamation.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -259,7 +268,7 @@ export default function CallCenter() {
 
   /* Archive a ticket by changing its status to 'ferme' after user confirmation */
   const handleArchive = async (ticket) => {
-    if (!window.confirm(`Archiver le ticket ${ticket.numero_ticket} ?`)) return;
+    if (!window.confirm(`Archiver la réclamation ${ticket.numero_ticket} ?`)) return;
     try {
       await updateTicket(ticket.id, { statut: 'ferme' });
       setSelectedTicket(null);
@@ -329,11 +338,11 @@ export default function CallCenter() {
           <span style={styles.sectionLabel}>PRINCIPAL</span>
           <button onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('non-traites'); }}
             style={{ ...styles.navItem, ...(currentView === 'non-traites' ? styles.navItemActive : {}) }}>
-            <IconTicket /> Tickets Non-Traites
+            <IconTicket /> Réclamations Non-Traitées
           </button>
           <button onClick={(e) => { spawnParticles(e.clientX, e.clientY, 4); setCurrentView('traites'); }}
             style={{ ...styles.navItem, ...(currentView === 'traites' ? styles.navItemActive : {}) }}>
-            <IconArchive /> Tickets Traites
+            <IconArchive /> Réclamations Traitées
           </button>
         </div>
       </aside>
@@ -343,7 +352,7 @@ export default function CallCenter() {
         {/* Top header with page title or back navigation */}
         <header style={styles.topHeader}>
           <h1 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-secondary)' }}>
-            {currentView === 'nouveau-ticket' ? 'Nouveau Ticket' : currentView === 'traites' ? 'Archives — Tickets Traités' : 'Tickets Non Traités'}
+            {currentView === 'nouveau-ticket' ? 'Nouvelle Réclamation' : currentView === 'traites' ? 'Archives — Réclamations Traitées' : 'Réclamations Non Traitées'}
           </h1>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 10, color: 'var(--text-muted2)', fontWeight: 500, padding: '4px 10px', background: 'var(--bg-toolbar)', borderRadius: 4 }}>{now()}</span>
@@ -360,7 +369,7 @@ export default function CallCenter() {
           <div style={styles.tableCard}>
             <div style={styles.formHeader}>
               <IconPin style={{ color: COLORS.djezzyRed, marginRight: '10px' }} />
-              <span style={{ fontWeight: 700, fontSize: '14px' }}>Creer un nouveau ticket</span>
+              <span style={{ fontWeight: 700, fontSize: '14px' }}>Créer une nouvelle réclamation</span>
             </div>
 
             <form onSubmit={handleCreateTicket} style={styles.formBody}>
@@ -477,7 +486,7 @@ export default function CallCenter() {
             <div style={styles.toolbar}>
               <div style={styles.toolbarLeft}>
                 <h2 style={styles.tableTitle}>
-                  {currentView === 'non-traites' ? 'Tickets en cours' : 'Tickets résolus'}
+                  {currentView === 'non-traites' ? 'Réclamations en cours' : 'Réclamations résolues'}
                 </h2>
               </div>
 
@@ -497,7 +506,7 @@ export default function CallCenter() {
                   />
                 </div>
                 <button onClick={() => setCurrentView('nouveau-ticket')} style={styles.btnNew}>
-                  <IconPlus style={{ marginRight: '6px' }} /> Nouveau Ticket
+                  <IconPlus style={{ marginRight: '6px' }} /> Nouvelle Réclamation
                 </button>
               </div>
             </div>
@@ -562,7 +571,7 @@ export default function CallCenter() {
                   {loading ? (
                     <tr><td colSpan="7" style={styles.emptyCell}>Chargement des donnees...</td></tr>
                   ) : filteredTickets.length === 0 ? (
-                    <tr><td colSpan="7" style={styles.emptyCell}>Aucun ticket trouvé.</td></tr>
+                    <tr><td colSpan="7" style={styles.emptyCell}>Aucune réclamation trouvée.</td></tr>
                   ) : filteredTickets.map((ticket) => {
                     // Resolve color config for priority, status, and client type badges
                     const prio = COLORS.priorities[ticket.priorite?.toUpperCase()] || COLORS.priorities.NORMALE;
@@ -618,7 +627,7 @@ export default function CallCenter() {
           <div className="scale-in" style={styles.modal} onClick={(e) => e.stopPropagation()}>
             {/* Modal header with ticket number and close button */}
             <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>Ticket {selectedTicket.numero_ticket}</h2>
+              <h2 style={styles.modalTitle}>Réclamation {selectedTicket.numero_ticket}</h2>
               <button style={styles.modalClose} onClick={() => setSelectedTicket(null)}><IconX /></button>
             </div>
 
@@ -647,7 +656,7 @@ export default function CallCenter() {
 
                 {/* Right column: ticket metadata */}
                 <div style={styles.modalSection}>
-                  <h3 style={styles.modalSectionTitle}>Ticket</h3>
+                  <h3 style={styles.modalSectionTitle}>Réclamation</h3>
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Statut</span>
                     <span style={styles.modalValue}>

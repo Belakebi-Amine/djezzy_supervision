@@ -1,11 +1,21 @@
+// ========================================================
+// Contexte de notifications globales
+// --------------------------------------------------------
+// Fournit un système de notifications toast (succès, erreur, info)
+// Utilisable partout dans l'app via le hook useNotification().
+// Les notifications disparaissent automatiquement après 3,5s.
+// ========================================================
+
 import React, { createContext, useContext, useState, useCallback } from 'react';
 
 const NotificationContext = createContext(null);
 
+// --- Icônes SVG pour les différents types de notification ---
 const IconCheck = (p) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M20 6L9 17l-5-5" /></svg>;
 const IconXMark = (p) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M18 6L6 18M6 6l12 12" /></svg>;
 const IconInfo = (p) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>;
 
+// --- Fournisseur du contexte : gère la liste des notifications actives ---
 export function NotificationProvider({ children }) {
   const [notifications, setNotifications] = useState([]);
 
@@ -35,6 +45,7 @@ export function NotificationProvider({ children }) {
   );
 }
 
+// --- Hook pour accéder facilement aux notifications depuis n'importe quel composant ---
 export function useNotification() {
   const ctx = useContext(NotificationContext);
   if (!ctx) throw new Error('useNotification must be used within NotificationProvider');

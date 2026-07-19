@@ -1,4 +1,16 @@
-// App.js
+// ========================================================
+// Point d'entrée de l'application React - Djezzy Hub
+// --------------------------------------------------------
+// Définit les routes :
+//   /login                  → page de connexion
+//   /call-center-dashboard  → tableau de bord call center
+//   /admin-dashboard        → tableau de bord administrateur
+//   /engineer-dashboard     → tableau de bord ingénieur
+//   /supervisor-dashboard   → tableau de bord superviseur
+//   /profile                → page de profil
+// Change aussi le favicon selon le rôle de l'utilisateur.
+// ========================================================
+
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import './styles/themes.css';
@@ -11,6 +23,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import Profile from './pages/Profile';
 import PrivateRoute from './components/PrivateRoute';
 
+// --- Association rôle → chemin du favicon ---
 const ROLE_ICONS = {
   ADMIN: '/Icon/Admin-M.png',
   SUPERVISEUR: '/Icon/Supervisor-M.png',
@@ -18,6 +31,7 @@ const ROLE_ICONS = {
   INGENIEUR_RESEAUX: '/Icon/Reseau.png',
 };
 
+// --- Met à jour le favicon de la page selon le rôle ---
 function setDynamicFavicon(role) {
   const iconPath = ROLE_ICONS[role] || '/Icon/Login.png';
   let link = document.querySelector("link[rel='icon']");
@@ -30,6 +44,7 @@ function setDynamicFavicon(role) {
   link.href = iconPath;
 }
 
+// --- Contenu principal avec les routes et le favicon dynamique ---
 function AppContent() {
   const location = useLocation();
 

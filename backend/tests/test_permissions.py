@@ -1,3 +1,5 @@
+"""Tests des permissions et restrictions d'accès par rôle utilisateur."""
+
 import pytest
 from django.test import TestCase, Client
 from django.contrib.auth import get_user_model

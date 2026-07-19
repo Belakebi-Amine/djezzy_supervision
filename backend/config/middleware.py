@@ -1,3 +1,5 @@
+"""Middleware de restriction d'accès admin par adresse IP."""
+
 from django.conf import settings
 from django.http import HttpResponseForbidden
 

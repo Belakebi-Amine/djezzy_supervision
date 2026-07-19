@@ -5,9 +5,14 @@
 # and network sites to power all the charts and stats on the
 # admin, call center, and supervisor dashboards.
 # ─────────────────────────────────────────────────────────────
+import platform
+import sys
+import os
+from django.conf import settings
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from django.db import connection
 from django.db.models import Count, Q, Avg, F
 from django.db.models.functions import TruncDay, ExtractWeekDay
 from django.utils import timezone
@@ -19,6 +24,12 @@ from sites_reseau.models import SiteReseau
 from accounts.models import CustomUser, Role
 from accounts.serializers import UserSerializer
 from .models import RapportIA
+from audit_log.models import ActivityLog
+
+
+def _get_ip(request):
+    ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
+    return ip or request.META.get('REMOTE_ADDR', '')
 
 # French day names for the weekly ticket distribution chart
 JOURS_SEMAINE = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']
@@ -481,7 +492,8 @@ def liste_rapports_ia(request):
     if request.method == 'POST':
         serializer = RapportIASerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save(cree_par=request.user)
+            rapport = serializer.save(cree_par=request.user)
+            ActivityLog.log('save_rapport', user=request.user, details={'titre': rapport.titre}, ip=_get_ip(request))
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -513,6 +525,7 @@ def detail_rapport_ia(request, pk):
         serializer = RapportIASerializer(rapport, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            ActivityLog.log('save_rapport', user=request.user, details={'titre': rapport.titre, 'action': 'modification'}, ip=_get_ip(request))
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -523,6 +536,7 @@ def detail_rapport_ia(request, pk):
         rapport.archived_at = timezone.now()
         rapport.archived_by = request.user
         rapport.save()
+        ActivityLog.log('delete_rapport', user=request.user, details={'titre': rapport.titre}, ip=_get_ip(request))
         return Response({'message': 'Rapport archivé'}, status=status.HTTP_200_OK)
 
 
@@ -555,6 +569,7 @@ def liste_rapports_archives(request):
         rapport.archived_at = None
         rapport.archived_by = None
         rapport.save()
+        ActivityLog.log('restore_rapport', user=request.user, details={'titre': rapport.titre}, ip=_get_ip(request))
         return Response({'message': 'Rapport restauré', 'id': rapport.id})
 
 
@@ -650,4 +665,39 @@ def consulter_performance(request, code_user):
             'taux_resolution': round((tickets_resolus / tickets_assignes) * 100, 1) if tickets_assignes > 0 else 0,
         },
         'creees': creees,
+    })
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# SYSTEM INFO (Admin-only)
+#
+# Returns server, database, and application info for the admin dashboard.
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def system_info(request):
+    if request.user.role != 'ADMIN':
+        return Response({'error': 'Permission refusée.'}, status=status.HTTP_403_FORBIDDEN)
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_database_size(current_database())")
+        db_size_bytes = cursor.fetchone()[0]
+        cursor.execute("SELECT pg_size_pretty(pg_database_size(current_database()))")
+        db_size_pretty = cursor.fetchone()[0]
+
+    tables = {}
+    for model in [Reclamation, GroupeTicket, SiteReseau, CustomUser, RapportIA]:
+        tables[model._meta.label_lower] = model.objects.count()
+
+    return Response({
+        'serveur': {
+            'django_version': platform.python_version(),
+            'python_version': sys.version.split()[0],
+            'os': f"{os.name} / {platform.system()} {platform.release()}",
+            'base_de_donnees': connection.vendor,
+            'nom_db': connection.settings_dict.get('NAME', 'N/A'),
+            'taille_db': db_size_pretty,
+            'taille_db_bytes': db_size_bytes,
+        },
+        'enregistrements': tables,
     })

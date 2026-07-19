@@ -1,3 +1,5 @@
+"""Tests du tableau de bord (statistiques, reporting, rapports IA, archives)."""
+
 import pytest
 from django.test import TestCase, Client
 from django.contrib.auth import get_user_model

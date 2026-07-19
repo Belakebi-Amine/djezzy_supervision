@@ -1,3 +1,8 @@
+"""Fixtures pytest partagées pour les tests du backend.
+
+Fournit des utilisateurs, tokens, sites, clients et réclamations
+préconfigurés pour être réutilisés dans tous les fichiers de tests.
+"""
 import pytest
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -9,6 +14,7 @@ User = get_user_model()
 
 @pytest.fixture
 def admin_user(db):
+    """Crée un utilisateur administrateur de test."""
     return User.objects.create_user(
         username='admin@test.com',
         email='admin@test.com',
@@ -23,6 +29,7 @@ def admin_user(db):
 
 @pytest.fixture
 def engineer_user(db):
+    """Crée un ingénieur réseau de test."""
     return User.objects.create_user(
         username='engineer@test.com',
         email='engineer@test.com',
@@ -35,6 +42,7 @@ def engineer_user(db):
 
 @pytest.fixture
 def agent_cc_user(db):
+    """Crée un agent call center de test."""
     return User.objects.create_user(
         username='agent@test.com',
         email='agent@test.com',
@@ -47,6 +55,7 @@ def agent_cc_user(db):
 
 @pytest.fixture
 def reporter_user(db):
+    """Crée un responsable reporting de test."""
     return User.objects.create_user(
         username='reporter@test.com',
         email='reporter@test.com',
@@ -59,6 +68,7 @@ def reporter_user(db):
 
 @pytest.fixture
 def supervisor_user(db):
+    """Crée un superviseur de test."""
     return User.objects.create_user(
         username='supervisor@test.com',
         email='supervisor@test.com',
@@ -71,50 +81,59 @@ def supervisor_user(db):
 
 @pytest.fixture
 def token_admin(admin_user):
+    """Génère un token JWT pour l'administrateur."""
     refresh = RefreshToken.for_user(admin_user)
     return str(refresh.access_token)
 
 
 @pytest.fixture
 def token_engineer(engineer_user):
+    """Génère un token JWT pour l'ingénieur."""
     refresh = RefreshToken.for_user(engineer_user)
     return str(refresh.access_token)
 
 
 @pytest.fixture
 def token_agent(agent_cc_user):
+    """Génère un token JWT pour l'agent call center."""
     refresh = RefreshToken.for_user(agent_cc_user)
     return str(refresh.access_token)
 
 
 @pytest.fixture
 def token_supervisor(supervisor_user):
+    """Génère un token JWT pour le superviseur."""
     refresh = RefreshToken.for_user(supervisor_user)
     return str(refresh.access_token)
 
 
 @pytest.fixture
 def auth_admin(token_admin):
+    """En-tête d'authentification pour l'administrateur."""
     return {'HTTP_AUTHORIZATION': f'Bearer {token_admin}'}
 
 
 @pytest.fixture
 def auth_engineer(token_engineer):
+    """En-tête d'authentification pour l'ingénieur."""
     return {'HTTP_AUTHORIZATION': f'Bearer {token_engineer}'}
 
 
 @pytest.fixture
 def auth_agent(token_agent):
+    """En-tête d'authentification pour l'agent."""
     return {'HTTP_AUTHORIZATION': f'Bearer {token_agent}'}
 
 
 @pytest.fixture
 def auth_supervisor(token_supervisor):
+    """En-tête d'authentification pour le superviseur."""
     return {'HTTP_AUTHORIZATION': f'Bearer {token_supervisor}'}
 
 
 @pytest.fixture
 def site1(db):
+    """Crée un premier site réseau de test (Alger, UP, 5G)."""
     return SiteReseau.objects.create(
         codeSite='S000001',
         nom='Site Test Alger',
@@ -127,6 +146,7 @@ def site1(db):
 
 @pytest.fixture
 def site2(db):
+    """Crée un deuxième site réseau de test (Oran, DOWN, 4G)."""
     return SiteReseau.objects.create(
         codeSite='S000002',
         nom='Site Test Oran',
@@ -139,6 +159,7 @@ def site2(db):
 
 @pytest.fixture
 def client1(db):
+    """Crée un client particulier de test."""
     return Client.objects.create(
         numero='0550001122',
         prenom='Ahmed',
@@ -149,6 +170,7 @@ def client1(db):
 
 @pytest.fixture
 def client2(db):
+    """Crée un client entreprise de test."""
     return Client.objects.create(
         numero='0660003344',
         prenom='Société',
@@ -159,6 +181,7 @@ def client2(db):
 
 @pytest.fixture
 def reclamation1(db, agent_cc_user, site1, client1):
+    """Crée une réclamation ouverte de test."""
     return Reclamation.objects.create(
         nom_client='Ahmed Benali',
         telephone_client='0550001122',
@@ -173,6 +196,7 @@ def reclamation1(db, agent_cc_user, site1, client1):
 
 @pytest.fixture
 def groupe_ticket1(db, site1, admin_user, engineer_user):
+    """Crée un groupe de tickets de test avec assignation."""
     gt = GroupeTicket(
         site=site1,
         titre='Panne réseau Alger',

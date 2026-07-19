@@ -22,6 +22,7 @@ urlpatterns = [
     # ── Visualization API endpoints ──
     path('api/carte/', include('cartographie.urls')),      # Map data
     path('api/dashboard/', include('dashboard.urls')),     # KPIs & analytics
+    path('api/audit/', include('audit_log.urls')),          # Audit trail & system health
 
     # ── JWT Authentication ──
     path('api/token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
