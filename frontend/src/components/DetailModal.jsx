@@ -508,7 +508,7 @@ export default function DetailModal({ type, data, onClose, stats, reporting }) {
                       <th style={S.th}>numeroTicket</th><th style={S.th}>nomClient</th><th style={S.th}>statutTicket</th>
                       <th style={S.th}>priorite</th><th style={S.th}>codeSite</th><th style={S.th}>Assigné</th><th style={S.th}>dateCreation</th>
                     </tr></thead>
-                    <tbody>{items.map((t) => <TicketRow key={t.id} ticket={t} onUpdated={handleUpdate} />)}</tbody>
+<tbody>{items.map((t) => <TicketRow key={t.id} ticket={t} />)}</tbody>
                   </table>
                 )}
               </div>

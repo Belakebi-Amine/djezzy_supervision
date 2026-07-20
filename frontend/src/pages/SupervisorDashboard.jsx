@@ -26,7 +26,7 @@ import html2pdf from 'html2pdf.js';
 import {
   getDashboardStats, getDashboardReporting,
   genererRapportIA, getRapportsIA, sauvegarderRapportIA,
-  updateRapportIA, deleteRapportIA, getArchivedRapports, restoreRapportIA,
+  updateRapportIA, getArchivedRapports, restoreRapportIA,
 } from '../api/dashboard';
 import { getSites, getTickets, getTokenRole } from '../api/tickets';
 import DetailModal from '../components/DetailModal';
@@ -47,14 +47,11 @@ const IconL = (p) => <svg {...iconProps} {...p}><path d="M15 16l4-4-4-4" /><path
 const IconI = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>;
 const IconMap = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>;
 const IconFile = (p) => <svg {...iconProps} {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>;
-const IconTrash = (p) => <svg {...iconProps} {...p}><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
 const IconEdit = (p) => <svg {...iconProps} {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>;
 const IconSend = (p) => <svg {...iconProps} {...p}><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>;
 const IconDownload = (p) => <svg {...iconProps} {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>;
 const IconSave = (p) => <svg {...iconProps} {...p}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>;
-const IconCalendar = (p) => <svg {...iconProps} {...p}><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>;
 const IconX = (p) => <svg {...iconProps} {...p}><path d="M18 6L6 18M6 6l12 12" /></svg>;
-const IconSite = (p) => <svg {...iconProps} {...p}><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z" /><circle cx="12" cy="9.5" r="2.3" /></svg>;
 const IconArchive = (p) => <svg {...iconProps} {...p}><path d="M21 4H3M8 2v2M16 2v2M4 7l1 12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2l1-12M10 11v6M14 11v6" /></svg>;
 
 /* Custom tooltip component used by all Recharts charts */
@@ -150,7 +147,7 @@ export default function SupervisorDashboard() {
   const extractDatesFromPrompt = useCallback((text) => {
     const dates = [];
     // Match DD/MM/YYYY or DD-MM-YYYY
-    const dmy = text.matchAll(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/g);
+    const dmy = text.matchAll(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/g);
     for (const m of dmy) {
       const [, d, mo, y] = m;
       dates.push(`${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`);
@@ -162,8 +159,8 @@ export default function SupervisorDashboard() {
       dates.push(`${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`);
     }
     // Match "DD mois YYYY" (written French dates)
-    const moisMap = { janvier:'01', fevrier:'02', mars:'03', avril:'04', mai:'05', juin:'06', juillet:'07', aout:'08', aout:'08', septembre:'09', octobre:'10', novembre:'11', decembre:'12' };
-    const fr = text.matchAll(/(\d{1,2})\s+(janvier|fevrier|mars|avril|mai|juin|juillet|aout|aout|septembre|octobre|novembre|decembre)\s+(\d{4})/gi);
+    const moisMap = { janvier:'01', fevrier:'02', mars:'03', avril:'04', mai:'05', juin:'06', juillet:'07', aout:'08', septembre:'09', octobre:'10', novembre:'11', decembre:'12' };
+    const fr = text.matchAll(/(\d{1,2})\s+(janvier|fevrier|mars|avril|mai|juin|juillet|aout|septembre|octobre|novembre|decembre)\s+(\d{4})/gi);
     for (const m of fr) {
       const [, d, mo, y] = m;
       const moNum = moisMap[mo.toLowerCase()];
@@ -292,7 +289,7 @@ export default function SupervisorDashboard() {
     } finally {
       setGenerating(false);
     }
-  }, [prompt, dateDebut, dateFin]);
+  }, [prompt, dateDebut, dateFin, addNotification, extractDatesFromPrompt]);
 
   // handleSave – persists the generated report to the backend
   const handleSave = useCallback(async () => {
@@ -311,42 +308,7 @@ export default function SupervisorDashboard() {
     } finally {
       setSaving(false);
     }
-  }, [generatedContent, savedName, prompt, dateDebut, dateFin]);
-
-  // handleLoadReport – loads a previously saved report into the editor
-  const handleLoadReport = useCallback(async (id) => {
-    try {
-      const report = savedReports.find(r => r.id === id);
-      if (report) {
-        setGeneratedContent(report.contenu);
-        setPrompt(report.prompt);
-        setSavedName(report.titre);
-        setSelectedReportId(report.id);
-        setDateDebut(report.date_debut || '');
-        setDateFin(report.date_fin || '');
-        setEditMode(false);
-        setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
-      }
-    } catch (err) {
-      addNotification(err.message, 'error');
-    }
-  }, [savedReports]);
-
-  // handleDeleteReport – removes a report from the backend and the local list
-  const handleDeleteReport = useCallback(async (id) => {
-    if (!window.confirm('Supprimer ce rapport ?')) return;
-    try {
-      await deleteRapportIA(id);
-      setSavedReports((prev) => prev.filter(r => r.id !== id));
-      addNotification('Rapport supprimé');
-      if (selectedReportId === id) {
-        setSelectedReportId(null);
-        setGeneratedContent(null);
-      }
-    } catch (err) {
-      addNotification(err.message, 'error');
-    }
-  }, [selectedReportId]);
+  }, [generatedContent, savedName, prompt, dateDebut, dateFin, addNotification]);
 
   // handleUpdateReport – saves edits to an existing report
   const handleUpdateReport = useCallback(async () => {
@@ -362,7 +324,7 @@ export default function SupervisorDashboard() {
     } catch (err) {
       addNotification(err.message, 'error');
     }
-  }, [selectedReportId, editTitle, editContent]);
+  }, [selectedReportId, editTitle, editContent, addNotification]);
 
   // handleDownloadPDF – exports the report content as a PDF using html2pdf.js
   const handleDownloadPDF = useCallback(async () => {
@@ -403,7 +365,7 @@ export default function SupervisorDashboard() {
     } catch (err) {
       addNotification('Erreur lors de la génération du PDF.', 'error');
     }
-  }, [savedName]);
+  }, [savedName, addNotification]);
 
   // handleTitleChange – updates the report title and auto-saves if a report is selected
   const handleTitleChange = useCallback((newTitle) => {
@@ -457,7 +419,7 @@ export default function SupervisorDashboard() {
     } catch (err) {
       addNotification('Erreur lors de la génération du PDF.', 'error');
     }
-  }, []);
+  }, [addNotification]);
 
   /* ── Sites data: only needed for the map and dashboard views ── */
   useEffect(() => {
@@ -729,7 +691,7 @@ export default function SupervisorDashboard() {
                 <span style={S.cht}>Cartographie des sites 5G</span>
               </div>
               <div style={{ flex: 1, height: 'calc(100vh - 160px)' }}>
-                <MapComponent sites={sites} showCoverage />
+                <MapComponent sites={sites} />
               </div>
             </div>
           </div>

@@ -12,7 +12,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { spawnParticles } from '../hooks/useAnimations';
 import { useNotification } from '../context/NotificationContext';
-import { getTickets, createTicket, updateTicket, getSites, getTokenRole, getKeywords } from '../api/tickets';
+import { getTickets, createTicket, getSites, getTokenRole, getKeywords } from '../api/tickets';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
 /* Color palette and badge styles used across the UI */
@@ -91,9 +91,6 @@ const IconLogout = (p) => (
 const IconPin = (p) => (
   <svg {...iconProps} {...p}><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z" /><circle cx="12" cy="9.5" r="2.3" /></svg>
 );
-const IconChevronLeft = (p) => (
-  <svg {...iconProps} {...p}><path d="M15 6l-6 6 6 6" /></svg>
-);
 const IconSearch = (p) => (
   <svg {...iconProps} {...p}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
 );
@@ -106,9 +103,7 @@ const IconCheck = (p) => (
 const IconX = (p) => (
   <svg {...iconProps} {...p}><path d="M18 6L6 18M6 6l12 12" /></svg>
 );
-const IconEdit = (p) => (
-  <svg {...iconProps} {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-);
+
 
 /* Default empty state for the new-ticket form */
 const INITIAL_FORM = {
@@ -215,7 +210,7 @@ export default function CallCenter() {
     } finally {
       setLoading(false);
     }
-  }, [currentView]);
+  }, [currentView, addNotification]);
 
   /* Re-fetch tickets whenever the user switches between the two list views */
   useEffect(() => {
@@ -263,18 +258,6 @@ export default function CallCenter() {
       addNotification('Erreur lors de la création de la réclamation.', 'error');
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  /* Archive a ticket by changing its status to 'ferme' after user confirmation */
-  const handleArchive = async (ticket) => {
-    if (!window.confirm(`Archiver la réclamation ${ticket.numero_ticket} ?`)) return;
-    try {
-      await updateTicket(ticket.id, { statut: 'ferme' });
-      setSelectedTicket(null);
-      fetchTickets(); // Refresh the list to reflect the change
-    } catch (err) {
-      addNotification("Erreur lors de l'archivage.", 'error');
     }
   };
 

@@ -17,18 +17,17 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LineChart, Line, BarChart, Bar, AreaChart, Area, Cell, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from 'recharts';
+import { BarChart, Bar, AreaChart, Area, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from 'recharts';
 import DOMPurify from 'dompurify';
 import html2pdf from 'html2pdf.js';
-import { useCountUp, useRipple, spawnParticles } from '../hooks/useAnimations';
+import { spawnParticles } from '../hooks/useAnimations';
 import { useNotification } from '../context/NotificationContext';
 import {
   getDashboardStats, getDashboardReporting,
-  getRapportsIA, getArchivedRapports, restoreRapportIA, getSystemInfo,
+  getArchivedRapports, restoreRapportIA,
   getSystemHealth, getAuditLogs, getAuditStats,
 } from '../api/dashboard';
-import { getSites, getUsers, getUserStats, createUser, getTickets, createTicket, updateTicket, createSite, updateSiteStatus, archiverSite, archiveUser, toggleActiveUser, updateUser, restoreUser, getTokenRole, getArchivedTickets, archiverReclamation, desarchiverReclamation, getArchivedSites, restoreSite, getKeywords } from '../api/tickets';
-import MapComponent from '../components/Map';
+import { getSites, getUsers, getUserStats, createUser, getTickets, createTicket, updateTicket, createSite, updateSiteStatus, archiverSite, archiveUser, toggleActiveUser, updateUser, restoreUser, getTokenRole, getArchivedTickets, archiverReclamation, getArchivedSites, restoreSite, getKeywords } from '../api/tickets';
 import DetailModal from '../components/DetailModal';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
@@ -56,11 +55,7 @@ const COLORS = {
     FERME: { bg: '#FECACA', text: '#B91C1C', dot: '#DC2626' },
   },
 };
-// Bar chart color palette
-const PALETTE = ['#E8401A', '#2563EB', '#10B981', '#F59E0B', '#8B5CF6'];
-
 // French label maps for priority and role enums
-const LABEL_MAP = { critique: 'Critique', haute: 'Haute', normale: 'Normale', basse: 'Basse' };
 const ROLE_LABELS = {
   ADMIN: 'ADMINISTRATEUR', INGENIEUR_RESEAUX: 'ING RÉSEAU',
   AGENT_CALL_CENTER: 'AGENT CC', SUPERVISEUR: 'SUPERVISEUR',
@@ -83,33 +78,11 @@ const ST_BG = { UP: '#DCFCE7', DOWN: '#FEE2E2' };
 
 // ─── Date formatting helpers (French locale) ───
 const MOIS_FR = ['JAN', 'FEV', 'MAR', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOU', 'SEP', 'OCT', 'NOV', 'DEC'];
-const formatDateFr = (iso) => {
-  if (!iso) return '-';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '-';
-  return `${d.getDate()} ${MOIS_FR[d.getMonth()]}`;
-};
 const formatDateTimeFr = (iso) => {
   if (!iso) return '-';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '-';
   return `${d.getDate()} ${MOIS_FR[d.getMonth()]} ${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
-// Relative time in French (e.g., "il y a 3j", "il y a 2h")
-const formatRelativeTime = (iso) => {
-  if (!iso) return 'Jamais';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return 'Jamais';
-  const diffMs = Date.now() - d.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return "A l'instant";
-  if (diffMin < 60) return `il y a ${diffMin}min`;
-  const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24) return `il y a ${diffH}h`;
-  const diffJ = Math.floor(diffH / 24);
-  if (diffJ < 30) return `il y a ${diffJ}j`;
-  const diffM = Math.floor(diffJ / 30);
-  return `il y a ${diffM}mo`;
 };
 // Returns today's date as DD/MM/YYYY
 const now = () => {
@@ -121,8 +94,6 @@ const now = () => {
 // Common props applied to all icons for consistent sizing and stroke style
 const iconProps = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' };
 const IconDashboard = (p) => <svg {...iconProps} {...p}><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg>;
-const IconMap = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>;
-const IconTicket = (p) => <svg {...iconProps} {...p}><path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 6v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-6V7Z" /><path d="M10 6v2M10 16v2" /></svg>;
 const IconSite = (p) => <svg {...iconProps} {...p}><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z" /><circle cx="12" cy="9.5" r="2.3" /></svg>;
 const IconUsers = (p) => <svg {...iconProps} {...p}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>;
 const IconReport = (p) => <svg {...iconProps} {...p}><path d="M4 9V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4" /><path d="M4 13v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6" /><path d="M2 9h20" /></svg>;
@@ -135,22 +106,12 @@ const IconCheck = (p) => <svg {...iconProps} {...p}><path d="M4 12l5 5 11-11" />
 const IconInfo = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>;
 const IconUser = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="8" r="3.2" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /></svg>;
 const IconArchive = (p) => <svg {...iconProps} {...p}><path d="M21 4H3M8 2v2M16 2v2M4 7l1 12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2l1-12M10 11v6M14 11v6" /></svg>;
-const IconTrash = (p) => <svg {...iconProps} {...p}><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
 const IconEdit = (p) => <svg {...iconProps} {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>;
 const IconBan = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="12" r="10" /><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" /></svg>;
 const IconClock = (p) => <svg {...iconProps} {...p}><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>;
 
 // ─── Utility: normalize status string for color lookup ───
 const getStatutKey = (statut) => statut?.replace('_', ' ').toUpperCase();
-
-// Returns a color based on availability percentage thresholds
-const dispoColor = (v) => {
-  if (v >= 100) return '#059669';
-  if (v >= 75) return '#65A30D';
-  if (v >= 50) return '#F59E0B';
-  if (v >= 25) return '#EA580C';
-  return '#DC2626';
-};
 
 // ─── Recharts custom tooltip component ───
 const Tip = ({ active, payload, label }) => {
@@ -197,25 +158,6 @@ function InfoPopup({ text }) {
   );
 }
 
-// Animated KPI card with count-up and ripple on click
-function AnimatedKpi({ label, value, sub, color, accent }) {
-  // Extract numeric value from string (e.g. "95%" -> 95)
-  const numVal = parseFloat(String(value).replace(/[^0-9.]/g, ''));
-  const animated = useCountUp(Number.isNaN(numVal) ? 0 : numVal, 900);
-  // Keep the suffix character (e.g. "%")
-  const suffix = String(value).replace(/[0-9.]/g, '');
-  const { containerRef, spawnRipple } = useRipple();
-  return (
-    <div ref={containerRef} onClick={spawnRipple}
-      className="interactive-card stagger-child"
-      style={{ padding: '14px 16px', background: COLORS.cardBg, border: `1px solid ${COLORS.border}`, borderRadius: 8, boxShadow: 'var(--shadow-sm)', position: 'relative', overflow: 'hidden' }}>
-      <span style={{ display: 'block', marginBottom: 4, fontSize: 8, fontWeight: 700, color: 'var(--text-muted3)', textTransform: 'uppercase', letterSpacing: 0.3 }}>{label}</span>
-      <strong className="counter-value" style={{ fontSize: 22, color, lineHeight: 1.2, display: 'block' }}>{Number.isNaN(numVal) ? value : `${Math.round(animated)}${suffix}`}</strong>
-      <span style={{ fontSize: 9, color: 'var(--text-muted2)', marginTop: 2, display: 'block' }}>{sub}</span>
-    </div>
-  );
-}
-
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const { addNotification } = useNotification();
@@ -248,8 +190,8 @@ export default function AdminDashboard() {
   const [reporting, setReporting] = useState(null);
   const [sites, setSites] = useState([]);
   const [users, setUsers] = useState([]);
-  const [userStats, setUserStats] = useState(null);
-  const [tickets, setTickets] = useState([]);
+  const [, setUserStats] = useState(null);
+  const [, setTickets] = useState([]);
   const [detail, setDetail] = useState(null); // detail modal for chart drill-down
 
   // ─── Search and filter state ───
@@ -272,14 +214,11 @@ export default function AdminDashboard() {
   const [submitting, setSubmitting] = useState(false);
 
   // Rapport IA state
-  const [allRapports, setAllRapports] = useState([]);
   const [selectedRapport, setSelectedRapport] = useState(null);
-  const [loadingRapports, setLoadingRapports] = useState(false);
-  const [rapportSearch, setRapportSearch] = useState('');
 
   // Archives state
   const [archiveTab, setArchiveTab] = useState('tickets'); // 'tickets' | 'rapports' | 'users' | 'sites'
-  const [archivedTickets, setArchivedTickets] = useState([]);
+  const [, setArchivedTickets] = useState([]);
   const [archivedRapports, setArchivedRapports] = useState([]);
   const [archivedSites, setArchivedSites] = useState([]);
   const [loadingArchives, setLoadingArchives] = useState(false);
@@ -288,9 +227,6 @@ export default function AdminDashboard() {
   // ─── Performance view: toggles between engineers and call center agents ───
   const [perfRole, setPerfRole] = useState('ingenieurs');
   const [perfUser, setPerfUser] = useState(null);
-
-  // ─── System info (server/DB) ───
-  const [systemInfo, setSystemInfo] = useState(null);
 
   // ─── System health (real-time) + audit trail ───
   const [systemHealth, setSystemHealth] = useState(null);
@@ -341,14 +277,6 @@ export default function AdminDashboard() {
   const fetchTickets = useCallback(async () => {
     try { const d = await getTickets(); setTickets(Array.isArray(d) ? d : []); } catch { setTickets([]); }
   }, []);
-  const fetchRapports = useCallback(async () => {
-    setLoadingRapports(true);
-    try { const d = await getRapportsIA(); setAllRapports(Array.isArray(d) ? d : []); } catch { setAllRapports([]); }
-    finally { setLoadingRapports(false); }
-  }, []);
-  const fetchSystemInfo = useCallback(async () => {
-    try { const d = await getSystemInfo(); setSystemInfo(d); } catch { setSystemInfo(null); }
-  }, []);
   const fetchSystemHealth = useCallback(async () => {
     try { const d = await getSystemHealth(); setSystemHealth(d); } catch { setSystemHealth(null); }
   }, []);
@@ -369,9 +297,9 @@ export default function AdminDashboard() {
 
   // ─── Initial data load on mount and when period changes ───
   useEffect(() => {
-    fetchStats(); fetchSites(); fetchUsers(); fetchTickets(); fetchUserStats(); fetchSystemInfo(); fetchSystemHealth(); fetchAuditLogs(); fetchAuditStats();
+    fetchStats(); fetchSites(); fetchUsers(); fetchTickets(); fetchUserStats(); fetchSystemHealth(); fetchAuditLogs(); fetchAuditStats();
     getKeywords().then(setTicketKeywordsData).catch(() => setTicketKeywordsData({}));
-  }, [fetchStats, fetchSites, fetchUsers, fetchTickets, fetchUserStats, fetchSystemInfo, fetchSystemHealth, fetchAuditLogs, fetchAuditStats]);
+  }, [fetchStats, fetchSites, fetchUsers, fetchTickets, fetchUserStats, fetchSystemHealth, fetchAuditLogs, fetchAuditStats]);
 
   // ─── Auto-refresh every 5 seconds ───
   useEffect(() => {
@@ -404,12 +332,6 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (currentView === 'archives') fetchArchivedData();
   }, [currentView, fetchArchivedData]);
-
-  // Toggle report detail view (click same report to collapse)
-  const handleViewRapport = useCallback((id) => {
-    const r = allRapports.find((x) => x.id === id);
-    if (r) setSelectedRapport(selectedRapport?.id === id ? null : r);
-  }, [allRapports, selectedRapport]);
 
   // Download a report as PDF from the list
   const handleDownloadPDFAdmin = useCallback(async (report) => {
@@ -455,7 +377,7 @@ export default function AdminDashboard() {
     } catch (err) {
       addNotification('Erreur lors de la génération du PDF.', 'error');
     }
-  }, []);
+  }, [addNotification]);
 
   const handleRestoreRapport = useCallback(async (r) => {
     try {
@@ -469,14 +391,6 @@ export default function AdminDashboard() {
   // Count users per role for the dashboard breakdown
   const roleCounts = {};
   users.forEach((u) => { const r = ROLE_LABELS[u.role_user] || u.role_user || 'INCONNU'; roleCounts[r] = (roleCounts[r] || 0) + 1; });
-
-  // filteredRapports – search-filtered list of supervisor reports
-  const filteredRapports = allRapports.filter((r) => {
-    if (!rapportSearch.trim()) return true;
-    const q = rapportSearch.toLowerCase();
-    return (r.titre || '').toLowerCase().includes(q)
-      || (r.cree_par?.nom_user || '').toLowerCase().includes(q);
-  });
 
   // ─── Filtered users: search by name/email/code + optional role filter, exclude archived ───
   const filteredUsers = users.filter((u) => {
@@ -499,24 +413,6 @@ export default function AdminDashboard() {
     return na - nb;
   });
 
-  // ─── Chart data preparation ───
-  // Evolution of tickets over time - format dates for display
-  const evo = (stats?.graphiques?.evolution_tickets ?? []).map((d) => {
-    const dd = new Date(d.jour);
-    return { ...d, _raw: d.jour, jour: isNaN(dd.getTime()) ? d.jour : dd.toLocaleDateString('fr', { day: '2-digit', month: 'short' }) };
-  });
-  const reso = stats?.graphiques?.resolutions_par_jour ?? [];
-  // Build a lookup map for daily resolution counts
-  const evoResoMap = {};
-  reso.forEach((r) => { const k = r.jour.slice(0, 10); evoResoMap[k] = (evoResoMap[k] || 0) + r.resolus; });
-  // Merge created vs resolved into one dataset for comparison chart
-  const creesVsResolus = evo.map((d) => ({ ...d, crees: d.total, resolus: evoResoMap[d._raw.slice(0, 10)] || 0 }));
-  const topSites = stats?.graphiques?.top_sites_impactes ?? [];
-  const communes = reporting?.tableau_communes ?? [];
-  const wilayas = reporting?.tableau_complet_wilayas ?? [];
-  const jourSemaine = stats?.graphiques?.tickets_par_jour_semaine ?? [];
-  const delaiParPrio = stats?.graphiques?.delai_moyen_par_priorite ?? {};
-
   // ─── Performance data: parse average delay from "Xh Ym" format to decimal hours ───
   const employes = (stats?.stats_employes ?? []).map((e) => {
     const m = (e.delai_moyen || '').match(/(\d+)h\s*(\d+)m/);
@@ -525,17 +421,6 @@ export default function AdminDashboard() {
   const agentsCC = (stats?.stats_agents_cc ?? []).map((a) => ({ ...a, label: `${a.nom} (${a.code})` }));
   const perfUsers = perfRole === 'ingenieurs' ? employes : agentsCC;
   const selectedPerfUser = perfUsers.find((u) => u.code === perfUser) || null;
-
-  // ─── Delay per priority chart: convert "Xh Ym" strings to decimal hours for bar chart ───
-  const delaiPrioData = Object.entries(delaiParPrio).map(([k, v]) => {
-    const match = (v || '').match(/(\d+)h\s*(\d+)m/);
-    const hours = match ? parseInt(match[1]) + parseInt(match[2]) / 60 : 0;
-    return {
-      name: LABEL_MAP[k] || k,
-      heures: Math.round(hours * 10) / 10,
-      color: { critique: '#DC2626', haute: '#F59E0B', normale: '#2563EB', basse: '#10B981' }[k] || '#999',
-    };
-  }).filter(d => d.heures > 0);
 
   // ─── Event Handlers ───
 
@@ -825,16 +710,6 @@ export default function AdminDashboard() {
     generate_rapport: { color: '#7C3AED', label: 'Génération rapport IA' },
     save_rapport: { color: '#7C3AED', label: 'Sauvegarde rapport IA' }, delete_rapport: { color: '#DC2626', label: 'Suppression rapport IA' },
     restore_rapport: { color: '#10B981', label: 'Restauration rapport IA' },
-  };
-  const timeAgo = (dateStr) => {
-    const diff = Date.now() - new Date(dateStr).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return "à l'instant";
-    if (mins < 60) return `il y a ${mins}m`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `il y a ${hrs}h`;
-    const days = Math.floor(hrs / 24);
-    return `il y a ${days}j`;
   };
 
   const dashboardView = () => (
@@ -1217,7 +1092,6 @@ export default function AdminDashboard() {
   // ─── USERS VIEW ───
   // User management table with role filtering, search, and CRUD actions per row
   const usersView = () => {
-    const us = userStats;
     return (<>
       {/* ── Users Table ── */}
     <div style={styles.tableCard}>
@@ -1299,20 +1173,6 @@ export default function AdminDashboard() {
     </>
   );
   };
-
-  // ─── MAP VIEW ───
-  // Renders the interactive map component showing all network sites with coverage
-  const mapView = () => (
-    <div style={styles.tableCard}>
-      <div style={styles.panelHeader}>
-        <span style={styles.panelTitle}><IconMap /> Cartographie des sites 5G</span>
-        <span style={{ fontSize: 9, color: COLORS.textMuted }}>{sites.length} site{sites.length > 1 ? 's' : ''}</span>
-      </div>
-      <div style={{ height: 'calc(100vh - 160px)', minHeight: 500 }}>
-        <MapComponent sites={sites} showCoverage />
-      </div>
-    </div>
-  );
 
   // ─── ARCHIVES VIEW ───
   // Tabbed view for archived users and sites

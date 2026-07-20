@@ -23,6 +23,20 @@ const Login = () => {
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
 
+    // --- Injection des animations CSS (nettoyée au démontage) ---
+    useEffect(() => {
+        const s = document.createElement('style');
+        s.textContent = `
+            @keyframes loginPulse { 0%,100%{transform:scale(1);opacity:.6} 50%{transform:scale(1.08);opacity:1} }
+            @keyframes loginFadeUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+            @keyframes loginShake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-4px)} 40%{transform:translateX(4px)} 60%{transform:translateX(-3px)} 80%{transform:translateX(3px)} }
+            @keyframes spin { to{transform:rotate(360deg)} }
+            input:focus { border-color:#E8401A !important; box-shadow:0 0 0 3px rgba(232,64,26,.1) !important; }
+        `;
+        document.head.appendChild(s);
+        return () => s.remove();
+    }, []);
+
     // --- Vérification automatique du token au chargement ---
     useEffect(() => {
         const token = localStorage.getItem('token') || localStorage.getItem('access_token');
@@ -418,33 +432,4 @@ const S = {
         marginBottom: 0,
     },
 };
-
-// --- Injection des animations CSS pour la page de login ---
-const styleSheet = document.createElement('style');
-styleSheet.textContent = `
-    @keyframes loginPulse {
-        0%, 100% { transform: scale(1); opacity: 0.6; }
-        50% { transform: scale(1.08); opacity: 1; }
-    }
-    @keyframes loginFadeUp {
-        from { opacity: 0; transform: translateY(16px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes loginShake {
-        0%, 100% { transform: translateX(0); }
-        20% { transform: translateX(-4px); }
-        40% { transform: translateX(4px); }
-        60% { transform: translateX(-3px); }
-        80% { transform: translateX(3px); }
-    }
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
-    input:focus {
-        border-color: #E8401A !important;
-        box-shadow: 0 0 0 3px rgba(232,64,26,0.1) !important;
-    }
-`;
-document.head.appendChild(styleSheet);
-
 export default Login;

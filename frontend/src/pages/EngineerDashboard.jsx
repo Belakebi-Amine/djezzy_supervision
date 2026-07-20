@@ -14,7 +14,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { spawnParticles } from '../hooks/useAnimations';
 import { useNotification } from '../context/NotificationContext';
-import { getTickets, updateTicket, getSites, getAllSites, updateSiteStatus, createSite, archiverSite, restoreSite, getTokenRole, getGroupeTickets, getGroupeTicketStats, resoudreGroupeTicket, assignerGroupeTicket, getArchivedSites, getArchivedTickets } from '../api/tickets';
+import { getTickets, getSites, getAllSites, updateSiteStatus, createSite, archiverSite, restoreSite, getTokenRole, getGroupeTickets, getGroupeTicketStats, resoudreGroupeTicket, assignerGroupeTicket, getArchivedSites, getArchivedTickets } from '../api/tickets';
 import MapComponent from '../components/Map';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
@@ -110,26 +110,10 @@ const IconEdit = (p) => (
   <svg {...iconProps} {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
 );
 
-// Possible ticket statuses and their display labels
-const ALL_STATUSES = ['ferme', 'ouvert', 'resolu'];
-const ALL_LABELS = { ferme: 'Ferme', ouvert: 'Ouvert', resolu: 'Resolu' };
-
-
 // Site status display labels and color mappings
 const SITE_LABELS = { UP: 'Actif', DOWN: 'Inactif' };
 const ST = { UP: '#059669', DOWN: '#DC2626' };
 const ST_BG = { UP: '#DCFCE7', DOWN: '#FEE2E2' };
-
-// Returns the list of valid forward transitions for a given ticket status
-// e.g. 'ferme' can move to 'ouvert', 'ouvert' can move to 'resolu'
-const getForwardStatuses = (statut) => {
-  switch (statut) {
-    case 'ferme': return ['ouvert'];
-    case 'ouvert': return ['resolu'];
-    case 'resolu': return [];
-    default: return [];
-  }
-};
 
 export default function EngineerDashboard() {
   const navigate = useNavigate();
@@ -152,8 +136,7 @@ export default function EngineerDashboard() {
   const [currentView, setCurrentView] = useState('reclamations'); // 'reclamations' | 'sites' | 'cartographie'
 
   // --- Tickets State ---
-  const [tickets, setTickets] = useState([]);       // all tickets from the API
-  const [loading, setLoading] = useState(false);     // loading indicator for tickets
+  const [, setTickets] = useState([]);       // all tickets from the API
 
   // --- Grouped Tickets State ---
   const [groupeTickets, setGroupeTickets] = useState([]);
@@ -161,7 +144,6 @@ export default function EngineerDashboard() {
   const [groupeLoading, setGroupeLoading] = useState(false);
   const [selectedGroupe, setSelectedGroupe] = useState(null);
   const [updatingGroupeId, setUpdatingGroupeId] = useState(null);
-  const [viewMode, setViewMode] = useState('grouped'); // 'grouped' | 'individual'
 
   // --- Sites State ---
   const [sites, setSites] = useState([]);            // sites list used for ticket filter dropdown
@@ -172,17 +154,14 @@ export default function EngineerDashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatut, setFilterStatut] = useState('');
   const [filterPriority, setFilterPriority] = useState('');
-  const [filterType, setFilterType] = useState('');
-  const [filterDate, setFilterDate] = useState('');
+
   const [filterSiteId, setFilterSiteId] = useState('');
   const [showFilters, setShowFilters] = useState(false);
 
   // --- Selection & Interaction State ---
-  const [selectedTicket, setSelectedTicket] = useState(null);   // ticket opened in modal
-  const [updatingId, setUpdatingId] = useState(null);           // ID of ticket being updated (for loading state)
+  const [, setSelectedTicket] = useState(null);   // ticket opened in modal
   const [togglingSiteId, setTogglingSiteId] = useState(null);   // ID of site being toggled/archived
   const [selectedSite, setSelectedSite] = useState(null);       // site opened in modal
-  const [hoveredUser, setHoveredUser] = useState(null);         // user info shown in tooltip on hover
 
   // --- Site Form State ---
   const [showSiteForm, setShowSiteForm] = useState(false);
@@ -228,18 +207,14 @@ export default function EngineerDashboard() {
 
   // Fetch all tickets from the backend (include archived so ferme tickets are visible)
   const fetchTickets = useCallback(async () => {
-    setLoading(true);
     try {
       const data = await getTickets('', 'all');
       setTickets(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error('Impossible de charger les reclamations', err);
       addNotification('Impossible de charger les réclamations.', 'error');
       setTickets([]);
-    } finally {
-      setLoading(false);
     }
-  }, []);
+  }, [addNotification]);
 
   // Silent background refresh (no loading spinner)
   const refreshTickets = useCallback(async () => {
@@ -261,13 +236,12 @@ export default function EngineerDashboard() {
       const data = await getGroupeTickets({ archived: 'all' });
       setGroupeTickets(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error('Impossible de charger les tickets groupés', err);
       addNotification('Impossible de charger les tickets groupés.', 'error');
       setGroupeTickets([]);
     } finally {
       setGroupeLoading(false);
     }
-  }, []);
+  }, [addNotification]);
 
   // Silent background refresh for grouped tickets
   const refreshGroupeTickets = useCallback(async () => {
@@ -282,10 +256,9 @@ export default function EngineerDashboard() {
       const data = await getGroupeTicketStats();
       setGroupeStats(data);
     } catch (err) {
-      console.error('Impossible de charger les stats', err);
       addNotification('Impossible de charger les statistiques.', 'error');
     }
-  }, []);
+  }, [addNotification]);
 
   useEffect(() => {
     fetchGroupeTickets();
@@ -309,13 +282,12 @@ export default function EngineerDashboard() {
       const data = await getAllSites();
       setSitesList(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error('Impossible de charger les sites', err);
       addNotification('Impossible de charger les sites.', 'error');
       setSitesList([]);
     } finally {
       setSitesLoading(false);
     }
-  }, []);
+  }, [addNotification]);
 
   // Only fetch sites data when the user switches to the sites view
   useEffect(() => {
@@ -341,7 +313,7 @@ export default function EngineerDashboard() {
     } finally {
       setTogglingSiteId(null);
     }
-  }, []);
+  }, [addNotification]);
 
   // Archive a site – marks it as archived (grayed out in list)
   const handleArchiverSite = useCallback(async (siteId) => {
@@ -358,7 +330,7 @@ export default function EngineerDashboard() {
     } finally {
       setTogglingSiteId(null);
     }
-  }, []);
+  }, [addNotification]);
 
   // Restore an archived site – marks it as non-archived
   const handleRestaurerSite = useCallback(async (siteId) => {
@@ -374,32 +346,7 @@ export default function EngineerDashboard() {
     } finally {
       setTogglingSiteId(null);
     }
-  }, []);
-
-  // Change ticket status with confirmation dialog for forward transitions
-  const handleStatusChange = useCallback(async (ticketId, newStatut, currentStatut) => {
-    // Only show confirmation for meaningful transitions
-    const msgs = {
-      'ferme->ouvert': 'Confirmer l ouverture de ce ticket ?',
-      'ouvert->resolu': 'Confirmer la resolution de ce ticket ?',
-    };
-    const key = `${currentStatut}->${newStatut}`;
-    if (msgs[key] && !window.confirm(msgs[key])) return;
-
-    setUpdatingId(ticketId);
-    try {
-      await updateTicket(ticketId, { statut: newStatut });
-      // Optimistically update the ticket status in local state
-      setTickets((prev) =>
-        prev.map((t) => (t.id === ticketId ? { ...t, statut: newStatut } : t))
-      );
-      addNotification(`Ticket passé à ${newStatut}`);
-    } catch (err) {
-      addNotification('Erreur lors du changement de statut.', 'error');
-    } finally {
-      setUpdatingId(null);
-    }
-  }, []);
+  }, [addNotification]);
 
   // Submit new site creation form
   const handleCreateSite = useCallback(async (e) => {
@@ -423,7 +370,7 @@ export default function EngineerDashboard() {
     } finally {
       setSiteSubmitting(false);
     }
-  }, [newSiteForm, fetchSitesData]);
+  }, [newSiteForm, fetchSitesData, addNotification]);
 
   // Generic input handler for the new site form
   const handleSiteFormChange = (e) => {
@@ -455,7 +402,7 @@ export default function EngineerDashboard() {
     } finally {
       setUpdatingGroupeId(null);
     }
-  }, [fetchGroupeStats]);
+  }, [fetchGroupeStats, addNotification]);
 
   const handleAssignerGroupe = useCallback(async (groupeId) => {
     const isFerme = groupeTickets.find(g => g.id === groupeId)?.statut === 'ferme';
@@ -471,7 +418,7 @@ export default function EngineerDashboard() {
     } finally {
       setUpdatingGroupeId(null);
     }
-  }, [fetchGroupeTickets, fetchGroupeStats]);
+  }, [addNotification, fetchGroupeTickets, fetchGroupeStats, groupeTickets]);
 
   // Convert a raw status string to the uppercase key used in the COLORS map
   const getStatutKey = (statut) => statut?.replace('_', ' ').toUpperCase();
@@ -500,53 +447,6 @@ export default function EngineerDashboard() {
     const numA = parseInt(a.codeSite?.replace(/\D/g, '')) || 0;
     const numB = parseInt(b.codeSite?.replace(/\D/g, '')) || 0;
     return numA - numB;
-  });
-
-  // ---- Filtered tickets list ----
-  // Resolved tickets are excluded by default (engineer only handles open ones)
-  const filteredTickets = tickets.filter((t) => {
-    if (t.statut === 'resolu') return false;
-
-    // Text search across multiple ticket fields
-    const term = searchTerm.toLowerCase();
-    const matchSearch =
-      t.nom_complet_client?.toLowerCase().includes(term) ||
-      t.numero_ticket?.toLowerCase().includes(term) ||
-      t.site_display?.toLowerCase().includes(term) ||
-      t.mots_cles_ia?.toLowerCase().includes(term);
-    if (!matchSearch) return false;
-
-    // Apply each active filter independently
-    if (filterPriority) {
-      const prio = (t.priorite || '').toUpperCase();
-      if (prio !== filterPriority.toUpperCase()) return false;
-    }
-    if (filterType) {
-      const typ = (t.type_client || '').toUpperCase();
-      if (typ !== filterType.toUpperCase()) return false;
-    }
-    if (filterDate) {
-      const d = new Date(t.created_at);
-      if (d.toISOString().slice(0, 10) !== filterDate) return false;
-    }
-    if (filterSiteId) {
-      const sid = t.site?.id;
-      if (String(sid) !== String(filterSiteId)) return false;
-    }
-    if (filterStatut) {
-      const st = (t.statut || '').toLowerCase();
-      if (st !== filterStatut.toLowerCase()) return false;
-    }
-    return true;
-  }).sort((a, b) => {
-    // Sort by type_client first, then by priority
-    const typeA = a.type_client || '';
-    const typeB = b.type_client || '';
-    if (typeA !== typeB) return typeA.localeCompare(typeB);
-    const prioA = PRIO_ORDER[a.priorite] ?? 4;
-    const prioB = PRIO_ORDER[b.priorite] ?? 4;
-    if (prioA !== prioB) return prioA - prioB;
-    return new Date(b.created_at) - new Date(a.created_at);
   });
 
   // ---- Filtered grouped tickets ----
@@ -635,7 +535,7 @@ export default function EngineerDashboard() {
               </div>
               {/* Map component fills available height */}
               <div style={{ height: 'calc(100vh - 200px)', minHeight: 500 }}>
-                <MapComponent sites={sitesList} showCoverage />
+                <MapComponent sites={sitesList} />
               </div>
             </div>
           </div>
@@ -1001,12 +901,12 @@ export default function EngineerDashboard() {
             {/* Collapsible filter panel */}
             {showFilters && (
               <div style={{ ...styles.filterArea, backgroundColor: '#fafbfc', borderBottom: `1px solid ${COLORS.border}` }}>
-                <select value={filterStatut} onChange={(e) => setFilterStatut(e.target.value)} style={{ ...styles.filterSelect, backgroundColor: COLORS.inputBg, color: '#4e5561', border: `1px solid ${COLORS.border}` }}>
+                <select value={filterStatut} onChange={(e) => setFilterStatut(e.target.value)} style={{ ...styles.filterSelect, backgroundColor: 'var(--inputBg, #FFFFFF)', color: '#4e5561', border: `1px solid ${COLORS.border}` }}>
                   <option value="">Tous statuts</option>
                   <option value="ouvert">Ouvert</option>
                   <option value="ferme">Fermé</option>
                 </select>
-                <select value={filterSiteId} onChange={(e) => setFilterSiteId(e.target.value)} style={{ ...styles.filterSelect, backgroundColor: COLORS.inputBg, color: '#4e5561', border: `1px solid ${COLORS.border}` }}>
+                <select value={filterSiteId} onChange={(e) => setFilterSiteId(e.target.value)} style={{ ...styles.filterSelect, backgroundColor: 'var(--inputBg, #FFFFFF)', color: '#4e5561', border: `1px solid ${COLORS.border}` }}>
                   <option value="">Tous les sites</option>
                   {sites.map((s) => (
                     <option key={s.id} value={s.id}>{s.nom}</option>
