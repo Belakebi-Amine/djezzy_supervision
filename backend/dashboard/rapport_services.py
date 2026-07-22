@@ -471,12 +471,9 @@ def generer_rapport_ia(prompt_utilisateur, date_debut=None, date_fin=None):
     # Try Mistral first
     if MISTRAL_API_KEY:
         try:
-            from openai import OpenAI
+            from mistralai import Mistral
 
-            client = OpenAI(
-                api_key=MISTRAL_API_KEY,
-                base_url='https://api.mistral.ai/v1',
-            )
+            client = Mistral(api_key=MISTRAL_API_KEY)
 
             # Summarize data for Mistral to keep prompt small and fast
             resume = (
@@ -590,7 +587,7 @@ FORMAT:
 - Sois SPECIFIQUE: cite les wilayas, les ingenieurs, les chiffres exacts
 - 2 a 3 pages A4 maximum"""
 
-            response = client.chat.completions.create(
+            response = client.chat.complete(
                 model=MISTRAL_MODEL,
                 messages=[{'role': 'user', 'content': prompt}],
                 temperature=0.7,

@@ -72,8 +72,9 @@ const checkAuthAndRedirect = async (status) => {
 
 // ── Dashboard Stats & Reporting ──
 
-export const getDashboardStats = async (jours = 30) => {
-    const response = await fetch(`${API_URL}/dashboard/stats/?jours=${jours}`, {
+export const getDashboardStats = async (jours = 30, annee = null) => {
+    const params = annee ? `annee=${annee}` : `jours=${jours}`;
+    const response = await fetch(`${API_URL}/dashboard/stats/?${params}`, {
         method: 'GET',
         headers: await getHeaders()
     });
@@ -81,8 +82,9 @@ export const getDashboardStats = async (jours = 30) => {
     return await response.json();
 };
 
-export const getDashboardReporting = async (jours = 30) => {
-    const response = await fetch(`${API_URL}/dashboard/reporting/?jours=${jours}`, {
+export const getDashboardReporting = async (jours = 30, annee = null) => {
+    const params = annee ? `annee=${annee}` : `jours=${jours}`;
+    const response = await fetch(`${API_URL}/dashboard/reporting/?${params}`, {
         method: 'GET',
         headers: await getHeaders()
     });
@@ -269,10 +271,19 @@ export const getAuditLogs = async (params = {}) => {
     return await response.json();
 };
 
-export const getAuditStats = async (jours = 7) => {
-    const response = await fetch(`${API_URL}/audit/stats/?jours=${jours}`, {
+export const getAuditStats = async (jours = 7, annee = null) => {
+    const params = annee ? `annee=${annee}` : `jours=${jours}`;
+    const response = await fetch(`${API_URL}/audit/stats/?${params}`, {
         headers: await getHeaders(),
     });
     if (!response.ok) throw new Error(`Erreur audit-stats [${response.status}]`);
+    return await response.json();
+};
+
+export const getServerLoad = async () => {
+    const response = await fetch(`${API_URL}/audit/server-load/`, {
+        headers: await getHeaders(),
+    });
+    if (!response.ok) throw new Error(`Erreur server-load [${response.status}]`);
     return await response.json();
 };

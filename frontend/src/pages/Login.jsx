@@ -115,10 +115,15 @@ const Login = () => {
                 else userRole = "Agent Call Center";
             }
 
-            // --- Redirection selon le rôle normalisé ---
+            // Check if user must change password
+            const mustChange = response.data.user?.must_change_password;
+
+            // --- Redirection selon le role normalise ---
             const normalizedRole = userRole ? userRole.toString().toLowerCase().trim() : "";
 
-            if (normalizedRole.includes("call center") || normalizedRole.includes("agent")) {
+            if (mustChange) {
+                navigate('/profile?force_change=1');
+            } else if (normalizedRole.includes("call center") || normalizedRole.includes("agent")) {
                 navigate('/call-center-dashboard');
             } else if (normalizedRole.includes("admin")) {
                 navigate('/admin-dashboard');
@@ -131,9 +136,10 @@ const Login = () => {
             }
 
         } catch (err) {
-            if (err.response && err.response.status === 401) {
-                setError("Email ou mot de passe incorrect.");
-            } else if (err.response && err.response.status === 400) {
+            const msg = err.response?.data?.detail || err.response?.data?.non_field_errors?.[0];
+            if (msg) {
+                setError(msg);
+            } else if (err.response && (err.response.status === 401 || err.response.status === 400)) {
                 setError("Email ou mot de passe incorrect.");
             } else {
                 setError("Serveur injoignable. Verifie que le backend Django tourne.");
@@ -209,6 +215,12 @@ const Login = () => {
                                 )}
                             </button>
                         </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -6 }}>
+                        <button type="button" onClick={() => navigate('/forgot-password')} style={S.forgotLink}>
+                            Mot de passe oublie ?
+                        </button>
                     </div>
 
                     <button type="submit" style={loading ? { ...S.button, ...S.buttonDisabled } : S.button} disabled={loading}>
@@ -429,6 +441,16 @@ const S = {
         color: '#94a3b8',
         marginTop: 28,
         marginBottom: 0,
+    },
+    forgotLink: {
+        background: 'none',
+        border: 'none',
+        color: '#E8401A',
+        fontSize: 12,
+        fontWeight: 600,
+        cursor: 'pointer',
+        padding: 0,
+        fontFamily: 'inherit',
     },
 };
 export default Login;

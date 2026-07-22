@@ -22,11 +22,13 @@ from .views import (
     liste_agents_cc,
     liste_ingenieurs,
     reinitialiser_mot_de_passe_view,
+    forgot_password_view,
 )
 
 urlpatterns = [
     # ── Auth ──
     path('logout/', logout_view, name='logout'),
+    path('forgot-password/', forgot_password_view, name='forgot_password'),
 
     # ── Profile ──
     path('me/', me_view, name='me'),

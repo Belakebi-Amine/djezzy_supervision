@@ -16,6 +16,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'r
 import './styles/themes.css';
 import { NotificationProvider } from './context/NotificationContext';
 import Login from './pages/Login';
+import ForgotPassword from './pages/ForgotPassword';
 import CallCenter from './pages/CallCenter';
 import EngineerDashboard from './pages/EngineerDashboard';
 import SupervisorDashboard from './pages/SupervisorDashboard';
@@ -70,6 +71,7 @@ function AppContent() {
       <Routes>
         <Route path="/" element={<Navigate to="/login" />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/call-center-dashboard" element={<PrivateRoute><CallCenter /></PrivateRoute>} />
         <Route path="/admin-dashboard" element={<PrivateRoute requiredRole="ADMIN"><AdminDashboard /></PrivateRoute>} />
         <Route path="/engineer-dashboard" element={<PrivateRoute><EngineerDashboard /></PrivateRoute>} />

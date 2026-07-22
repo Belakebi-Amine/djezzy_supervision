@@ -69,6 +69,7 @@ def system_health(request):
     # Total users and active (non-archived) users
     total_users = CustomUser.objects.count()
     active_users_count = CustomUser.objects.filter(is_archived=False, is_active=True).count()
+    inactive_users_count = CustomUser.objects.filter(is_active=False).count()
 
     # Users online today (logged in today)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -119,6 +120,7 @@ def system_health(request):
         'online_today': online_today,
         'total_users': total_users,
         'active_users_count': active_users_count,
+        'inactive_users_count': inactive_users_count,
         'today_actions': today_actions,
         'today_errors': today_errors,
         'reseau': {
@@ -202,7 +204,6 @@ def audit_logs(request):
                 'action': log.action,
                 'action_display': log.get_action_display(),
                 'details': log.details,
-                'ip_address': log.ip_address,
                 'created_at': log.created_at.isoformat(),
             }
             for log in logs
@@ -221,19 +222,34 @@ def audit_stats(request):
 
     now = timezone.now()
 
-    # Parse the day range parameter (default: 7 days)
-    jours_param = request.query_params.get('jours', '7')
-    try:
-        nb_jours = int(jours_param)
-    except ValueError:
-        nb_jours = 7
-    nb_jours = max(1, min(nb_jours, 3650))
+    # Parse year or day range parameter
+    annee_param = request.query_params.get('annee')
+    if annee_param:
+        try:
+            annee = int(annee_param)
+            date_limite = timezone.datetime(annee, 1, 1, tzinfo=timezone.get_current_timezone())
+            date_fin = timezone.datetime(annee, 12, 31, 23, 59, 59, tzinfo=timezone.get_current_timezone())
+        except (ValueError, OverflowError):
+            nb_jours = 7
+            date_limite = now - timedelta(days=nb_jours)
+            date_fin = None
+    else:
+        jours_param = request.query_params.get('jours', '7')
+        try:
+            nb_jours = int(jours_param)
+        except ValueError:
+            nb_jours = 7
+        nb_jours = max(1, min(nb_jours, 3650))
+        date_limite = now - timedelta(days=nb_jours)
+        date_fin = None
 
-    date_limite = now - timedelta(days=nb_jours)
+    base_date_filter = {'created_at__gte': date_limite}
+    if date_fin:
+        base_date_filter['created_at__lte'] = date_fin
 
     # Actions per day over selected period
     daily_counts_raw = (
-        ActivityLog.objects.filter(created_at__gte=date_limite)
+        ActivityLog.objects.filter(**base_date_filter)
         .values('created_at__date')
         .annotate(count=Count('id'))
         .order_by('created_at__date')
@@ -251,7 +267,7 @@ def audit_stats(request):
 
     # Top 5 most active users (same period)
     top_users = (
-        ActivityLog.objects.filter(created_at__gte=date_limite, user_code__gt='')
+        ActivityLog.objects.filter(**base_date_filter, user_code__gt='')
         .values('user_code', 'user_name', 'user_role')
         .annotate(count=Count('id'))
         .order_by('-count')[:5]
@@ -259,16 +275,62 @@ def audit_stats(request):
 
     # Action type distribution (same period)
     action_dist = (
-        ActivityLog.objects.filter(created_at__gte=date_limite)
+        ActivityLog.objects.filter(**base_date_filter)
         .values('action')
         .annotate(count=Count('id'))
         .order_by('-count')[:10]
     )
 
+    # Weekday distribution (actions grouped by day of week)
+    WEEKDAY_NAMES = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche']
+    weekday_raw = (
+        ActivityLog.objects.filter(**base_date_filter)
+        .extra(select={'weekday': "EXTRACT(dow FROM created_at)"})
+        .values('weekday')
+        .annotate(count=Count('id'))
+        .order_by('weekday')
+    )
+    weekday_map = {int(d['weekday']): d['count'] for d in weekday_raw}
+    weekday_distribution = [
+        {'day': WEEKDAY_NAMES[i], 'count': weekday_map.get(i, 0)}
+        for i in range(7)
+    ]
+
+    # Failed + blocked login attempts (security)
+    login_failed_count = ActivityLog.objects.filter(
+        **base_date_filter, action__in=['login_failed', 'login_blocked']
+    ).count()
+
     return Response({
         'daily_actions': daily_series,
         'top_users': list(top_users),
         'action_distribution': list(action_dist),
+        'weekday_distribution': weekday_distribution,
+        'login_failed_count': login_failed_count,
+    })
+
+
+# ── Endpoint de charge serveur ──
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def server_load(request):
+    """Retourne les métriques système en temps réel (CPU, mémoire, disque)."""
+    if request.user.role != 'ADMIN':
+        return Response({'error': 'Permission refusée.'}, status=status.HTTP_403_FORBIDDEN)
+
+    import psutil
+    mem = psutil.virtual_memory()
+    disk = psutil.disk_usage('/')
+
+    return Response({
+        'cpu_percent': psutil.cpu_percent(interval=0.5),
+        'memory_percent': mem.percent,
+        'memory_total_gb': round(mem.total / (1024**3), 1),
+        'memory_used_gb': round(mem.used / (1024**3), 1),
+        'disk_percent': disk.percent,
+        'disk_total_gb': round(disk.total / (1024**3), 1),
+        'disk_used_gb': round(disk.used / (1024**3), 1),
     })
 
 

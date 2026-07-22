@@ -178,8 +178,8 @@ def _get_mistral_client():
     if not MISTRAL_API_KEY:
         return None
     try:
-        from openai import OpenAI
-        return OpenAI(api_key=MISTRAL_API_KEY, base_url='https://api.mistral.ai/v1')
+        from mistralai import Mistral
+        return Mistral(api_key=MISTRAL_API_KEY)
     except Exception as e:
         logger.warning("Impossible de créer le client Mistral: %s", e)
         return None
@@ -190,7 +190,7 @@ def _call_mistral(prompt, max_tokens=512, temperature=0.3):
     if not client:
         return None
     try:
-        response = client.chat.completions.create(
+        response = client.chat.complete(
             model=MISTRAL_MODEL,
             messages=[{'role': 'user', 'content': prompt}],
             temperature=temperature,

@@ -5,7 +5,7 @@
  * them to edit their personal details or change their password.
  */
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
 /* ── Theme colour tokens resolved from CSS variables ── */
@@ -71,14 +71,16 @@ const DJEZZY_ROLE_TEXT = '#DC2626';
 
 export default function Profile() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const forceChange = searchParams.get('force_change') === '1';
 
   /* ── Component state ── */
   const [user, setUser] = useState(null);           // full user object fetched from the API
   const [editMode, setEditMode] = useState(false);   // toggles between read-only and edit form
   const [formData, setFormData] = useState({ first_name: '', last_name: '', email: '' }); // editable fields
   const [passwordData, setPasswordData] = useState({ ancien_mot_de_passe: '', nouveau_mot_de_passe: '', confirm: '' }); // password change form
-  const [showPasswordForm, setShowPasswordForm] = useState(false); // toggles the password change form
-  const [message, setMessage] = useState({ type: '', text: '' });  // success / error feedback banner
+  const [showPasswordForm, setShowPasswordForm] = useState(forceChange); // toggles the password change form
+  const [message, setMessage] = useState({ type: '', text: forceChange ? 'Vous devez changer votre mot de passe avant de continuer.' : '' });  // success / error feedback banner
   const [saving, setSaving] = useState(false);       // disables buttons while an API call is in progress
 
   /* Derive the current user's role from the JWT and determine which dashboard to link back to */
@@ -138,6 +140,9 @@ export default function Profile() {
         setMessage({ type: 'success', text: 'Mot de passe modifie avec succes.' });
         setPasswordData({ ancien_mot_de_passe: '', nouveau_mot_de_passe: '', confirm: '' });
         setShowPasswordForm(false);
+        if (forceChange) {
+          setTimeout(() => navigate(dashboardPath), 1000);
+        }
       } else { setMessage({ type: 'error', text: Object.values(data).flat().join(', ') || 'Erreur lors du changement.' }); }
     } catch { setMessage({ type: 'error', text: 'Erreur de connexion au serveur.' }); }
     finally { setSaving(false); }
@@ -152,26 +157,31 @@ export default function Profile() {
   return (
     /* ── Main layout: sidebar + content area ── */
     <div style={s.app}>
-      {/* ── Left sidebar with navigation ── */}
+      {/* ── Left sidebar with navigation (hidden during forced password change) ── */}
+      {!forceChange && (
       <aside style={s.side}>
         <div style={s.brand}><img src={logoDjezzy} alt="" style={s.logoImg} /><div><div style={s.brandName}>Djezzy Hub</div><div style={s.brandRole}>Mon Profil</div></div></div>
         <div style={s.menu}>
           <span style={s.sl}>NAVIGATION</span>
-          <button className="side-btn" style={s.mi} onClick={() => navigate(dashboardPath)}><IconBack style={{ marginRight: 10 }} /> Retour</button>
-        </div>
-        <div style={{ ...s.menu, marginTop: 'auto' }}>
-          <span style={s.sl}>COMPTE</span>
-          <button className="side-btn" style={{ ...s.mi, ...s.mia }}><IconUser style={{ marginRight: 10 }} /> Profil</button>
-          <button className="side-btn" style={s.mi} onClick={handleLogout}><IconLogout style={{ marginRight: 10 }} /> Déconnexion</button>
+          <button className="side-btn" style={{ ...s.mi, ...s.mia }} onClick={() => navigate(dashboardPath)}><IconBack style={{ marginRight: 10 }} /> Retour</button>
         </div>
       </aside>
+      )}
 
       {/* ── Right: main content area ── */}
       <div style={s.main}>
         {/* Top header bar with page title and today's date */}
         <header style={s.head}>
-          <h1 style={s.title}>Mon Profil</h1>
-          <span style={s.date}>{new Date().toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+          <h1 style={s.title}>{forceChange ? 'Changement de mot de passe requis' : 'Mon Profil'}</h1>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={s.date}>{new Date().toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+            {!forceChange && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8, paddingLeft: 12, borderLeft: '1px solid var(--border-color)' }}>
+              <button onClick={() => navigate(dashboardPath)} title="Retour au tableau de bord" style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FEE2E2', border: 'none', cursor: 'pointer', color: '#E8401A' }}><IconBack style={{ width: 15, height: 15 }} /></button>
+              <button onClick={handleLogout} title="Déconnexion" style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FEE2E2', border: 'none', cursor: 'pointer', color: '#E8401A' }}><IconLogout style={{ width: 15, height: 15 }} /></button>
+            </div>
+            )}
+          </div>
         </header>
 
         {/* Scrollable page content */}
@@ -283,10 +293,12 @@ export default function Profile() {
               ) : (
                 /* Password change form: current password, new password, and confirmation */
                 <div style={s.cardBody}>
-                  <div style={s.field}>
-                    <label style={s.fieldLabel}>Mot de passe actuel</label>
-                    <input style={s.input} type="password" value={passwordData.ancien_mot_de_passe} onChange={(e) => setPasswordData({ ...passwordData, ancien_mot_de_passe: e.target.value })} />
-                  </div>
+                  {!forceChange && (
+                    <div style={s.field}>
+                      <label style={s.fieldLabel}>Mot de passe actuel</label>
+                      <input style={s.input} type="password" value={passwordData.ancien_mot_de_passe} onChange={(e) => setPasswordData({ ...passwordData, ancien_mot_de_passe: e.target.value })} />
+                    </div>
+                  )}
                   <div style={s.fieldGrid}>
                     <div style={s.field}>
                       <label style={s.fieldLabel}>Nouveau mot de passe</label>
@@ -301,7 +313,9 @@ export default function Profile() {
                     <button onClick={handleChangePassword} disabled={saving} style={saving ? { ...s.btn, opacity: 0.6 } : s.btn}>
                       <IconCheck style={{ width: 14, height: 14 }} /> {saving ? 'Modification...' : 'Modifier'}
                     </button>
-                    <button onClick={() => { setShowPasswordForm(false); setPasswordData({ ancien_mot_de_passe: '', nouveau_mot_de_passe: '', confirm: '' }); }} style={s.btnGhost}><IconX style={{ width: 14, height: 14 }} /> Annuler</button>
+                    {!forceChange && (
+                      <button onClick={() => { setShowPasswordForm(false); setPasswordData({ ancien_mot_de_passe: '', nouveau_mot_de_passe: '', confirm: '' }); }} style={s.btnGhost}><IconX style={{ width: 14, height: 14 }} /> Annuler</button>
+                    )}
                   </div>
                 </div>
               )}

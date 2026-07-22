@@ -14,7 +14,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { spawnParticles } from '../hooks/useAnimations';
 import { useNotification } from '../context/NotificationContext';
-import { getTickets, getSites, getAllSites, updateSiteStatus, createSite, archiverSite, restoreSite, getTokenRole, getGroupeTickets, getGroupeTicketStats, resoudreGroupeTicket, assignerGroupeTicket, verrouillerGroupeTicket, deverrouillerGroupeTicket, getArchivedSites, getArchivedTickets } from '../api/tickets';
+import { getTickets, getSites, getAllSites, updateSiteStatus, createSite, archiverSite, restoreSite, getTokenRole, getGroupeTickets, getGroupeTicketStats, resoudreGroupeTicket, assignerGroupeTicket, verrouillerGroupeTicket, deverrouillerGroupeTicket, getArchivedSites } from '../api/tickets';
 import MapComponent from '../components/Map';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
@@ -193,7 +193,7 @@ export default function EngineerDashboard() {
   }, []);
 
   const fetchArchivedTickets = useCallback(async () => {
-    try { const d = await getArchivedTickets(); setArchivedTickets(Array.isArray(d) ? d : []); }
+    try { const d = await getGroupeTickets({ archived: 'true' }); setArchivedTickets(Array.isArray(d) ? d : []); }
     catch { setArchivedTickets([]); }
   }, []);
 
@@ -493,7 +493,6 @@ export default function EngineerDashboard() {
 
   // ---- Filtered grouped tickets ----
   const filteredGroupeTickets = groupeTickets.filter((g) => {
-    if (g.statut === 'resolu') return false;
     const term = searchTerm.toLowerCase();
     const matchSearch =
       g.titre?.toLowerCase().includes(term) ||
@@ -518,15 +517,15 @@ export default function EngineerDashboard() {
     }
     return true;
   }).sort((a, b) => {
-    // Sort: entreprise tickets first, then by date (newest first), then by priority
-    const entA = a.has_entreprise ? 0 : 1;
-    const entB = b.has_entreprise ? 0 : 1;
-    if (entA !== entB) return entA - entB;
-    const dateDiff = new Date(b.created_at) - new Date(a.created_at);
-    if (dateDiff !== 0) return dateDiff;
-    const prioA = PRIO_ORDER[a.priorite] ?? 4;
-    const prioB = PRIO_ORDER[b.priorite] ?? 4;
-    return prioA - prioB;
+    // Resolved/closed tickets go to the bottom
+    const closedStatuses = ['resolu', 'ferme'];
+    const aClosed = closedStatuses.includes((a.statut || '').toLowerCase());
+    const bClosed = closedStatuses.includes((b.statut || '').toLowerCase());
+    if (aClosed !== bClosed) return aClosed ? 1 : -1;
+    // Default: newest premier_signalement first
+    const dateA = new Date(a.premier_signalement || a.created_at);
+    const dateB = new Date(b.premier_signalement || b.created_at);
+    return dateB - dateA;
   });
 
   return (
@@ -836,8 +835,9 @@ export default function EngineerDashboard() {
                       <div style={{ fontWeight: 600 }}>Aucun site archivé</div>
                     </div>
                   ) : (
+                    <div style={{ maxHeight: 'calc(100vh - 300px)', overflowY: 'auto' }}>
                     <table style={styles.table}>
-                      <thead>
+                      <thead style={{ position: 'sticky', top: 0, zIndex: 1, backgroundColor: 'var(--bg-card)' }}>
                         <tr style={styles.thRow}>
                           <th style={styles.th}>Code Site</th><th style={styles.th}>Nom Site</th><th style={styles.th}>Wilaya</th><th style={styles.th}>Commune</th><th style={styles.th}>Statut</th>
                         </tr>
@@ -860,18 +860,20 @@ export default function EngineerDashboard() {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   )
                 ) : (
-                  archivedTickets.length === 0 ? (
+                    archivedTickets.length === 0 ? (
                     <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>
                       <IconArchive style={{ width: 32, height: 32, color: 'var(--text-muted2)', opacity: 0.3, margin: '0 auto 12px' }} />
                       <div style={{ fontWeight: 600 }}>Aucun ticket archivé</div>
                     </div>
                   ) : (
+                    <div style={{ maxHeight: 'calc(100vh - 300px)', overflowY: 'auto' }}>
                     <table style={styles.table}>
-                      <thead>
+                      <thead style={{ position: 'sticky', top: 0, zIndex: 1, backgroundColor: 'var(--bg-card)' }}>
                         <tr style={styles.thRow}>
-                          <th style={styles.th}>N° Ticket</th><th style={styles.th}>Client</th><th style={styles.th}>Site</th><th style={styles.th}>Priorité</th><th style={styles.th}>Archivé le</th>
+                          <th style={styles.th}>N° Ticket</th><th style={styles.th}>Titre</th><th style={styles.th}>Site</th><th style={styles.th}>Priorité</th><th style={styles.th}>Statut</th><th style={styles.th}>Réclamations</th><th style={styles.th}>Résolu le</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -880,18 +882,25 @@ export default function EngineerDashboard() {
                             onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
                             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}>
                             <td style={{ ...styles.td, fontWeight: 600 }}>{t.numero_ticket}</td>
-                            <td style={styles.td}>{t.nom_complet_client || t.nom_client}</td>
-                            <td style={styles.td}>{t.site?.nom || '-'}</td>
+                            <td style={styles.td}>{t.titre || '-'}</td>
+                            <td style={styles.td}>{t.site_display || t.site?.nom || '-'}</td>
                             <td style={styles.td}>
                               <span style={{ padding: '3px 10px', borderRadius: 4, fontWeight: 700, fontSize: 11, backgroundColor: (COLORS.priorities[t.priorite?.toUpperCase()] || COLORS.priorities.NORMALE).bg, color: (COLORS.priorities[t.priorite?.toUpperCase()] || COLORS.priorities.NORMALE).text }}>
                                 {{ basse:'Basse', normale:'Normal', haute:'Haute', critique:'Critique' }[t.priorite?.toLowerCase()] || t.priorite}
                               </span>
                             </td>
-                            <td style={{ ...styles.td, color: 'var(--text-muted)' }}>{t.archived_at ? new Date(t.archived_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</td>
+                            <td style={styles.td}>
+                              <span style={{ padding: '3px 10px', borderRadius: 4, fontWeight: 700, fontSize: 11, backgroundColor: '#F1F5F9', color: '#64748B' }}>
+                                {t.statut || '-'}
+                              </span>
+                            </td>
+                            <td style={{ ...styles.td, textAlign: 'center' }}>{t.reclamations_count ?? t.nombre_reclamations ?? '-'}</td>
+                            <td style={{ ...styles.td, color: 'var(--text-muted)' }}>{t.resolu_le ? new Date(t.resolu_le).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   )
                 )}
               </div>
@@ -987,27 +996,29 @@ export default function EngineerDashboard() {
                       const prio = COLORS.priorities[groupe.priorite?.toUpperCase()] || COLORS.priorities.NORMALE;
                       const statutKey = getStatutKey(groupe.statut);
                       const stat = COLORS.status[statutKey] || COLORS.status.OUVERT;
+                      const isResolu = (groupe.statut || '').toLowerCase() === 'resolu';
 
                       return (
                         <div
                           key={groupe.id}
                           onClick={() => setSelectedGroupe(groupe)}
                           style={{
-                            backgroundColor: '#FFFFFF',
+                            backgroundColor: isResolu ? '#F9FAFB' : '#FFFFFF',
                             borderRadius: '12px',
                             boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
                             border: `1px solid ${COLORS.border}`,
-                            borderLeft: `4px solid ${prio.side}`,
+                            borderLeft: `4px solid ${isResolu ? '#D1D5DB' : prio.side}`,
                             padding: '0',
                             cursor: 'pointer',
                             transition: 'all 0.2s ease',
                             overflow: 'hidden',
+                            opacity: isResolu ? 0.6 : 1,
                           }}
-                          onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.1)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)'; e.currentTarget.style.transform = 'none'; }}
+                          onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.1)'; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.opacity = '1'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.opacity = isResolu ? '0.6' : '1'; }}
                         >
                           {/* Top color band */}
-                          <div style={{ height: '3px', background: `linear-gradient(90deg, ${prio.side}, ${prio.side}44)` }} />
+                          <div style={{ height: '3px', background: isResolu ? '#D1D5DB' : `linear-gradient(90deg, ${prio.side}, ${prio.side}44)` }} />
 
                           <div style={{ padding: '14px 18px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                             {/* Header: ticket number + badges */}

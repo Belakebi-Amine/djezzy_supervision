@@ -10,6 +10,7 @@ class ActivityLog(models.Model):
         ('login', 'Connexion'),
         ('logout', 'Déconnexion'),
         ('login_failed', 'Connexion échouée'),
+        ('login_blocked', 'Connexion bloquée'),
         ('create_ticket', 'Création réclamation'),
         ('update_ticket', 'Modification réclamation'),
         ('archive_ticket', 'Archivage réclamation'),

@@ -5,8 +5,9 @@ django-cors-headers==4.9.0
 django-crispy-forms==2.6
 djangorestframework==3.17.1
 djangorestframework-simplejwt==5.5.1
-openai==2.45.0
+mistralai==2.7.1
 pillow==12.1.0
+psutil==7.2.2
 psycopg2-binary==2.9.11
 pytest-django==4.12.0
 python-decouple==3.8

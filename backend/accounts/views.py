@@ -44,7 +44,13 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             ActivityLog.log('login', user=self._get_user_from_token(code), ip=self._get_ip(request))
         else:
             from audit_log.models import ActivityLog
-            ActivityLog.log('login_failed', details={'email': request.data.get('email', '')}, ip=self._get_ip(request))
+            detail = ''
+            if isinstance(response.data, dict):
+                detail = str(response.data.get('detail', ''))
+            if 'désactivé' in detail.lower() or 'archivé' in detail.lower():
+                ActivityLog.log('login_blocked', details={'email': request.data.get('email', ''), 'reason': detail}, ip=self._get_ip(request))
+            else:
+                ActivityLog.log('login_failed', details={'email': request.data.get('email', '')}, ip=self._get_ip(request))
         return response
 
     def _get_user_from_token(self, code):
@@ -94,12 +100,24 @@ def me_view(request):
 @permission_classes([IsAuthenticated])
 def change_password_view(request):
     """
-    Changes the user's password. Requires the current password
-    for verification before setting the new one.
+    Changes the user's password. When must_change_password is True
+    (e.g. after a reset), the old password check is skipped.
     """
+    user = request.user
+    nouveau_mot_de_passe = request.data.get('nouveau_mot_de_passe', '')
+
+    if not nouveau_mot_de_passe:
+        return Response({'nouveau_mot_de_passe': ['Ce champ est obligatoire.']}, status=status.HTTP_400_BAD_REQUEST)
+
+    if user.must_change_password:
+        user.set_password(nouveau_mot_de_passe)
+        user.must_change_password = False
+        user.save(update_fields=['password', 'must_change_password'])
+        return Response({'message': 'Mot de passe modifié avec succès'})
+
     serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
     if serializer.is_valid():
-        success = request.user.modifierMotDePasse(
+        success = user.modifierMotDePasse(
             serializer.validated_data['ancien_mot_de_passe'],
             serializer.validated_data['nouveau_mot_de_passe']
         )
@@ -473,5 +491,60 @@ def reinitialiser_mot_de_passe_view(request):
         'message': f'Mot de passe réinitialisé pour {user.code_user}',
         'nouveau_mot_de_passe': temp_password,
     })
+
+
+# ── Public: Forgot Password ────────────────────────────────
+
+@api_view(['POST'])
+@permission_classes([])
+def forgot_password_view(request):
+    """
+    Public endpoint for password reset.
+    Generates a random temporary password, sends it via email,
+    and marks the user's account as must_change_password.
+    Always returns success to prevent email enumeration.
+    """
+    from django.core.mail import send_mail
+    from django.conf import settings
+
+    email = request.data.get('email', '').strip().lower()
+    if not email:
+        return Response({'message': 'Si cet email existe, un nouveau mot de passe vous a été envoyé.'})
+
+    try:
+        user = CustomUser.objects.get(email=email, is_active=True, is_archived=False)
+    except CustomUser.DoesNotExist:
+        return Response({'message': 'Si cet email existe, un nouveau mot de passe vous a été envoyé.'})
+
+    temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
+    user.set_password(temp_password)
+    user.must_change_password = True
+    user.save(update_fields=['password', 'must_change_password'])
+
+    subject = 'Djezzy Hub - Réinitialisation de votre mot de passe'
+    message = (
+        f'Bonjour {user.get_full_name() or user.code_user},\n\n'
+        f'Votre mot de passe a été réinitialisé par l\'administrateur.\n\n'
+        f'Votre nouveau mot de passe temporaire est :\n\n'
+        f'    {temp_password}\n\n'
+        f'Connectez-vous avec ce mot de passe et changez-le immédiatement.\n\n'
+        f'Cordialement,\nL\'équipe Djezzy Hub'
+    )
+    try:
+        send_mail(
+            subject,
+            message,
+            settings.DEFAULT_FROM_EMAIL,
+            [user.email],
+            fail_silently=True,
+        )
+    except Exception:
+        pass
+
+    from audit_log.models import ActivityLog
+    ip = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or request.META.get('REMOTE_ADDR', '')
+    ActivityLog.log('reset_password', user=user, details={'code': user.code_user, 'via': 'forgot_password'}, ip=ip)
+
+    return Response({'message': 'Si cet email existe, un nouveau mot de passe vous a été envoyé.'})
 
 

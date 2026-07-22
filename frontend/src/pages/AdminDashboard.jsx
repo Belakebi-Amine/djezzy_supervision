@@ -17,15 +17,14 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart, Bar, AreaChart, Area, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from 'recharts';
+import { BarChart, Bar, AreaChart, Area, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, RadialBarChart, RadialBar, PieChart, Pie, Cell } from 'recharts';
 import DOMPurify from 'dompurify';
 import html2pdf from 'html2pdf.js';
 import { spawnParticles } from '../hooks/useAnimations';
 import { useNotification } from '../context/NotificationContext';
 import {
   getDashboardStats, getDashboardReporting,
-  getArchivedRapports, restoreRapportIA,
-  getSystemHealth, getAuditLogs, getAuditStats,
+  getSystemHealth, getAuditLogs, getAuditStats, getServerLoad,
 } from '../api/dashboard';
 import {   getSites, getUsers, getUserStats, createUser, getTickets, createTicket, updateTicket, createSite, updateSiteStatus, archiverSite, archiveUser, toggleActiveUser, updateUser, restoreUser, getTokenRole, getArchivedTickets, archiverReclamation, getArchivedSites, restoreSite, getKeywords, getAllSites } from '../api/tickets';
 import DetailModal from '../components/DetailModal';
@@ -184,7 +183,8 @@ export default function AdminDashboard() {
   // ─── Navigation & view state ───
   const [currentView, setCurrentView] = useState('dashboard');
   const [period, setPeriod] = useState(30); // reporting period in days
-  const periodLabel = period >= 3650 ? 'TOUT' : `${period} JOURS`;
+  const [selectedYear, setSelectedYear] = useState(null); // null = current behavior, year number = filter by year
+  const periodLabel = selectedYear ? `${selectedYear}` : `${period} JOURS`;
 
   // ─── Core data state ───
   const [stats, setStats] = useState(null);
@@ -219,9 +219,8 @@ export default function AdminDashboard() {
   const [selectedRapport, setSelectedRapport] = useState(null);
 
   // Archives state
-  const [archiveTab, setArchiveTab] = useState('tickets'); // 'tickets' | 'rapports' | 'users' | 'sites'
+  const [archiveTab, setArchiveTab] = useState('users');
   const [, setArchivedTickets] = useState([]);
-  const [archivedRapports, setArchivedRapports] = useState([]);
   const [archivedSites, setArchivedSites] = useState([]);
   const [loadingArchives, setLoadingArchives] = useState(false);
 
@@ -237,6 +236,7 @@ export default function AdminDashboard() {
   const [auditStats, setAuditStats] = useState(null);
   const [auditPage, setAuditPage] = useState(1);
   const [auditFilter, setAuditFilter] = useState({ action: '', search: '' });
+  const [serverLoad, setServerLoad] = useState(null);
 
   // ─── Filter visibility and filter values ───
   const [showSiteFilters, setShowSiteFilters] = useState(false);
@@ -262,10 +262,10 @@ export default function AdminDashboard() {
   // Fetches dashboard stats and reporting data in parallel based on selected period
   const fetchStats = useCallback(async () => {
     try {
-      const [a, b] = await Promise.all([getDashboardStats(period), getDashboardReporting(period)]);
+      const [a, b] = await Promise.all([getDashboardStats(period, selectedYear), getDashboardReporting(period, selectedYear)]);
       setStats(a); setReporting(b);
     } catch { setStats(null); setReporting(null); }
-  }, [period]);
+  }, [period, selectedYear]);
 
   const fetchSites = useCallback(async () => {
     try {
@@ -305,14 +305,17 @@ export default function AdminDashboard() {
     } catch { setAuditLogs([]); setAuditLogTotal(0); }
   }, [auditPage, auditFilter]);
   const fetchAuditStats = useCallback(async () => {
-    try { const d = await getAuditStats(period); setAuditStats(d); } catch { setAuditStats(null); }
-  }, [period]);
+    try { const d = await getAuditStats(period, selectedYear); setAuditStats(d); } catch { setAuditStats(null); }
+  }, [period, selectedYear]);
+  const fetchServerLoad = useCallback(async () => {
+    try { const d = await getServerLoad(); setServerLoad(d); } catch { setServerLoad(null); }
+  }, []);
 
   // ─── Initial data load on mount and when period changes ───
   useEffect(() => {
-    fetchStats(); fetchSites(); fetchUsers(); fetchTickets(); fetchUserStats(); fetchSystemHealth(); fetchAuditLogs(); fetchAuditStats();
+    fetchStats(); fetchSites(); fetchUsers(); fetchTickets(); fetchUserStats(); fetchSystemHealth(); fetchAuditLogs(); fetchAuditStats(); fetchServerLoad();
     getKeywords().then(setTicketKeywordsData).catch(() => setTicketKeywordsData({}));
-  }, [fetchStats, fetchSites, fetchUsers, fetchTickets, fetchUserStats, fetchSystemHealth, fetchAuditLogs, fetchAuditStats]);
+  }, [fetchStats, fetchSites, fetchUsers, fetchTickets, fetchUserStats, fetchSystemHealth, fetchAuditLogs, fetchAuditStats, fetchServerLoad]);
 
   // ─── Auto-refresh every 5 seconds ───
   useEffect(() => {
@@ -321,24 +324,23 @@ export default function AdminDashboard() {
     }, 5000);
     // Refresh system health every 10s
     const healthInterval = setInterval(() => {
-      fetchSystemHealth();
+      fetchSystemHealth(); fetchServerLoad();
     }, 10000);
     // Refresh audit data every 30s
     const auditInterval = setInterval(() => {
       fetchAuditLogs(); fetchAuditStats(); fetchUserStats();
     }, 30000);
     return () => { clearInterval(interval); clearInterval(healthInterval); clearInterval(auditInterval); };
-  }, [fetchStats, fetchSites, fetchTickets, fetchSystemHealth, fetchAuditLogs, fetchAuditStats, fetchUserStats]);
+  }, [fetchStats, fetchSites, fetchTickets, fetchSystemHealth, fetchServerLoad, fetchAuditLogs, fetchAuditStats, fetchUserStats]);
 
   // Load archived data when archive view is active
   const fetchArchivedData = useCallback(async () => {
     setLoadingArchives(true);
     try {
-      const [t, r, s] = await Promise.all([getArchivedTickets(), getArchivedRapports(), getArchivedSites()]);
+      const [t, s] = await Promise.all([getArchivedTickets(), getArchivedSites()]);
       setArchivedTickets(Array.isArray(t) ? t : []);
-      setArchivedRapports(Array.isArray(r) ? r : []);
       setArchivedSites(Array.isArray(s) ? s : []);
-    } catch { setArchivedTickets([]); setArchivedRapports([]); setArchivedSites([]); }
+    } catch { setArchivedTickets([]); setArchivedSites([]); }
     finally { setLoadingArchives(false); }
   }, []);
 
@@ -390,14 +392,6 @@ export default function AdminDashboard() {
     } catch (err) {
       addNotification('Erreur lors de la génération du PDF.', 'error');
     }
-  }, [addNotification]);
-
-  const handleRestoreRapport = useCallback(async (r) => {
-    try {
-      await restoreRapportIA(r.id);
-      setArchivedRapports((prev) => prev.filter((x) => x.id !== r.id));
-      addNotification('Rapport restauré', 'success');
-    } catch { addNotification('Erreur lors de la restauration.', 'error'); }
   }, [addNotification]);
 
   // ─── Derived / computed data ───
@@ -753,8 +747,8 @@ export default function AdminDashboard() {
         {[
           { label: 'Uptime', value: systemHealth?.uptime ?? '—', sub: 'depuis démarrage', color: '#10B981' },
           { label: 'Latence API', value: systemHealth?.db_latency_ms != null ? `${systemHealth.db_latency_ms}ms` : '—', sub: 'réponse base', color: (systemHealth?.db_latency_ms ?? 0) < 100 ? '#10B981' : (systemHealth?.db_latency_ms ?? 0) < 500 ? '#F59E0B' : '#DC2626' },
-          { label: 'Utilisateurs', value: systemHealth?.total_users ?? '—', sub: `${systemHealth?.active_users_count ?? 0} actifs`, color: '#3B82F6' },
-          { label: 'Taille Base', value: systemHealth?.db_size ?? '—', sub: `${systemHealth?.table_count ?? 0} tables`, color: '#8B5CF6' },
+          { label: 'Users Actifs', value: systemHealth?.active_users_count ?? '—', sub: 'comptes actifs', color: '#10B981' },
+          { label: 'Users Inactifs', value: systemHealth?.inactive_users_count ?? '—', sub: 'comptes inactifs', color: '#DC2626' },
         ].map((kpi, i) => (
           <div key={i} className="fade-in" style={{ animationDelay: `${i * 0.04}s`, background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: '16px 18px', borderLeft: `4px solid ${kpi.color}`, boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
             <div style={{ marginBottom: 6 }}>
@@ -766,77 +760,7 @@ export default function AdminDashboard() {
         ))}
       </div>
 
-      {/* ── ROW 1 : RÉSEAU & TICKETS ── */}
-      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#E8401A', marginRight: 6, verticalAlign: 'middle' }} />RÉSEAU & TICKETS</span></div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
-        {[
-          { label: 'Sites UP', value: systemHealth?.reseau?.up ?? '—', sub: `/ ${systemHealth?.reseau?.total ?? 0} total`, color: '#10B981' },
-          { label: 'Sites DOWN', value: systemHealth?.reseau?.down ?? 0, sub: systemHealth?.reseau?.down > 0 ? 'maintenance requise' : 'aucun', color: '#DC2626' },
-          { label: 'Tickets Ouverts', value: systemHealth?.tickets?.ouverts ?? '—', sub: `sur ${systemHealth?.tickets?.total ?? 0} total`, color: '#F59E0B' },
-          { label: 'Taux Résolution', value: systemHealth?.tickets?.taux_resolution ?? '—', sub: `${systemHealth?.tickets?.resolus ?? 0} résolus`, color: '#10B981' },
-        ].map((kpi, i) => (
-          <div key={i} className="fade-in" style={{ animationDelay: `${i * 0.04}s`, background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: '16px 18px', borderLeft: `4px solid ${kpi.color}`, boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-            <span style={{ fontSize: 10, color: 'var(--text-muted3)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: 0.3 }}>{kpi.label}</span>
-            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2, marginTop: 6 }}>{kpi.value}</div>
-            <div style={{ fontSize: 10, color: kpi.color, marginTop: 4, fontWeight: 500 }}>{kpi.sub}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* ── ROW 2 : Performance Charts ── */}
-      <div style={styles.chartsRow}>
-        <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
-          <div style={styles.ch}><span style={styles.cht}>Activité Call Center</span><InfoPopup text="Tickets créés vs résolus par agent call center." /></div>
-          <div style={styles.cb}>
-            {agentsCC.length === 0 ? <div style={styles.empty}>Aucun agent</div>
-            : <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={agentsCC} margin={{ top: 5, right: 10, left: -5, bottom: 5 }} barSize={24}>
-                  <CartesianGrid stroke="#f5f5f5" vertical={false} />
-                  <XAxis dataKey="code" tick={{ fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} />
-                  <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} width={25} />
-                  <RechartsTooltip content={({ active, payload }) => {
-                    if (!active || !payload?.length) return null;
-                    const d = payload[0].payload;
-                    return <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 6, padding: '8px 14px', fontSize: 12 }}>
-                      <p style={{ margin: 0, fontWeight: 700 }}>{d.nom}</p>
-                      <p style={{ margin: '2px 0', color: '#E8401A' }}>Créés: {d.tickets_crees}</p>
-                      <p style={{ margin: '2px 0', color: '#10B981' }}>Résolus: {d.resolus}</p>
-                    </div>;
-                  }} />
-                  <Bar dataKey="tickets_crees" radius={[4, 4, 0, 0]} fill="#E8401A" name="Créés" />
-                  <Bar dataKey="resolus" radius={[4, 4, 0, 0]} fill="#10B981" name="Résolus" />
-                </BarChart>
-              </ResponsiveContainer>}
-          </div>
-        </div>
-        <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
-          <div style={styles.ch}><span style={styles.cht}>Performance Ingénieurs</span><InfoPopup text="Tickets assignés vs résolus par ingénieur réseau." /></div>
-          <div style={styles.cb}>
-            {employes.length === 0 ? <div style={styles.empty}>Aucun ingénieur</div>
-            : <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={employes} margin={{ top: 5, right: 10, left: -5, bottom: 5 }} barSize={24}>
-                  <CartesianGrid stroke="#f5f5f5" vertical={false} />
-                  <XAxis dataKey="code" tick={{ fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} />
-                  <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} allowDecimals={false} width={25} />
-                  <RechartsTooltip content={({ active, payload }) => {
-                    if (!active || !payload?.length) return null;
-                    const d = payload[0].payload;
-                    return <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 6, padding: '8px 14px', fontSize: 12 }}>
-                      <p style={{ margin: 0, fontWeight: 700 }}>{d.nom}</p>
-                      <p style={{ margin: '2px 0', color: '#2563EB' }}>Assignés: {d.total_assignes}</p>
-                      <p style={{ margin: '2px 0', color: '#10B981' }}>Résolus: {d.resolus}</p>
-                      <p style={{ margin: '2px 0', color: '#F59E0B' }}>Taux: {d.taux_resolution}%</p>
-                    </div>;
-                  }} />
-                  <Bar dataKey="total_assignes" radius={[4, 4, 0, 0]} fill="#2563EB" name="Assignés" />
-                  <Bar dataKey="resolus" radius={[4, 4, 0, 0]} fill="#10B981" name="Résolus" />
-                </BarChart>
-              </ResponsiveContainer>}
-          </div>
-        </div>
-      </div>
-
-      {/* ── ROW 3 : Activité Système ── */}
+      {/* ── ROW 2 : Activité Système ── */}
       {auditStats?.daily_actions && (
         <>
           <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#8B5CF6', marginRight: 6, verticalAlign: 'middle' }} />ACTIVITÉ SYSTÈME ({periodLabel})</span></div>
@@ -873,7 +797,7 @@ export default function AdminDashboard() {
             </div>
             {/* Top active users — horizontal bar chart */}
             <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
-              <div style={styles.ch}><span style={styles.cht}>Utilisateurs Actifs ({period >= 3650 ? 'tout' : `${period}j`})</span></div>
+              <div style={styles.ch}><span style={styles.cht}>Utilisateurs Actifs ({selectedYear ? `${selectedYear}` : `${period}j`})</span></div>
               <div style={styles.cb}>
                 {(auditStats?.top_users ?? []).length === 0 ? <div style={styles.empty}>Aucune donnée</div>
                 : <ResponsiveContainer width="100%" height="100%">
@@ -903,6 +827,45 @@ export default function AdminDashboard() {
           </div>
         </>
       )}
+
+      {/* ── ROW 3 : État du Serveur (gauges) ── */}
+      {serverLoad && (
+        <>
+          <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#0EA5E9', marginRight: 6, verticalAlign: 'middle', animation: 'pulse 2s infinite' }} />ÉTAT DU SERVEUR</span></div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 20 }}>
+            {[
+              { label: 'CPU', value: serverLoad.cpu_percent, unit: '%', color: serverLoad.cpu_percent < 70 ? '#10B981' : serverLoad.cpu_percent < 90 ? '#F59E0B' : '#DC2626' },
+              { label: 'MÉMOIRE', value: serverLoad.memory_percent, unit: '%', sub: `${serverLoad.memory_used_gb} / ${serverLoad.memory_total_gb} GB`, color: serverLoad.memory_percent < 70 ? '#10B981' : serverLoad.memory_percent < 90 ? '#F59E0B' : '#DC2626' },
+              { label: 'DISQUE', value: serverLoad.disk_percent, unit: '%', sub: `${serverLoad.disk_used_gb} / ${serverLoad.disk_total_gb} GB`, color: serverLoad.disk_percent < 70 ? '#10B981' : serverLoad.disk_percent < 90 ? '#F59E0B' : '#DC2626' },
+            ].map((gauge, i) => (
+              <div key={i} className="fade-in" style={{ background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: '16px 18px', textAlign: 'center', animationDelay: `${i * 0.04}s` }}>
+                <div style={{ fontSize: 10, textTransform: 'uppercase', fontWeight: 600, color: 'var(--text-muted3)', letterSpacing: 0.3, marginBottom: 8 }}>{gauge.label}</div>
+                <div style={{ position: 'relative', width: 120, height: 120, margin: '0 auto' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={[{ value: gauge.value }, { value: 100 - gauge.value }]}
+                        cx="50%" cy="50%"
+                        innerRadius={40} outerRadius={52}
+                        startAngle={90} endAngle={-270}
+                        dataKey="value"
+                        stroke="none"
+                      >
+                        <Cell fill={gauge.color} />
+                        <Cell fill="var(--border-color)" />
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontSize: 22, fontWeight: 700, color: gauge.color }}>
+                    {gauge.value}{gauge.unit}
+                  </div>
+                </div>
+                {gauge.sub && <div style={{ fontSize: 10, color: 'var(--text-muted2)', marginTop: 6 }}>{gauge.sub}</div>}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </>
   );
 
@@ -924,12 +887,12 @@ export default function AdminDashboard() {
       {auditStats && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 20 }}>
           <div className="fade-in" style={{ background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: '16px 18px', borderLeft: '4px solid #8B5CF6' }}>
-            <span style={{ fontSize: 10, color: 'var(--text-muted3)', textTransform: 'uppercase', fontWeight: 600 }}>Actions totales ({period >= 3650 ? 'tout' : `${period}j`})</span>
+            <span style={{ fontSize: 10, color: 'var(--text-muted3)', textTransform: 'uppercase', fontWeight: 600 }}>Actions totales ({selectedYear ? `${selectedYear}` : `${period}j`})</span>
             <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', marginTop: 6 }}>{auditStats.daily_actions?.reduce((a, d) => a + d.count, 0) ?? 0}</div>
           </div>
-          <div className="fade-in" style={{ background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: '16px 18px', borderLeft: '4px solid #10B981' }}>
-            <span style={{ fontSize: 10, color: 'var(--text-muted3)', textTransform: 'uppercase', fontWeight: 600 }}>Utilisateurs actifs</span>
-            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', marginTop: 6 }}>{auditStats.top_users?.length ?? 0}</div>
+          <div className="fade-in" style={{ background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: '16px 18px', borderLeft: '4px solid #DC2626' }}>
+            <span style={{ fontSize: 10, color: 'var(--text-muted3)', textTransform: 'uppercase', fontWeight: 600 }}>Échecs de connexion</span>
+            <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', marginTop: 6 }}>{auditStats.login_failed_count ?? 0}</div>
           </div>
           <div className="fade-in" style={{ background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: '16px 18px', borderLeft: '4px solid #DC2626' }}>
             <span style={{ fontSize: 10, color: 'var(--text-muted3)', textTransform: 'uppercase', fontWeight: 600 }}>Types d'actions</span>
@@ -959,14 +922,14 @@ export default function AdminDashboard() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
             <thead>
               <tr>
-                {['HEURE', 'UTILISATEUR', 'RÔLE', 'ACTION', 'DÉTAILS', 'IP'].map((h) => (
+                {['HEURE', 'UTILISATEUR', 'RÔLE', 'ACTION', 'DÉTAILS'].map((h) => (
                   <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', borderBottom: `1px solid ${COLORS.border}`, textTransform: 'uppercase', letterSpacing: 0.5, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {auditLogs.length === 0 ? (
-                <tr><td colSpan="6" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>Aucun journal trouvé.</td></tr>
+                <tr><td colSpan="5" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted2)', fontSize: 12 }}>Aucun journal trouvé.</td></tr>
               ) : auditLogs.map((log) => {
                 const color = ACTION_COLORS[log.action] || '#6B7280';
                 return (
@@ -998,7 +961,6 @@ export default function AdminDashboard() {
                         ? Object.entries(log.details).map(([k, v]) => `${k}: ${v}`).join(' · ')
                         : '—'}
                     </td>
-                    <td style={{ padding: '10px 14px', color: 'var(--text-muted2)', fontSize: 10, fontFamily: 'monospace' }}>{log.ip_address || '—'}</td>
                   </tr>
                 );
               })}
@@ -1160,7 +1122,7 @@ export default function AdminDashboard() {
           <button onClick={() => setShowUserForm(true)} style={styles.btnNew}><IconPlus /> Nouveau User</button>
         </div>
       </div>
-      <div style={{ overflowX: 'auto' }}>
+      <div style={{ overflowX: 'auto', maxHeight: 480, overflowY: 'auto' }}>
         <table style={styles.table}>
           <thead>
             <tr style={styles.thRow}>
@@ -1228,7 +1190,6 @@ export default function AdminDashboard() {
     const tabs = [
       { key: 'users', label: 'Utilisateurs', icon: <IconUsers style={{ width: 13, height: 13 }} />, count: users.filter(u => u.is_archived).length },
       { key: 'sites', label: 'Sites', icon: <IconSite style={{ width: 13, height: 13 }} />, count: archivedSites.length },
-      { key: 'rapports', label: 'Rapports IA', icon: <IconReport style={{ width: 13, height: 13 }} />, count: archivedRapports.length },
     ];
     return (
     <div>
@@ -1314,31 +1275,6 @@ export default function AdminDashboard() {
               </tbody>
             </table>
           )}
-          {archiveTab === 'rapports' && (
-            <table style={styles.table}>
-              <thead><tr style={styles.thRow}>
-                <th style={styles.th}>Titre</th><th style={styles.th}>Auteur</th><th style={styles.th}>Date création</th><th style={styles.th}>Archivé le</th><th style={{ ...styles.th, textAlign: 'center' }}>Action</th>
-              </tr></thead>
-              <tbody>
-                {archivedRapports.length === 0 ? (
-                  <tr><td colSpan={5} style={styles.emptyCell}>Aucun rapport archivé</td></tr>
-                ) : archivedRapports.map((r) => (
-                  <tr key={r.id} style={styles.tr}
-                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
-                    onClick={() => { setSelectedRapport(r); }}>
-                    <td style={{ ...styles.td, fontWeight: 600, cursor: 'pointer' }}>{r.titre || 'Sans titre'}</td>
-                    <td style={styles.td}>{r.cree_par?.nom_user || '—'}</td>
-                    <td style={styles.td}>{new Date(r.created_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                    <td style={styles.td}>{r.archived_at ? new Date(r.archived_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
-                    <td style={{ ...styles.td, textAlign: 'center' }}>
-                      <button onClick={(e) => { e.stopPropagation(); handleRestoreRapport(r); }}
-                        style={{ background: '#05966918', border: '1px solid #05966933', borderRadius: 4, cursor: 'pointer', padding: '4px 10px', color: '#059669', fontSize: 10, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>Restaurer</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           )}
         </div>
       </div>
@@ -1926,9 +1862,15 @@ export default function AdminDashboard() {
             {/* Period toggle (only visible on dashboard view) */}
             {currentView === 'dashboard' && (
               <div style={styles.toggle}>
-                {[{ l: '7j', v: 7 }, { l: '30j', v: 30 }, { l: '60j', v: 60 }, { l: '90j', v: 90 }, { l: 'Tout', v: 3650 }].map((p) => (
-                  <button key={p.v} onClick={() => setPeriod(p.v)} style={{ ...styles.togBtn, ...(period === p.v ? styles.togOn : {}) }}>{p.l}</button>
+                {[{ l: '7j', v: 7 }, { l: '30j', v: 30 }, { l: '60j', v: 60 }, { l: '90j', v: 90 }].map((p) => (
+                  <button key={p.v} onClick={() => { setPeriod(p.v); setSelectedYear(null); }} style={{ ...styles.togBtn, ...(period === p.v && !selectedYear ? styles.togOn : {}) }}>{p.l}</button>
                 ))}
+                <select value={selectedYear || ''} onChange={(e) => { const v = e.target.value; if (v) { setSelectedYear(parseInt(v)); } else { setSelectedYear(null); } }}
+                  style={{ ...styles.togBtn, padding: '4px 8px', background: selectedYear ? 'var(--bg-card)' : 'transparent', color: selectedYear ? 'var(--text-secondary)' : 'var(--text-muted3)', boxShadow: selectedYear ? 'var(--shadow-sm)' : 'none', border: 'none', borderRadius: 4, fontFamily: 'inherit', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>
+                  <option value="">Année</option>
+                  <option value="2026">2026</option>
+                  <option value="2025">2025</option>
+                </select>
               </div>
             )}
             <span style={styles.date}>{now()}</span>
@@ -1994,7 +1936,7 @@ const styles = {
   filterSelect: { minWidth: 140, height: 31, padding: '0 10px', color: COLORS.textDark, border: `1px solid ${COLORS.border}`, borderRadius: 5, outline: 'none', fontFamily: 'inherit', fontSize: 12, backgroundColor: 'var(--bg-input)' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'left', minWidth: 1000 },
   thRow: { backgroundColor: 'var(--bg-th)' },
-  th: { height: 30, padding: '0 14px', fontWeight: 500, color: COLORS.textMuted, fontSize: 7, textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: `1px solid ${COLORS.border}` },
+  th: { height: 30, padding: '0 14px', fontWeight: 500, color: COLORS.textMuted, fontSize: 7, textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: `1px solid ${COLORS.border}`, position: 'sticky', top: 0, zIndex: 1, background: 'var(--bg-card)' },
   tr: { borderBottom: `1px solid ${COLORS.border}`, transition: 'background 0.1s' },
   td: { height: 44, padding: '0 14px', color: COLORS.textDark, verticalAlign: 'middle', whiteSpace: 'nowrap' },
   emptyCell: { textAlign: 'center', padding: 30, color: COLORS.textMuted },

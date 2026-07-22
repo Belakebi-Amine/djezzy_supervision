@@ -2,8 +2,8 @@
 Auto-archive management command.
 
 Rules:
-- Reclamations: archived 1 month after resolution (resolu_le)
-- GroupeTickets: archived 1 month after resolution (resolu_le)
+- Reclamations: archived 1 month after resolution (statut='resolu', resolu_le)
+- GroupeTickets: archived 1 month after resolution (statut='resolu', resolu_le)
 - Rapports IA: archived 3 months after creation (created_at)
 
 Usage:
@@ -30,12 +30,13 @@ class Command(BaseCommand):
         now = timezone.now()
         archived_count = {'reclamations': 0, 'groupes': 0, 'rapports': 0}
 
-        # -- 1. Reclamations: archive if resolved > 1 month ago --
         from reclamations.models import Reclamation, GroupeTicket
         one_month_ago = now - timedelta(days=30)
+
+        # -- 1. Reclamations: archive if resolved > 1 month ago --
         old_resolved = Reclamation.objects.filter(
             is_archived=False,
-            statut__in=['resolu', 'ferme'],
+            statut='resolu',
             resolu_le__isnull=False,
             resolu_le__lte=one_month_ago,
         )
@@ -47,10 +48,10 @@ class Command(BaseCommand):
             )
         archived_count['reclamations'] = count_r
 
-        # -- 2. GroupeTickets: archive if resolved/closed > 1 month ago --
+        # -- 2. GroupeTickets: archive if resolved > 1 month ago --
         old_groupes = GroupeTicket.objects.filter(
             is_archived=False,
-            statut__in=['resolu', 'ferme'],
+            statut='resolu',
             resolu_le__isnull=False,
             resolu_le__lte=one_month_ago,
         )

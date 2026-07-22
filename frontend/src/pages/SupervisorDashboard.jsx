@@ -128,6 +128,7 @@ export default function SupervisorDashboard() {
   /* ── Core view / navigation state ── */
   const [currentView, setCurrentView] = useState('dashboard');   // 'dashboard' | 'cartographie' | 'rapport-ia'
   const [period, setPeriod] = useState(30);                       // number of days for data range
+  const [selectedYear, setSelectedYear] = useState(null);        // null = current behavior, year number = filter by year
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -211,11 +212,11 @@ export default function SupervisorDashboard() {
   const fetchData = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [a, b] = await Promise.all([getDashboardStats(period), getDashboardReporting(period)]);
+      const [a, b] = await Promise.all([getDashboardStats(period, selectedYear), getDashboardReporting(period, selectedYear)]);
       setStats(a); setReporting(b);
     } catch (err) { setError(err.message || 'Erreur.'); setStats(null); setReporting(null); }
     finally { setLoading(false); }
-  }, [period]);
+  }, [period, selectedYear]);
 
   // Initial fetch whenever the selected period changes
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -225,17 +226,17 @@ export default function SupervisorDashboard() {
     const interval = setInterval(() => {
       const refresh = async () => {
         try {
-          const [a, b] = await Promise.all([getDashboardStats(period), getDashboardReporting(period)]);
+          const [a, b] = await Promise.all([getDashboardStats(period, selectedYear), getDashboardReporting(period, selectedYear)]);
           setStats(a); setReporting(b);
         } catch {}
       };
       refresh();
     }, 5000);
     return () => clearInterval(interval);
-  }, [period]);
+  }, [period, selectedYear]);
 
   // Clear the detail modal whenever the period changes
-  useEffect(() => { setDetail(null); }, [period]);
+  useEffect(() => { setDetail(null); }, [period, selectedYear]);
 
   // When switching to the rapport-ia view, load the saved reports list
   useEffect(() => { if (currentView === 'rapport-ia') { getRapportsIA().then(setSavedReports).catch(() => {}); } }, [currentView]);
@@ -668,11 +669,17 @@ export default function SupervisorDashboard() {
         <header style={S.head}>
           <h1 style={S.title}>{currentView === 'cartographie' ? 'Cartographie' : currentView === 'rapport-ia' ? 'Rapport IA' : currentView === 'performance' ? 'Performance Équipe' : currentView === 'archives' ? 'Archives' : "Vue d'ensemble"}</h1>
           <div style={S.right}>
-            {/* Period toggle buttons: 7 / 30 / 60 / 90 / All */}
+            {/* Period toggle buttons: 7 / 30 / 60 / 90 + Year dropdown */}
             <div style={S.toggle}>
-              {[{ l: '7j', v: 7 }, { l: '30j', v: 30 }, { l: '60j', v: 60 }, { l: '90j', v: 90 }, { l: 'Tout', v: 3650 }].map((p) => (
-                <button key={p.v} onClick={() => setPeriod(p.v)} style={{ ...S.togBtn, ...(period === p.v ? S.togOn : {}) }}>{p.l}</button>
+              {[{ l: '7j', v: 7 }, { l: '30j', v: 30 }, { l: '60j', v: 60 }, { l: '90j', v: 90 }].map((p) => (
+                <button key={p.v} onClick={() => { setPeriod(p.v); setSelectedYear(null); }} style={{ ...S.togBtn, ...(period === p.v && !selectedYear ? S.togOn : {}) }}>{p.l}</button>
               ))}
+              <select value={selectedYear || ''} onChange={(e) => { const v = e.target.value; if (v) { setSelectedYear(parseInt(v)); } else { setSelectedYear(null); } }}
+                style={{ ...S.togBtn, padding: '4px 8px', background: selectedYear ? 'var(--bg-card)' : 'transparent', color: selectedYear ? 'var(--text-secondary)' : 'var(--text-muted3)', boxShadow: selectedYear ? 'var(--shadow-sm)' : 'none', border: 'none', borderRadius: 4, fontFamily: 'inherit', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>
+                <option value="">Année</option>
+                <option value="2026">2026</option>
+                <option value="2025">2025</option>
+              </select>
             </div>
             <span style={S.date}>{now()}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8, paddingLeft: 12, borderLeft: '1px solid var(--border-color)' }}>

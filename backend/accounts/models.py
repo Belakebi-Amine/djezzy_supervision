@@ -51,6 +51,9 @@ class CustomUser(AbstractUser):
     # Separate from is_active: archived users disappear from the UI entirely
     is_archived = models.BooleanField(default=False, verbose_name='Archivé')
 
+    # When True, the user must change their password on next login
+    must_change_password = models.BooleanField(default=False, verbose_name='Doit changer le mot de passe')
+
     class Meta:
         verbose_name = 'Utilisateur'
         verbose_name_plural = 'Utilisateurs'

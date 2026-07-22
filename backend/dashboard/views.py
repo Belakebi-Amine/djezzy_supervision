@@ -60,13 +60,31 @@ def _format_duree(duree):
 @permission_classes([IsAuthenticated])
 def statistiques(request):
     # Parse the day range parameter (default: last 30 days)
-    jours_param = request.query_params.get('jours', '30')
-    try:
-        nb_jours = int(jours_param)
-    except ValueError:
-        nb_jours = 30
+    annee_param = request.query_params.get('annee')
+    if annee_param:
+        try:
+            annee = int(annee_param)
+            date_limite = timezone.datetime(annee, 1, 1, tzinfo=timezone.get_current_timezone())
+            date_fin = timezone.datetime(annee, 12, 31, 23, 59, 59, tzinfo=timezone.get_current_timezone())
+        except (ValueError, OverflowError):
+            annee = None
+            nb_jours = 30
+            date_limite = timezone.now() - timedelta(days=nb_jours)
+            date_fin = None
+    else:
+        annee = None
+        date_fin = None
+        jours_param = request.query_params.get('jours', '30')
+        try:
+            nb_jours = int(jours_param)
+        except ValueError:
+            nb_jours = 30
+        date_limite = timezone.now() - timedelta(days=nb_jours)
 
-    date_limite = timezone.now() - timedelta(days=nb_jours)
+    # Build date filter dict for reuse across all queries
+    base_date_filter = {'created_at__gte': date_limite}
+    if date_fin:
+        base_date_filter['created_at__lte'] = date_fin
 
     # ── Network site statistics ──
     stats_sites = SiteReseau.objects.aggregate(
@@ -82,7 +100,7 @@ def statistiques(request):
     disponibilite = round((sites_up / total_s) * 100, 1) if total_s > 0 else 100.0
 
     # ── Ticket statistics for the filtered period ──
-    stats_tickets = Reclamation.objects.filter(created_at__gte=date_limite).aggregate(
+    stats_tickets = Reclamation.objects.filter(**base_date_filter).aggregate(
         total=Count('id'),
         ouverts=Count('id', filter=Q(statut__iexact='ouvert')),
         resolus=Count('id', filter=Q(statut__iexact='resolu')),
@@ -103,7 +121,7 @@ def statistiques(request):
     # ── Average resolution delay ──
     # Calculates mean time between ticket creation and resolution
     delai_stats = Reclamation.objects.filter(
-        created_at__gte=date_limite, statut__in=['resolu', 'ferme'],
+        **base_date_filter, statut__in=['resolu', 'ferme'],
         resolu_le__isnull=False, resolu_le__gt=F('created_at'),
     ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
     delai_moyen_str = _format_duree(delai_stats['duree__avg'])
@@ -112,7 +130,7 @@ def statistiques(request):
     delai_par_prio = {}
     for prio in ['critique', 'haute', 'normale', 'basse']:
         d = Reclamation.objects.filter(
-            created_at__gte=date_limite, statut__in=['resolu', 'ferme'],
+            **base_date_filter, statut__in=['resolu', 'ferme'],
             resolu_le__isnull=False, resolu_le__gt=F('created_at'),
             priorite__iexact=prio,
         ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
@@ -121,7 +139,7 @@ def statistiques(request):
     # ── Ticket distribution by day of week ──
     # Helps identify peak days for staffing decisions
     tickets_par_jour = (
-        Reclamation.objects.filter(created_at__gte=date_limite)
+        Reclamation.objects.filter(**base_date_filter)
         .annotate(jour_semaine=ExtractWeekDay('created_at'))
         .values('jour_semaine')
         .annotate(total=Count('id'))
@@ -142,7 +160,7 @@ def statistiques(request):
     # ── Top impacted sites (most tickets in the period) ──
     top_sites_impactes = (
         SiteReseau.objects.annotate(
-            num_reclamations=Count('reclamations', filter=Q(reclamations__created_at__gte=date_limite))
+            num_reclamations=Count('reclamations', filter=Q(**{f'reclamations__{k}': v for k, v in base_date_filter.items()}))
         )
         .order_by('-num_reclamations')[:7]
         .values('id', 'codeSite', 'nom', 'num_reclamations')
@@ -151,7 +169,7 @@ def statistiques(request):
     # ── Daily ticket creation evolution (for line chart) ──
     try:
         evolution_tickets = list(
-            Reclamation.objects.filter(created_at__gte=date_limite)
+            Reclamation.objects.filter(**base_date_filter)
             .annotate(jour=TruncDay('created_at'))
             .values('jour')
             .annotate(total=Count('id'))
@@ -176,12 +194,12 @@ def statistiques(request):
     stats_employes = []
     ingenieurs = CustomUser.objects.filter(role=Role.INGENIEUR_RESEAUX, is_active=True)
     for ing in ingenieurs:
-        total_assignes = GroupeTicket.objects.filter(assigne_a=ing, created_at__gte=date_limite).count()
-        resolus = GroupeTicket.objects.filter(assigne_a=ing, statut='resolu', created_at__gte=date_limite).count()
-        ouverts = GroupeTicket.objects.filter(assigne_a=ing, statut='ouvert', created_at__gte=date_limite).count()
+        total_assignes = GroupeTicket.objects.filter(assigne_a=ing, **base_date_filter).count()
+        resolus = GroupeTicket.objects.filter(assigne_a=ing, statut='resolu', **base_date_filter).count()
+        ouverts = GroupeTicket.objects.filter(assigne_a=ing, statut='ouvert', **base_date_filter).count()
         delai_ing = GroupeTicket.objects.filter(
             assigne_a=ing, statut__in=['resolu', 'ferme'], resolu_le__isnull=False,
-            created_at__gte=date_limite, resolu_le__gt=F('created_at'),
+            **base_date_filter, resolu_le__gt=F('created_at'),
         ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
         stats_employes.append({
             'code': ing.code_user,
@@ -234,10 +252,10 @@ def statistiques(request):
             'code': a.code_user,
             'nom': a.get_full_name().strip() or a.code_user,
             'email': a.email,
-            'tickets_crees': Reclamation.objects.filter(cree_par=a, created_at__gte=date_limite).count(),
-            'ouverts': Reclamation.objects.filter(cree_par=a, statut='ouvert', created_at__gte=date_limite).count(),
-            'resolus': Reclamation.objects.filter(cree_par=a, statut='resolu', created_at__gte=date_limite).count(),
-            'fermes': Reclamation.objects.filter(cree_par=a, statut='ferme', created_at__gte=date_limite).count(),
+            'tickets_crees': Reclamation.objects.filter(cree_par=a, **base_date_filter).count(),
+            'ouverts': Reclamation.objects.filter(cree_par=a, statut='ouvert', **base_date_filter).count(),
+            'resolus': Reclamation.objects.filter(cree_par=a, statut='resolu', **base_date_filter).count(),
+            'fermes': Reclamation.objects.filter(cree_par=a, statut='ferme', **base_date_filter).count(),
         } for a in CustomUser.objects.filter(role=Role.AGENT_CALL_CENTER, is_active=True).order_by('code_user')],
     })
 
@@ -252,15 +270,31 @@ def statistiques(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def stats_reporting(request):
-    jours_param = request.query_params.get('jours', '30')
-    try:
-        nb_jours = int(jours_param)
-    except ValueError:
-        nb_jours = 30
-    date_limite = timezone.now() - timedelta(days=nb_jours)
+    annee_param = request.query_params.get('annee')
+    if annee_param:
+        try:
+            annee = int(annee_param)
+            date_limite = timezone.datetime(annee, 1, 1, tzinfo=timezone.get_current_timezone())
+            date_fin = timezone.datetime(annee, 12, 31, 23, 59, 59, tzinfo=timezone.get_current_timezone())
+        except (ValueError, OverflowError):
+            nb_jours = 30
+            date_limite = timezone.now() - timedelta(days=nb_jours)
+            date_fin = None
+    else:
+        jours_param = request.query_params.get('jours', '30')
+        try:
+            nb_jours = int(jours_param)
+        except ValueError:
+            nb_jours = 30
+        date_limite = timezone.now() - timedelta(days=nb_jours)
+        date_fin = None
+
+    base_date_filter = {'created_at__gte': date_limite}
+    if date_fin:
+        base_date_filter['created_at__lte'] = date_fin
 
     # ── Global KPIs for the period ──
-    stats_globales = Reclamation.objects.filter(created_at__gte=date_limite).aggregate(
+    stats_globales = Reclamation.objects.filter(**base_date_filter).aggregate(
         total_tickets=Count('id'),
         resolus=Count('id', filter=Q(statut__iexact='resolu')),
         p_critique=Count('id', filter=Q(priorite__iexact='critique')),
@@ -273,7 +307,7 @@ def stats_reporting(request):
     taux_resolution = round((resolus_t / total_t) * 100, 1) if total_t > 0 else 0.0
 
     delai_stats = Reclamation.objects.filter(
-        created_at__gte=date_limite, statut__in=['resolu', 'ferme'],
+        **base_date_filter, statut__in=['resolu', 'ferme'],
         resolu_le__isnull=False, resolu_le__gt=F('created_at'),
     ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
     delai_moyen_str = _format_duree(delai_stats['duree__avg'])
@@ -296,7 +330,7 @@ def stats_reporting(request):
         taux_dispo = round((sites_up / total_sites) * 100, 1) if total_sites > 0 else 100.0
 
         tickets_wilaya = Reclamation.objects.filter(
-            created_at__gte=date_limite, site__wilaya__iexact=wilaya_nom
+            **base_date_filter, site__wilaya__iexact=wilaya_nom
         )
         total_tickets_w = tickets_wilaya.count()
         tickets_ouverts_w = tickets_wilaya.filter(statut__iexact='ouvert').count()
@@ -305,7 +339,7 @@ def stats_reporting(request):
         taux_res_w = round((tickets_resolus_w / total_tickets_w) * 100, 1) if total_tickets_w > 0 else 0.0
 
         delai_w_stats = Reclamation.objects.filter(
-            created_at__gte=date_limite, site__wilaya__iexact=wilaya_nom,
+            **base_date_filter, site__wilaya__iexact=wilaya_nom,
             statut__in=['resolu', 'ferme'], resolu_le__isnull=False,
             resolu_le__gt=F('created_at'),
         ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
@@ -314,7 +348,7 @@ def stats_reporting(request):
         # Trend indicator: compare first half vs second half of period
         milieu = timezone.now() - timedelta(days=nb_jours // 2)
         tickets_avant = Reclamation.objects.filter(
-            created_at__gte=date_limite, created_at__lt=milieu, site__wilaya__iexact=wilaya_nom
+            **base_date_filter, created_at__lt=milieu, site__wilaya__iexact=wilaya_nom
         ).count()
         tickets_apres = Reclamation.objects.filter(
             created_at__gte=milieu, site__wilaya__iexact=wilaya_nom
@@ -358,7 +392,7 @@ def stats_reporting(request):
         sites_up = sites_commune.filter(statut='UP').count()
         taux_dispo = round((sites_up / total_sites) * 100, 1) if total_sites > 0 else 100.0
         tickets_ouverts_c = Reclamation.objects.filter(
-            created_at__gte=date_limite, site__commune__iexact=commune_nom, statut__iexact='ouvert'
+            **base_date_filter, site__commune__iexact=commune_nom, statut__iexact='ouvert'
         ).count()
 
         tableau_communes.append({
@@ -640,22 +674,22 @@ def consulter_performance(request, code_user):
         nb_jours = 30
     date_limite = timezone.now() - timedelta(days=nb_jours)
 
-    total_assignes = Reclamation.objects.filter(assigne_a=user, created_at__gte=date_limite).count()
-    resolus = Reclamation.objects.filter(assigne_a=user, statut='resolu', created_at__gte=date_limite).count()
-    ouverts = Reclamation.objects.filter(assigne_a=user, statut='ouvert', created_at__gte=date_limite).count()
-    fermes = Reclamation.objects.filter(assigne_a=user, statut='ferme', created_at__gte=date_limite).count()
+    total_assignes = Reclamation.objects.filter(assigne_a=user, **base_date_filter).count()
+    resolus = Reclamation.objects.filter(assigne_a=user, statut='resolu', **base_date_filter).count()
+    ouverts = Reclamation.objects.filter(assigne_a=user, statut='ouvert', **base_date_filter).count()
+    fermes = Reclamation.objects.filter(assigne_a=user, statut='ferme', **base_date_filter).count()
 
     delai_stats = Reclamation.objects.filter(
         assigne_a=user, statut__in=['resolu', 'ferme'],
         resolu_le__isnull=False, resolu_le__gt=F('created_at'),
-        created_at__gte=date_limite,
+        **base_date_filter,
     ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
 
-    creees = Reclamation.objects.filter(cree_par=user, created_at__gte=date_limite).count()
+    creees = Reclamation.objects.filter(cree_par=user, **base_date_filter).count()
 
     from reclamations.models import GroupeTicket
-    tickets_assignes = GroupeTicket.objects.filter(assigne_a=user, created_at__gte=date_limite).count()
-    tickets_resolus = GroupeTicket.objects.filter(assigne_a=user, statut='resolu', created_at__gte=date_limite).count()
+    tickets_assignes = GroupeTicket.objects.filter(assigne_a=user, **base_date_filter).count()
+    tickets_resolus = GroupeTicket.objects.filter(assigne_a=user, statut='resolu', **base_date_filter).count()
 
     return Response({
         'utilisateur': UserSerializer(user).data,

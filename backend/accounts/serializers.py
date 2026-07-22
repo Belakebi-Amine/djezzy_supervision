@@ -5,6 +5,7 @@
 # for registration, password changes, and profile updates.
 # ─────────────────────────────────────────────────────────────
 from rest_framework import serializers
+from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import CustomUser
@@ -19,20 +20,35 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
-        # Add custom claims to the JWT payload
         token['code_user'] = user.code_user
         token['role'] = getattr(user, 'role', 'aucun')
         return token
 
     def validate(self, attrs):
-        data = super().validate(attrs)
-        # Block login if user account is deactivated
-        if not self.user.is_active:
+        email = attrs.get(self.username_field, '')
+        password = attrs.get('password', '')
+
+        user = authenticate(username=email, password=password)
+
+        if user is None:
             raise serializers.ValidationError(
-                {'detail': 'Ce compte est désactivé. Contactez un administrateur.'}
+                'Identifiants incorrects. Vérifiez votre email et mot de passe.'
             )
-        # Include full user data and must_change_password flag
-        data['user'] = UserSerializer(self.user).data
+        if not user.is_active:
+            raise serializers.ValidationError(
+                'Ce compte est désactivé. Contactez un administrateur.'
+            )
+        if user.is_archived:
+            raise serializers.ValidationError(
+                'Ce compte est archivé. Contactez un administrateur.'
+            )
+
+        self.user = user
+        data = {}
+        refresh = self.get_token(user)
+        data['refresh'] = str(refresh)
+        data['access'] = str(refresh.access_token)
+        data['user'] = UserSerializer(user).data
         return data
 
 
@@ -62,6 +78,7 @@ class UserSerializer(serializers.ModelSerializer):
             'role_user',
             'is_active',
             'is_archived',
+            'must_change_password',
             'last_login',
             'date_joined',
         ]
