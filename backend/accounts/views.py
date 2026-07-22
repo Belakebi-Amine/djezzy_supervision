@@ -275,7 +275,13 @@ def list_users_view(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsAdmin])
 def register_view(request):
-    """Creates a new user account. Admin-only."""
+    """Creates a new user account. Admin-only. Admins cannot create other admins."""
+    target_role = request.data.get('role', '')
+    if target_role == 'ADMIN' and request.user.role == 'ADMIN':
+        return Response(
+            {'error': 'Les administrateurs ne peuvent pas créer d\'autres administrateurs.'},
+            status=status.HTTP_403_FORBIDDEN
+        )
     serializer = RegisterSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()

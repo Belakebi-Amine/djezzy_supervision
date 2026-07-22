@@ -154,6 +154,7 @@ export default function EngineerDashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatut, setFilterStatut] = useState('');
   const [filterPriority, setFilterPriority] = useState('');
+  const [filterDate, setFilterDate] = useState('');
 
   const [filterSiteId, setFilterSiteId] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -356,18 +357,29 @@ export default function EngineerDashboard() {
     }
   }, [addNotification]);
 
+  // Algeria bounding box for coordinate validation
+  const ALGERIA_BOUNDS = { latMin: 18.9, latMax: 37.1, lonMin: -8.7, lonMax: 11.6 };
+
   // Submit new site creation form
   const handleCreateSite = useCallback(async (e) => {
     e.preventDefault();
+    if (!newSiteForm.coordX || !newSiteForm.coordY) {
+      addNotification('Les coordonnées X et Y sont obligatoires.', 'error');
+      return;
+    }
+    const coordX = parseFloat(newSiteForm.coordX);
+    const coordY = parseFloat(newSiteForm.coordY);
+    if (coordX < ALGERIA_BOUNDS.lonMin || coordX > ALGERIA_BOUNDS.lonMax) {
+      addNotification(`Longitude ${coordX} hors d'Algérie (${ALGERIA_BOUNDS.lonMin} à ${ALGERIA_BOUNDS.lonMax}).`, 'error');
+      return;
+    }
+    if (coordY < ALGERIA_BOUNDS.latMin || coordY > ALGERIA_BOUNDS.latMax) {
+      addNotification(`Latitude ${coordY} hors d'Algérie (${ALGERIA_BOUNDS.latMin} à ${ALGERIA_BOUNDS.latMax}).`, 'error');
+      return;
+    }
     setSiteSubmitting(true);
     try {
-      const payload = {
-        ...newSiteForm,
-        // Send null for empty coordinates so the backend handles defaults
-        coordX: newSiteForm.coordX || null,
-        coordY: newSiteForm.coordY || null,
-      };
-      await createSite(payload);
+      await createSite(newSiteForm);
       setShowSiteForm(false);
       // Reset form to defaults after successful creation
       setNewSiteForm({ nom: '', wilaya: '', commune: '', coordX: '', coordY: '', adresse: '', statut: 'UP', technologie: '5G' });
@@ -500,16 +512,21 @@ export default function EngineerDashboard() {
       const st = (g.statut || '').toLowerCase();
       if (st !== filterStatut.toLowerCase()) return false;
     }
+    if (filterDate) {
+      const d = new Date(g.premier_signalement || g.created_at);
+      if (d.toISOString().slice(0, 10) !== filterDate) return false;
+    }
     return true;
   }).sort((a, b) => {
-    // Sort: entreprise tickets first, then by priority, then by date
+    // Sort: entreprise tickets first, then by date (newest first), then by priority
     const entA = a.has_entreprise ? 0 : 1;
     const entB = b.has_entreprise ? 0 : 1;
     if (entA !== entB) return entA - entB;
+    const dateDiff = new Date(b.created_at) - new Date(a.created_at);
+    if (dateDiff !== 0) return dateDiff;
     const prioA = PRIO_ORDER[a.priorite] ?? 4;
     const prioB = PRIO_ORDER[b.priorite] ?? 4;
-    if (prioA !== prioB) return prioA - prioB;
-    return new Date(b.created_at) - new Date(a.created_at);
+    return prioA - prioB;
   });
 
   return (
@@ -595,12 +612,12 @@ export default function EngineerDashboard() {
                     <input type="text" name="commune" value={newSiteForm.commune} onChange={handleSiteFormChange} placeholder="Ex: Hydra" style={styles.input} required />
                   </div>
                   <div style={styles.inputGroup}>
-                    <label style={styles.label}>Coordonnée X</label>
-                    <input type="text" name="coordX" value={newSiteForm.coordX} onChange={handleSiteFormChange} placeholder="Ex: 3.058" style={styles.input} />
+                    <label style={styles.label}>Coordonnée X (Longitude)</label>
+                    <input type="text" name="coordX" value={newSiteForm.coordX} onChange={handleSiteFormChange} placeholder="Ex: 3.058" style={styles.input} required />
                   </div>
                   <div style={styles.inputGroup}>
-                    <label style={styles.label}>Coordonnée Y</label>
-                    <input type="text" name="coordY" value={newSiteForm.coordY} onChange={handleSiteFormChange} placeholder="Ex: 36.753" style={styles.input} />
+                    <label style={styles.label}>Coordonnée Y (Latitude)</label>
+                    <input type="text" name="coordY" value={newSiteForm.coordY} onChange={handleSiteFormChange} placeholder="Ex: 36.753" style={styles.input} required />
                   </div>
                   {/* Full-width address field */}
                   <div style={{ ...styles.inputGroup, gridColumn: '1 / -1' }}>
@@ -931,6 +948,12 @@ export default function EngineerDashboard() {
             {/* Collapsible filter panel */}
             {showFilters && (
               <div style={{ ...styles.filterArea, backgroundColor: '#fafbfc', borderBottom: `1px solid ${COLORS.border}` }}>
+                <input
+                  type="date"
+                  value={filterDate}
+                  onChange={(e) => setFilterDate(e.target.value)}
+                  style={{ ...styles.filterSelect, backgroundColor: 'var(--inputBg, #FFFFFF)', color: '#4e5561', border: `1px solid ${COLORS.border}` }}
+                />
                 <select value={filterStatut} onChange={(e) => setFilterStatut(e.target.value)} style={{ ...styles.filterSelect, backgroundColor: 'var(--inputBg, #FFFFFF)', color: '#4e5561', border: `1px solid ${COLORS.border}` }}>
                   <option value="">Tous statuts</option>
                   <option value="ouvert">Ouvert</option>
@@ -959,7 +982,7 @@ export default function EngineerDashboard() {
               ) : filteredGroupeTickets.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px', color: COLORS.textMuted }}>Aucun ticket trouvé.</div>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '14px', maxHeight: 600, overflowY: 'auto' }}>
                   {filteredGroupeTickets.map((groupe) => {
                       const prio = COLORS.priorities[groupe.priorite?.toUpperCase()] || COLORS.priorities.NORMALE;
                       const statutKey = getStatutKey(groupe.statut);

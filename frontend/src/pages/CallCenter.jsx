@@ -107,7 +107,7 @@ const IconX = (p) => (
 
 /* Default empty state for the new-ticket form */
 const INITIAL_FORM = {
-  nom_client: '', telephone: '', email: '',
+  nom_client: '', telephone: '',
   type_client: 'particulier',
   site_id: '', priorite: 'normale',
   mots_cles_ia: '',
@@ -244,7 +244,6 @@ export default function CallCenter() {
       await createTicket({
         nom_client: formData.nom_client,
         telephone_client: formData.telephone,
-        email_client: formData.email,
         type_client: formData.type_client,
         site_id: formData.site_id ? Number(formData.site_id) : null,
         mots_cles_ia: formData.mots_cles_ia,
@@ -362,10 +361,6 @@ export default function CallCenter() {
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Telephone</label>
                   <input type="tel" name="telephone" value={formData.telephone} onChange={handleInputChange} placeholder="0X XX XX XX XX" pattern="0\d{9}" maxLength="10" style={styles.input} required title="Le numero doit commencer par 0 et contenir 10 chiffres" />
-                </div>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Email</label>
-                  <input type="email" name="email" value={formData.email} onChange={handleInputChange} placeholder="client@gmail.com" style={styles.input} />
                 </div>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Type Client</label>
@@ -532,7 +527,7 @@ export default function CallCenter() {
             )}
 
             {/* Tickets data table */}
-            <div style={{ overflowX: 'auto' }}>
+            <div style={{ overflowX: 'auto', maxHeight: 570, overflowY: 'auto' }}>
               <table style={styles.table}>
                 <thead>
                   <tr style={styles.thRow}>
@@ -636,10 +631,6 @@ export default function CallCenter() {
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Telephone</span>
                     <span style={styles.modalValue}>{selectedTicket.telephone_client || '\u2014'}</span>
-                  </div>
-                  <div style={styles.modalField}>
-                    <span style={styles.modalLabel}>Email</span>
-                    <span style={styles.modalValue}>{selectedTicket.email_client || '\u2014'}</span>
                   </div>
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Type</span>

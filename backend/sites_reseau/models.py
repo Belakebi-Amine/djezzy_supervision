@@ -37,8 +37,8 @@ class SiteReseau(models.Model):
     # ── Geographic location ──
     wilaya = models.CharField(max_length=100)
     commune = models.CharField(max_length=100)
-    coordX = models.DecimalField(max_digits=12, decimal_places=9, null=True, blank=True, verbose_name="Longitude (X)")
-    coordY = models.DecimalField(max_digits=12, decimal_places=9, null=True, blank=True, verbose_name="Latitude (Y)")
+    coordX = models.DecimalField(max_digits=12, decimal_places=9, default=0, verbose_name="Longitude (X)")
+    coordY = models.DecimalField(max_digits=12, decimal_places=9, default=0, verbose_name="Latitude (Y)")
     adresse = models.TextField(blank=True)
 
     # ── Operational status ──

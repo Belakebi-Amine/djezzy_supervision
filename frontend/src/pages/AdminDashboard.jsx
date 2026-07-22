@@ -27,7 +27,7 @@ import {
   getArchivedRapports, restoreRapportIA,
   getSystemHealth, getAuditLogs, getAuditStats,
 } from '../api/dashboard';
-import { getSites, getUsers, getUserStats, createUser, getTickets, createTicket, updateTicket, createSite, updateSiteStatus, archiverSite, archiveUser, toggleActiveUser, updateUser, restoreUser, getTokenRole, getArchivedTickets, archiverReclamation, getArchivedSites, restoreSite, getKeywords } from '../api/tickets';
+import {   getSites, getUsers, getUserStats, createUser, getTickets, createTicket, updateTicket, createSite, updateSiteStatus, archiverSite, archiveUser, toggleActiveUser, updateUser, restoreUser, getTokenRole, getArchivedTickets, archiverReclamation, getArchivedSites, restoreSite, getKeywords, getAllSites } from '../api/tickets';
 import DetailModal from '../components/DetailModal';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
@@ -201,6 +201,7 @@ export default function AdminDashboard() {
   // ─── Loading/optimistic update indicators ───
   const [updatingId, setUpdatingId] = useState(null);
   const [togglingSiteId, setTogglingSiteId] = useState(null);
+  const [sitesLoading, setSitesLoading] = useState(false);
 
   // ─── Modal visibility states ───
   const [showUserForm, setShowUserForm] = useState(false);
@@ -248,7 +249,7 @@ export default function AdminDashboard() {
     first_name: '', last_name: '', email: '', role: 'AGENT_CALL_CENTER', password: '', password2: '',
   });
   const [ticketForm, setTicketForm] = useState({
-    nom_client: '', telephone_client: '', email_client: '', type_client: 'particulier',
+    nom_client: '', telephone_client: '', type_client: 'particulier',
     site: '', mots_cles_ia: '',
   });
   const [ticketKeywordsData, setTicketKeywordsData] = useState({});
@@ -267,7 +268,18 @@ export default function AdminDashboard() {
   }, [period]);
 
   const fetchSites = useCallback(async () => {
-    try { const d = await getSites(); setSites(Array.isArray(d) ? d : []); } catch { setSites([]); }
+    try {
+      const d = await getAllSites();
+      setSites(Array.isArray(d) ? d : []);
+    } catch { setSites([]); }
+  }, []);
+  const fetchSitesForView = useCallback(async () => {
+    setSitesLoading(true);
+    try {
+      const d = await getAllSites();
+      setSites(Array.isArray(d) ? d : []);
+    } catch { setSites([]); }
+    finally { setSitesLoading(false); }
   }, []);
   const fetchUsers = useCallback(async () => {
     try { const d = await getUsers(); setUsers(Array.isArray(d) ? d : []); } catch { setUsers([]); }
@@ -409,6 +421,9 @@ export default function AdminDashboard() {
     if (siteFilterStatut && s.statut !== siteFilterStatut) return false;
     return true;
   }).sort((a, b) => {
+    // Archived sites go to the bottom
+    if (a.archive && !b.archive) return 1;
+    if (!a.archive && b.archive) return -1;
     const na = parseInt(a.codeSite?.replace(/\D/g, '')) || 0;
     const nb = parseInt(b.codeSite?.replace(/\D/g, '')) || 0;
     return na - nb;
@@ -459,7 +474,7 @@ export default function AdminDashboard() {
         site_id: ticketForm.site ? Number(ticketForm.site) : null,
       });
       setShowTicketForm(false);
-      setTicketForm({ nom_client: '', telephone_client: '', email_client: '', type_client: 'particulier', site: '', mots_cles_ia: '' });
+      setTicketForm({ nom_client: '', telephone_client: '', type_client: 'particulier', site: '', mots_cles_ia: '' });
       setTicketSelectedKeywords([]);
       fetchTickets();
       addNotification('Ticket créé avec succès', 'success');
@@ -494,12 +509,29 @@ export default function AdminDashboard() {
     });
   };
 
+  // Algeria bounding box for coordinate validation
+  const ALGERIA_BOUNDS = { latMin: 18.9, latMax: 37.1, lonMin: -8.7, lonMax: 11.6 };
+
   // Create a new network site
   const handleCreateSite = async (e) => {
     e.preventDefault();
+    if (!siteForm.coordX || !siteForm.coordY) {
+      addNotification('Les coordonnées X et Y sont obligatoires.', 'error');
+      return;
+    }
+    const coordX = parseFloat(siteForm.coordX);
+    const coordY = parseFloat(siteForm.coordY);
+    if (coordX < ALGERIA_BOUNDS.lonMin || coordX > ALGERIA_BOUNDS.lonMax) {
+      addNotification(`Longitude ${coordX} hors d'Algérie (${ALGERIA_BOUNDS.lonMin} à ${ALGERIA_BOUNDS.lonMax}).`, 'error');
+      return;
+    }
+    if (coordY < ALGERIA_BOUNDS.latMin || coordY > ALGERIA_BOUNDS.latMax) {
+      addNotification(`Latitude ${coordY} hors d'Algérie (${ALGERIA_BOUNDS.latMin} à ${ALGERIA_BOUNDS.latMax}).`, 'error');
+      return;
+    }
     setSubmitting(true);
     try {
-      await createSite({ ...siteForm, coordX: siteForm.coordX || null, coordY: siteForm.coordY || null });
+      await createSite(siteForm);
       setShowSiteForm(false);
       setSiteForm({ nom: '', wilaya: '', commune: '', coordX: '', coordY: '', adresse: '', statut: 'UP', technologie: '5G' });
       fetchSites();
@@ -922,7 +954,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Logs Table */}
-      <div className="fade-in" style={{ background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: 'hidden' }}>
+      <div className="fade-in" style={{ background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: 'hidden', maxHeight: 440, overflowY: 'auto' }}>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
             <thead>
@@ -990,110 +1022,114 @@ export default function AdminDashboard() {
   // Displays network site management with summary cards, filters, and toggle/archive actions
   const sitesView = () => (
     <>
-      {/* Summary stats: total, active, and inactive site counts */}
+      {/* Summary stats: total, active, inactive, archived */}
       <div style={styles.statsRow}>
-        <div className="fade-in stat-card" style={{ ...styles.statCard, animationDelay: '0s' }}>
-          <span style={{ ...styles.statNumber, color: 'var(--text-secondary)' }}>{filteredSites.length}</span>
+        <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#3B82F6', backgroundColor: COLORS.cardBg, animationDelay: '0s' }}>
+          <span style={{ ...styles.statNumber, color: '#171a21' }}>{sites.length}</span>
           <span style={styles.statLabel}>Total sites</span>
         </div>
-        <div className="fade-in stat-card" style={{ ...styles.statCard, animationDelay: '0.05s' }}>
-          <span style={{ ...styles.statNumber, color: '#15803D' }}>{filteredSites.filter((s) => s.statut === 'UP').length}</span>
+        <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#15803D', backgroundColor: COLORS.cardBg, animationDelay: '0.05s' }}>
+          <span style={{ ...styles.statNumber, color: '#15803D' }}>{sites.filter((s) => s.statut === 'UP' && !s.archive).length}</span>
           <span style={styles.statLabel}>Actif</span>
         </div>
-        <div className="fade-in stat-card" style={{ ...styles.statCard, animationDelay: '0.1s' }}>
-          <span style={{ ...styles.statNumber, color: '#DC2626' }}>{filteredSites.filter((s) => s.statut === 'DOWN').length}</span>
+        <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#DC2626', backgroundColor: COLORS.cardBg, animationDelay: '0.1s' }}>
+          <span style={{ ...styles.statNumber, color: '#DC2626' }}>{sites.filter((s) => s.statut === 'DOWN' && !s.archive).length}</span>
           <span style={styles.statLabel}>Inactif</span>
         </div>
+        <div className="fade-in stat-card" style={{ ...styles.statCard, borderLeftColor: '#9CA3AF', backgroundColor: COLORS.cardBg, animationDelay: '0.15s' }}>
+          <span style={{ ...styles.statNumber, color: '#6B7280' }}>{sites.filter((s) => s.archive).length}</span>
+          <span style={styles.statLabel}>Archivé</span>
+        </div>
       </div>
-      <div className="fade-in table-card" style={styles.tableCard}>
+      <div className="fade-in table-card" style={{ ...styles.tableCard, backgroundColor: COLORS.cardBg, animationDelay: '0.15s' }}>
         <div style={{ ...styles.toolbar, borderBottom: `1px solid ${COLORS.border}` }}>
-          <div style={styles.toolbarLeft}><h2 style={styles.tableTitle}><IconSite /> Sites réseau 5G</h2></div>
+          <div style={styles.toolbarLeft}><h2 style={{ ...styles.tableTitle, color: '#181c24' }}>Liste des sites reseau</h2></div>
           <div style={styles.toolbarActions}>
-            <button onClick={() => setShowSiteFilters(!showSiteFilters)} style={styles.btnFilter}><IconFilter /> Filtrer</button>
+            <button onClick={() => setShowSiteFilters(!showSiteFilters)} style={styles.btnFilter}><IconFilter style={{ marginRight: '6px' }} /> Filtrer</button>
             <button onClick={() => { setShowSiteForm(true); setSelectedSite(null); }} style={styles.btnNew}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '6px' }}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Nouveau Site
             </button>
           </div>
         </div>
-        {/* Site filters: wilaya, commune, and status */}
         {showSiteFilters && (
           <div style={styles.filterArea}>
             <input type="text" placeholder="Wilaya..." value={siteFilterWilaya} onChange={(e) => setSiteFilterWilaya(e.target.value)} style={styles.filterSelect} />
             <input type="text" placeholder="Commune..." value={siteFilterCommune} onChange={(e) => setSiteFilterCommune(e.target.value)} style={styles.filterSelect} />
             <select value={siteFilterStatut} onChange={(e) => setSiteFilterStatut(e.target.value)} style={styles.filterSelect}>
-              <option value="">Tous les états</option>
+              <option value="">Tous les etats</option>
               <option value="UP">Actif</option>
               <option value="DOWN">Inactif</option>
             </select>
           </div>
         )}
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflowX: 'auto', maxHeight: 440, overflowY: 'auto' }}>
           <table style={styles.table}>
             <thead>
               <tr style={styles.thRow}>
                 <th style={styles.th}>Code Site</th>
                 <th style={styles.th}>Nom Site</th>
-                <th style={styles.th}>wilaya</th>
-                <th style={styles.th}>commune</th>
-                <th style={styles.th}>coordX</th>
-                <th style={styles.th}>coordY</th>
-                <th style={{ ...styles.th, textAlign: 'center' }}>ACTION</th>
+                <th style={styles.th}>Wilaya</th>
+                <th style={styles.th}>Commune</th>
+                <th style={styles.th}>Statut</th>
+                <th style={{ ...styles.th, textAlign: 'center' }}>ACTIONS</th>
               </tr>
             </thead>
             <tbody>
-              {filteredSites.length === 0 ? (
-                <tr><td colSpan="7" style={styles.emptyCell}>Aucun site trouvé.</td></tr>
-              ) : filteredSites.map((site) => (
-                <tr key={site.id} style={{ ...styles.tr, cursor: 'pointer' }}
-                  onClick={() => setSelectedSite(site)}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}>
-                  <td style={{ ...styles.td, fontWeight: 600 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      {/* Status indicator dot with glow effect for active/inactive */}
-                      <span style={{
-                        width: 10, height: 10, borderRadius: '50%', display: 'inline-block', flexShrink: 0,
-                        backgroundColor: ST[site.statut] || 'var(--text-muted3)',
-                        boxShadow: site.statut === 'UP' ? '0 0 6px rgba(5,150,105,0.6)' : site.statut === 'DOWN' ? '0 0 6px rgba(220,38,38,0.6)' : 'none',
-                      }} />
-                      {site.codeSite}
-                    </div>
-                  </td>
-                  <td style={styles.td}>{site.nom}</td>
-                  <td style={styles.td}>{site.wilaya}</td>
-                  <td style={styles.td}>{site.commune}</td>
-                  <td style={styles.td}>{site.coordX || '-'}</td>
-                  <td style={styles.td}>{site.coordY || '-'}</td>
-                  <td style={{ ...styles.td, textAlign: 'center' }}>
-                    <div style={styles.statusActions}>
-                      {/* UP/DOWN toggle buttons - only the opposite status is clickable */}
-                      {['UP', 'DOWN'].map((s) => {
-                        const isActive = site.statut === s;
-                        const isTarget = site.statut !== s;
-                        return (
-                          <button key={s} disabled={!isTarget || togglingSiteId === site.id}
-                            onClick={(e) => { e.stopPropagation(); handleToggleSite(site.id, site.statut); }}
-                            style={{
-                              ...styles.statusBtn,
-                              backgroundColor: isActive ? (s === 'UP' ? '#059669' : '#DC2626') : 'var(--bg-card)',
-                              color: isActive ? '#FFFFFF' : (isTarget ? (s === 'UP' ? '#059669' : '#DC2626') : '#D0D0D0'),
-                              borderColor: isActive ? (s === 'UP' ? '#059669' : '#DC2626') : (isTarget ? (s === 'UP' ? '#059669' : '#DC2626') : '#E5E5E5'),
-                              cursor: isTarget && togglingSiteId !== site.id ? 'pointer' : 'not-allowed',
-                              fontWeight: isActive ? 700 : (isTarget ? 600 : 500),
-                            }}>
-                            {SITE_LABELS[s]}
-                          </button>
-                        );
-                      })}
-                      <button onClick={(e) => { e.stopPropagation(); handleArchiveSite(site.id); }}
-                        style={{ ...styles.statusBtn, backgroundColor: '#FEE2E2', color: '#DC2626', borderColor: '#FECACA', cursor: 'pointer', marginLeft: 4 }}
-                        title="Archiver">
-                        <IconArchive style={{ width: 10, height: 10 }} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {sitesLoading ? (
+                <tr><td colSpan="6" style={styles.emptyCell}>Chargement des sites...</td></tr>
+              ) : filteredSites.length === 0 ? (
+                <tr><td colSpan="6" style={styles.emptyCell}>Aucun site trouve.</td></tr>
+              ) : filteredSites.map((site) => {
+                const isArchived = site.archive;
+                return (
+                  <tr key={site.id}
+                    style={{
+                      ...styles.tr,
+                      cursor: 'pointer',
+                      opacity: isArchived ? 0.45 : 1,
+                      backgroundColor: isArchived ? '#F3F4F6' : undefined,
+                    }}
+                    onClick={() => setSelectedSite(site)}
+                    onMouseEnter={(e) => { if (!isArchived) e.currentTarget.style.backgroundColor = '#F8FAFC'; }}
+                    onMouseLeave={(e) => { if (!isArchived) e.currentTarget.style.backgroundColor = isArchived ? '#F3F4F6' : ''; }}>
+                    <td style={{ ...styles.td, fontWeight: 600 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{
+                          width: 10, height: 10, borderRadius: '50%', display: 'inline-block', flexShrink: 0,
+                          backgroundColor: isArchived ? '#9CA3AF' : (ST[site.statut] || '#64748B'),
+                          boxShadow: isArchived ? 'none' : (site.statut === 'UP' ? '0 0 6px rgba(5,150,105,0.6)' : site.statut === 'DOWN' ? '0 0 6px rgba(220,38,38,0.6)' : 'none'),
+                        }} />
+                        {site.codeSite}
+                        {isArchived && <span style={{ fontSize: 9, color: '#9CA3AF', fontWeight: 600, backgroundColor: '#E5E7EB', padding: '1px 6px', borderRadius: 4 }}>ARCHIVÉ</span>}
+                      </div>
+                    </td>
+                    <td style={{ ...styles.td, color: isArchived ? '#9CA3AF' : undefined }}>{site.nom}</td>
+                    <td style={{ ...styles.td, color: isArchived ? '#9CA3AF' : undefined }}>{site.wilaya}</td>
+                    <td style={{ ...styles.td, color: isArchived ? '#9CA3AF' : undefined }}>{site.commune}</td>
+                    <td style={styles.td}>
+                      <span style={{ padding: '3px 10px', borderRadius: 4, fontWeight: 700, fontSize: 11, backgroundColor: ST_BG[site.statut] || '#F1F5F9', color: ST[site.statut] || '#64748B' }}>
+                        {SITE_LABELS[site.statut] || site.statut}
+                      </span>
+                    </td>
+                    <td style={{ ...styles.td, textAlign: 'center' }}>
+                      {isArchived ? (
+                        <span style={{ fontSize: 9, color: '#9CA3AF', fontWeight: 600 }}>Archivé</span>
+                      ) : (
+                      <div style={styles.statusActions}>
+                        <button onClick={(e) => { e.stopPropagation(); setSelectedSite(site); }} title="Modifier"
+                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 6, border: '1px solid #2563EB33', background: '#2563EB0D', color: '#2563EB', cursor: 'pointer' }}>
+                          <IconEdit style={{ width: 12, height: 12 }} />
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); handleArchiveSite(site.id); }} title="Archiver"
+                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 6, border: '1px solid #DC262633', background: '#DC26260D', color: '#DC2626', cursor: 'pointer' }}>
+                          <IconArchive style={{ width: 12, height: 12 }} />
+                        </button>
+                      </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -1453,7 +1489,7 @@ export default function AdminDashboard() {
             <div style={styles.inputGroup}>
               <label style={styles.label}>Rôle</label>
               <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })} style={styles.input}>
-                {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                {Object.entries(ROLE_LABELS).filter(([k]) => k !== 'ADMIN').map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
           </div>
@@ -1490,7 +1526,7 @@ export default function AdminDashboard() {
             <div style={styles.inputGroup}>
               <label style={styles.label}>Rôle</label>
               <select value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })} style={styles.input}>
-                {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                {Object.entries(ROLE_LABELS).filter(([k]) => k !== 'ADMIN').map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
 
@@ -1519,7 +1555,6 @@ export default function AdminDashboard() {
           <div style={styles.formGrid}>
             <div style={styles.inputGroup}><label style={styles.label}>Nom Client</label><input type="text" placeholder="Nom complet" value={ticketForm.nom_client} onChange={(e) => setTicketForm({ ...ticketForm, nom_client: e.target.value })} style={styles.input} required /></div>
             <div style={styles.inputGroup}><label style={styles.label}>Téléphone</label><input type="text" placeholder="0550 00 00 00" value={ticketForm.telephone_client} onChange={(e) => setTicketForm({ ...ticketForm, telephone_client: e.target.value })} style={styles.input} required /></div>
-            <div style={styles.inputGroup}><label style={styles.label}>Email</label><input type="email" placeholder="client@gmail.com" value={ticketForm.email_client} onChange={(e) => setTicketForm({ ...ticketForm, email_client: e.target.value })} style={styles.input} /></div>
             <div style={styles.inputGroup}>
               <label style={styles.label}>Type Client</label>
               <select value={ticketForm.type_client} onChange={(e) => setTicketForm({ ...ticketForm, type_client: e.target.value })} style={styles.input}>
@@ -1595,8 +1630,8 @@ export default function AdminDashboard() {
             <div style={styles.inputGroup}><label style={styles.label}>Nom Site</label><input type="text" name="nom" value={siteForm.nom} onChange={(e) => setSiteForm({ ...siteForm, nom: e.target.value })} placeholder="Ex: Alger Centre" style={styles.input} required /></div>
             <div style={styles.inputGroup}><label style={styles.label}>Wilaya</label><input type="text" name="wilaya" value={siteForm.wilaya} onChange={(e) => setSiteForm({ ...siteForm, wilaya: e.target.value })} placeholder="Ex: Alger" style={styles.input} required /></div>
             <div style={styles.inputGroup}><label style={styles.label}>Commune</label><input type="text" name="commune" value={siteForm.commune} onChange={(e) => setSiteForm({ ...siteForm, commune: e.target.value })} placeholder="Ex: Hydra" style={styles.input} required /></div>
-            <div style={styles.inputGroup}><label style={styles.label}>Coordonnée X</label><input type="text" name="coordX" value={siteForm.coordX} onChange={(e) => setSiteForm({ ...siteForm, coordX: e.target.value })} placeholder="Ex: 3.058" style={styles.input} /></div>
-            <div style={styles.inputGroup}><label style={styles.label}>Coordonnée Y</label><input type="text" name="coordY" value={siteForm.coordY} onChange={(e) => setSiteForm({ ...siteForm, coordY: e.target.value })} placeholder="Ex: 36.753" style={styles.input} /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Coordonnée X (Longitude)</label><input type="text" name="coordX" value={siteForm.coordX} onChange={(e) => setSiteForm({ ...siteForm, coordX: e.target.value })} placeholder="Ex: 3.058" style={styles.input} required /></div>
+            <div style={styles.inputGroup}><label style={styles.label}>Coordonnée Y (Latitude)</label><input type="text" name="coordY" value={siteForm.coordY} onChange={(e) => setSiteForm({ ...siteForm, coordY: e.target.value })} placeholder="Ex: 36.753" style={styles.input} required /></div>
             <div style={styles.inputGroup}><label style={styles.label}>Adresse Site</label><input type="text" name="adresse" value={siteForm.adresse} onChange={(e) => setSiteForm({ ...siteForm, adresse: e.target.value })} placeholder="Adresse complète" style={styles.input} /></div>
             <div style={styles.inputGroup}>
               <label style={styles.label}>Statut</label>
@@ -1673,7 +1708,6 @@ export default function AdminDashboard() {
                 </h3>
                 <div style={styles.modalField}><span style={styles.modalLabel}>Nom complet</span><span style={styles.modalValue}>{t.nom_client || '-'}</span></div>
                 <div style={styles.modalField}><span style={styles.modalLabel}>Téléphone</span><span style={styles.modalValue}>{t.telephone_client || '-'}</span></div>
-                <div style={styles.modalField}><span style={styles.modalLabel}>Email</span><span style={styles.modalValue}>{t.email_client || '-'}</span></div>
                 <div style={styles.modalField}>
                   <span style={styles.modalLabel}>Type</span>
                   <span style={styles.modalValue}>
@@ -1796,7 +1830,7 @@ export default function AdminDashboard() {
       <div className="fade-in" style={styles.overlay} onClick={() => setSelectedSite(null)}>
         <div className="scale-in" style={styles.modal} onClick={(e) => e.stopPropagation()}>
           <div style={styles.modalHeader}>
-            <h2 style={styles.modalTitle}>Site {s.codeSite}</h2>
+            <h2 style={styles.modalTitle}>Site {s.codeSite} {s.archive && <span style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 600, backgroundColor: '#F3F4F6', padding: '2px 8px', borderRadius: 4, marginLeft: 8 }}>ARCHIVÉ</span>}</h2>
             <button style={styles.modalClose} onClick={() => setSelectedSite(null)}><IconX /></button>
           </div>
           <div style={styles.modalBody}>
@@ -1811,7 +1845,7 @@ export default function AdminDashboard() {
                 <div style={styles.modalField}><span style={styles.modalLabel}>Technologie</span><span style={styles.modalValue}><span style={{ ...styles.badgeBase, backgroundColor: s.technologie === '4G' ? '#DCFCE7' : '#E0E7FF', color: s.technologie === '4G' ? '#15803D' : '#4338CA' }}>{s.technologie || '5G'}</span></span></div>
               </div>
               <div style={styles.modalSection}>
-                <h3 style={styles.modalSectionTitle}>État</h3>
+                <h3 style={styles.modalSectionTitle}>Etat</h3>
                 <div style={styles.modalField}>
                   <span style={styles.modalLabel}>Statut</span>
                   <span style={styles.modalValue}>
@@ -1820,16 +1854,24 @@ export default function AdminDashboard() {
                     </span>
                   </span>
                 </div>
-                <div style={styles.modalField}><span style={styles.modalLabel}>Longitude</span><span style={styles.modalValue}>{s.coordX || '-'}</span></div>
-                <div style={styles.modalField}><span style={styles.modalLabel}>Latitude</span><span style={styles.modalValue}>{s.coordY || '-'}</span></div>
-                <div style={styles.modalField}><span style={styles.modalLabel}>Dernière MAJ</span><span style={styles.modalValue}>{formatDateTimeFr(s.derniere_maj)}</span></div>
-                <div style={styles.modalField}><span style={styles.modalLabel}>Créé le</span><span style={styles.modalValue}>{formatDateTimeFr(s.created_at)}</span></div>
+                {s.coordX && <div style={styles.modalField}><span style={styles.modalLabel}>Longitude</span><span style={styles.modalValue}>{s.coordX}</span></div>}
+                {s.coordY && <div style={styles.modalField}><span style={styles.modalLabel}>Latitude</span><span style={styles.modalValue}>{s.coordY}</span></div>}
+                <div style={styles.modalField}><span style={styles.modalLabel}>Derniere MAJ</span><span style={styles.modalValue}>{formatDateTimeFr(s.derniere_maj)}</span></div>
+                <div style={styles.modalField}><span style={styles.modalLabel}>Cree le</span><span style={styles.modalValue}>{formatDateTimeFr(s.created_at)}</span></div>
               </div>
             </div>
           </div>
           <div style={styles.modalFooter}>
+            {s.archive ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button disabled={togglingSiteId === s.id} onClick={() => handleRestoreSite(s)}
+                  style={{ display: 'flex', alignItems: 'center', backgroundColor: '#D1FAE5', color: '#059669', border: '1px solid #A7F3D0', padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '6px' }}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
+                  Restaurer
+                </button>
+              </div>
+            ) : (
             <div style={styles.statusActions}>
-              {/* UP/DOWN toggle buttons */}
               {['UP', 'DOWN'].map((st) => {
                 const isActive = s.statut === st;
                 const isTarget = s.statut !== st;
@@ -1849,11 +1891,14 @@ export default function AdminDashboard() {
                 );
               })}
             </div>
+            )}
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {!s.archive && (
               <button disabled={togglingSiteId === s.id} onClick={() => handleArchiveSite(s.id)}
                 style={styles.btnDanger}>
                 <IconArchive style={{ width: 14, height: 14, marginRight: 6 }} /> Archiver
               </button>
+              )}
               <button style={styles.btnCancel} onClick={() => setSelectedSite(null)}>Fermer</button>
             </div>
           </div>

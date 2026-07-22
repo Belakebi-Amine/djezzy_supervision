@@ -38,46 +38,6 @@ def _card(content, border_left="#E8401A"):
         f'{content}</div>'
     )
 
-def _kpi(label, value, color="#E8401A"):
-    return (
-        f'<div style="display:inline-block;text-align:center;padding:14px 22px;'
-        f'background:#F8FAFC;border-radius:8px;border:1px solid #E5E7EB;min-width:120px;'
-        f'margin:4px;">'
-        f'<div style="font-size:10px;text-transform:uppercase;color:#64748B;font-weight:600;letter-spacing:0.5px;">{label}</div>'
-        f'<div style="font-size:26px;font-weight:700;color:{color};margin-top:4px;">{value}</div>'
-        f'</div>'
-    )
-
-def _table(headers, rows, widths=None):
-    cols = len(headers)
-    th = ''.join(
-        f'<th style="padding:10px 14px;text-align:{"center" if i > 0 else "left"};'
-        f'background:#F1F5F9;font-size:11px;text-transform:uppercase;letter-spacing:0.3px;'
-        f'color:#475569;border-bottom:2px solid #E5E7EB;{f"width:{widths[i]};" if widths and widths[i] else ""}">{h}</th>'
-        for i, h in enumerate(headers)
-    )
-    trs = ''
-    for row in rows:
-        tds = ''.join(
-            f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;'
-            f'font-size:12px;text-align:{"center" if i > 0 else "left"};'
-            f'color:#334155;">{c}</td>'
-            for i, c in enumerate(row)
-        )
-        trs += f'<tr style="transition:background 0.1s;" onmouseenter="this.style.background=\'#FEF2F2\'" onmouseleave="this.style.background=\'transparent\'">{tds}</tr>'
-    return (
-        f'<table style="width:100%;border-collapse:collapse;border-radius:8px;overflow:hidden;">'
-        f'<thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table>'
-    )
-
-def _bar(value, max_val, color="#E8401A"):
-    pct = round(value / max_val * 100, 1) if max_val else 0
-    return (
-        f'<div style="background:#F1F5F9;border-radius:6px;height:18px;width:100%;overflow:hidden;">'
-        f'<div style="background:{color};height:100%;width:{pct}%;border-radius:6px;'
-        f'transition:width 0.3s;"></div></div>'
-    )
-
 
 # ── Data collection (expanded) ─────────────────────────────
 
@@ -281,256 +241,193 @@ def _detecter_sections(prompt):
 
 # ── Report sections ────────────────────────────────────────
 
+_P = lambda txt: f'<p style="font-size:13px;color:#1E293B;line-height:1.8;margin:0 0 12px;">{txt}</p>'
+
 def _section_kpi(d):
     t = d['tickets']
     r = d['reseau']
-    return _card(
-        '<h2 style="margin:0 0 16px;font-size:16px;color:#0F172A;">Indicateurs Cles (KPI)</h2>'
-        '<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">'
-        + _kpi("Sites Total", r['total_sites'], "#2563EB")
-        + _kpi("Sites UP", r['sites_up'], "#15803D")
-        + _kpi("Sites DOWN", r['sites_down'], "#DC2626")
-        + _kpi("Disponibilite", f"{r['disponibilite']}%", "#2563EB")
-        + _kpi("Tickets Total", t['total'], "#E8401A")
-        + _kpi("Taux Resolution", f"{t['taux_resolution']}%", "#15803D")
-        + _kpi("Delai Moyen", t['delai_moyen'], "#7C3AED")
-        + _kpi("Critiques", t['critiques'], "#DC2626")
-        + '</div>',
-        "#2563EB"
+    texte = (
+        f"Le reseau Djezzy compte actuellement <strong>{r['total_sites']} sites</strong> au total, "
+        f"dont <strong>{r['sites_up']}</strong> en fonctionnement normal (UP) et "
+        f"<strong>{r['sites_down']}</strong> en panne (DOWN). "
+        f"La disponibilite globale est de <strong>{r['disponibilite']}%</strong>. "
+        f"Sur la periode analysee, <strong>{t['total']} reclamations</strong> ont ete enregistrees, "
+        f"avec un taux de resolution de <strong>{t['taux_resolution']}%</strong> et un delai moyen de traitement de <strong>{t['delai_moyen']}</strong>. "
+        f"<strong>{t['critiques']}</strong> tickets de priorite critique ont ete declares, "
+        f"necessitant une attention particuliere."
     )
+    return _card(f'<h2 style="margin:0 0 14px;font-size:16px;color:#0F172A;">Synthese des Indicateurs</h2>' + _P(texte), "#2563EB")
 
 def _section_reseau(d):
     r = d['reseau']
-    tech_rows = ''
+    tech_parts = []
     for t in r['par_techno']:
         up_pct = round(t['up'] / t['total'] * 100, 1) if t['total'] else 0
-        tech_rows += f"""<tr>
-            <td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;font-weight:600;">{t['technologie']}</td>
-            <td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;text-align:center;">{t['total']}</td>
-            <td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;text-align:center;color:#15803D;font-weight:600;">{t['up']}</td>
-            <td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;text-align:center;color:#DC2626;font-weight:600;">{t['total'] - t['up']}</td>
-            <td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;">{_bar(t['up'], t['total'], '#15803D')}</td>
-            <td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;text-align:center;font-weight:700;color:{'#15803D' if up_pct >= 95 else '#F59E0B' if up_pct >= 80 else '#DC2626'};">{up_pct}%</td>
-        </tr>"""
+        tech_parts.append(
+            f"La technologie <strong>{t['technologie']}</strong> comprend <strong>{t['total']} sites</strong>, "
+            f"avec <strong>{t['up']} UP</strong> et <strong>{t['total'] - t['up']} DOWN</strong>, "
+            f"soit un taux de disponibilite de <strong>{up_pct}%</strong>"
+        )
+    tech_text = ". ".join(tech_parts) + "." if tech_parts else "Aucune donnee technologique disponible."
 
-    down_list = ''
+    down_text = ""
     if r['sites_down_list']:
-        down_items = ''.join(
-            f'<li style="padding:6px 0;border-bottom:1px solid #F1F5F9;"><strong>{s["codeSite"]}</strong> — {s["nom"]} ({s["commune"]}, {s["wilaya"]}) <span style="color:#94A3B8;font-size:11px;">[{s["technologie"]}]</span></li>'
+        down_items = ", ".join(
+            f"<strong>{s['codeSite']}</strong> ({s['nom']}, {s['commune']}, {s['wilaya']})"
             for s in r['sites_down_list']
         )
-        down_list = f"""
-        <div style="margin-top:16px;padding:14px 18px;background:#FEF2F2;border-radius:8px;border:1px solid #FECACA;">
-            <div style="font-size:12px;font-weight:700;color:#DC2626;margin-bottom:8px;">Sites en panne (DOWN) — {len(r['sites_down_list'])} site(s)</div>
-            <ul style="margin:0;padding-left:18px;font-size:12px;color:#991B1B;">{down_items}</ul>
-        </div>"""
+        down_text = (
+            f" Les <strong>{len(r['sites_down_list'])} site(s) en panne</strong> sont les suivants : {down_items}. "
+            "Une intervention technique est recommandee sur ces sites afin de restaurer la couverture et "
+            "de reduire l'impact sur les abonnes de ces zones."
+        )
 
-    return _card(
-        f'<h2 style="margin:0 0 16px;font-size:16px;color:#0F172A;">Etat du Reseau</h2>'
-        f'<p style="font-size:12px;color:#64748B;margin:0 0 14px;">{r["total_sites"]} sites total — {r["sites_up"]} UP — {r["sites_down"]} DOWN — Disponibilite globale: <strong>{r["disponibilite"]}%</strong></p>'
-        f'<table style="width:100%;border-collapse:collapse;border-radius:8px;overflow:hidden;">'
-        f'<thead><tr>'
-        f'<th style="padding:10px 14px;text-align:left;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Technologie</th>'
-        f'<th style="padding:10px 14px;text-align:center;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Total</th>'
-        f'<th style="padding:10px 14px;text-align:center;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">UP</th>'
-        f'<th style="padding:10px 14px;text-align:center;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">DOWN</th>'
-        f'<th style="padding:10px 14px;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Dispo</th>'
-        f'<th style="padding:10px 14px;text-align:center;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">%</th>'
-        f'</tr></thead><tbody>{tech_rows}</tbody></table>'
-        f'{down_list}',
-        "#0EA5E9"
+    texte = (
+        f"Le reseau Djezzy s'etend sur <strong>{r['total_sites']} sites</strong>, "
+        f"avec une disponibilite globale de <strong>{r['disponibilite']}%</strong>. "
+        f"{tech_text}"
+        f"{down_text}"
     )
+    return _card(f'<h2 style="margin:0 0 14px;font-size:16px;color:#0F172A;">Etat du Reseau</h2>' + _P(texte), "#0EA5E9")
 
 def _section_tickets(d):
     t = d['tickets']
     tc = d.get('type_client', [])
-    tc_rows = ''.join(
-        f'<tr><td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;font-weight:600;text-transform:capitalize;">{c["type_client"] or "N/A"}</td>'
-        f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;text-align:center;font-weight:700;">{c["nb"]}</td>'
-        f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;">{_bar(c["nb"], t["total"], "#E8401A")}</td>'
-        f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;text-align:center;">{round(c["nb"]/t["total"]*100,1) if t["total"] else 0}%</td></tr>'
-        for c in tc
+    tc_parts = []
+    for c in tc:
+        pct = round(c['nb'] / t['total'] * 100, 1) if t['total'] else 0
+        tc_parts.append(
+            f"<strong>{c['type_client'] or 'N/A'}</strong> avec <strong>{c['nb']} tickets</strong> ({pct}%)"
+        )
+    tc_text = ", ".join(tc_parts) + "." if tc_parts else "Aucune donnee par type de client."
+
+    texte = (
+        f"Sur la periode, <strong>{t['total']} reclamations</strong> ont ete recues, dont "
+        f"<strong>{t['ouverts']} encore ouvertes</strong>, <strong>{t['resolus']} resolues</strong> "
+        f"et <strong>{t['fermes']} fermees</strong>. "
+        f"La repartition par type de client revele que {tc_text} "
+        f"Cette analyse permet d'identifier les segments d'abonnes les plus affectes "
+        f"et d'orienter les efforts d'amelioration du service."
     )
-    return _card(
-        f'<h2 style="margin:0 0 16px;font-size:16px;color:#0F172A;">Repartition des Reclamations</h2>'
-        f'<div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">'
-        f'{_kpi("Total", t["total"], "#E8401A")}'
-        f'{_kpi("Ouverts", t["ouverts"], "#F59E0B")}'
-        f'{_kpi("Resolus", t["resolus"], "#15803D")}'
-        f'{_kpi("Fermes", t["fermes"], "#64748B")}'
-        f'</div>'
-        f'<h3 style="font-size:13px;color:#334155;margin:16px 0 10px;">Par type de client</h3>'
-        f'<table style="width:100%;border-collapse:collapse;">'
-        f'<thead><tr>'
-        f'<th style="padding:10px 14px;text-align:left;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Type</th>'
-        f'<th style="padding:10px 14px;text-align:center;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Tickets</th>'
-        f'<th style="padding:10px 14px;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Repartition</th>'
-        f'<th style="padding:10px 14px;text-align:center;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">%</th>'
-        f'</tr></thead><tbody>{tc_rows}</tbody></table>',
-        "#E8401A"
-    )
+    return _card(f'<h2 style="margin:0 0 14px;font-size:16px;color:#0F172A;">Analyse des Reclamations</h2>' + _P(texte), "#E8401A")
 
 def _section_priorites(d):
     p = d['priorites']
     total = sum(p.values()) or 1
-    data = [
-        ("Critique", p['critique'], "#DC2626"),
-        ("Haute", p['haute'], "#F59E0B"),
-        ("Normale", p['normale'], "#2563EB"),
-        ("Basse", p['basse'], "#10B981"),
-    ]
-    rows = ''.join(
-        f'<tr>'
-        f'<td style="padding:10px 14px;border-bottom:1px solid #F1F5F9;"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:{color};margin-right:8px;vertical-align:middle;"></span><strong>{label}</strong></td>'
-        f'<td style="padding:10px 14px;border-bottom:1px solid #F1F5F9;text-align:center;font-weight:700;">{nb}</td>'
-        f'<td style="padding:10px 14px;border-bottom:1px solid #F1F5F9;">{_bar(nb, total, color)}</td>'
-        f'<td style="padding:10px 14px;border-bottom:1px solid #F1F5F9;text-align:center;color:#64748B;">{round(nb/total*100,1)}%</td>'
-        f'</tr>'
-        for label, nb, color in data
+    parts = []
+    for label, nb in [("critique", p['critique']), ("haute", p['haute']), ("normale", p['normale']), ("basse", p['basse'])]:
+        pct = round(nb / total * 100, 1)
+        parts.append(f"<strong>{nb} de priorite {label}</strong> ({pct}%)")
+    data_text = ", ".join(parts) + "."
+
+    texte = (
+        f"La repartition des reclamations par niveau de priorite indique que {data_text} "
+        f"Les tickets de priorite critique et haute representent ensemble "
+        f"<strong>{round((p['critique'] + p['haute']) / total * 100, 1)}%</strong> du volume total, "
+        f"ce qui souligne l'importance de maintenir un temps de reponse rapide pour les incidents "
+        f"les plus urgents. Il est recommande de renforcer les procedures d'escalade "
+        f"pour les tickets critiques afin de minimiser les delais de resolution."
     )
-    return _card(
-        f'<h2 style="margin:0 0 16px;font-size:16px;color:#0F172A;">Repartition par Priorite</h2>'
-        f'<table style="width:100%;border-collapse:collapse;">'
-        f'<thead><tr>'
-        f'<th style="padding:10px 14px;text-align:left;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Niveau</th>'
-        f'<th style="padding:10px 14px;text-align:center;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Tickets</th>'
-        f'<th style="padding:10px 14px;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Repartition</th>'
-        f'<th style="padding:10px 14px;text-align:center;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">%</th>'
-        f'</tr></thead><tbody>{rows}</tbody></table>',
-        "#F59E0B"
-    )
+    return _card(f'<h2 style="margin:0 0 14px;font-size:16px;color:#0F172A;">Repartition par Priorite</h2>' + _P(texte), "#F59E0B")
 
 def _section_resolution(d):
     t = d['tickets']
     top_sites = d['top_sites']
-    sites_rows = ''.join(
-        f'<tr>'
-        f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;font-weight:600;">{s["site__codeSite"]}</td>'
-        f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;">{s["site__nom"]}</td>'
-        f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;text-align:center;font-weight:700;color:#E8401A;">{s["nb"]}</td>'
-        f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;">{_bar(s["nb"], top_sites[0]["nb"] if top_sites else 1, "#E8401A")}</td>'
-        f'</tr>'
-        for s in top_sites
+    sites_text = ""
+    if top_sites:
+        items = ", ".join(
+            f"<strong>{s['site__codeSite']}</strong> ({s['site__nom']}, {s['site__wilaya']}) avec {s['nb']} tickets"
+            for s in top_sites
+        )
+        sites_text = (
+            f" Les sites les plus impactes sont : {items}. "
+            "Ces sites merentent une analyse approfondie pour identifier les causes profondes "
+            "des incidents recurrants."
+        )
+
+    texte = (
+        f"Le taux de resolution global est de <strong>{t['taux_resolution']}%</strong> avec un delai moyen "
+        f"de traitement de <strong>{t['delai_moyen']}</strong>. "
+        f"{sites_text}"
+        "L'amelioration du delai de resolution passe par une meilleure allocation des ressources "
+        "techniques et un suivi plus rigoureux des tickets en cours de traitement."
     )
-    return _card(
-        f'<h2 style="margin:0 0 16px;font-size:16px;color:#0F172A;">Resolution & Sites Impactes</h2>'
-        f'<div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">'
-        f'{_kpi("Taux Resolution", f"{t['taux_resolution']}%", "#15803D")}'
-        f'{_kpi("Delai Moyen", t["delai_moyen"], "#7C3AED")}'
-        f'</div>'
-        f'<h3 style="font-size:13px;color:#334155;margin:16px 0 10px;">Top sites les plus impactes</h3>'
-        f'<table style="width:100%;border-collapse:collapse;">'
-        f'<thead><tr>'
-        f'<th style="padding:10px 14px;text-align:left;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Code</th>'
-        f'<th style="padding:10px 14px;text-align:left;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Site</th>'
-        f'<th style="padding:10px 14px;text-align:center;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Tickets</th>'
-        f'<th style="padding:10px 14px;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;"></th>'
-        f'</tr></thead><tbody>{sites_rows}</tbody></table>',
-        "#15803D"
-    )
+    return _card(f'<h2 style="margin:0 0 14px;font-size:16px;color:#0F172A;">Resolution et Sites Impactes</h2>' + _P(texte), "#15803D")
 
 def _section_performance_equipe(d):
     ing = d.get('ingenieurs', [])
     if not ing:
         return ''
-    ing_rows = ''.join(
-        f'<tr>'
-        f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;font-weight:600;">{i["code"]}</td>'
-        f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;">{i["nom"]}</td>'
-        f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;text-align:center;font-weight:700;">{i["total"]}</td>'
-        f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;text-align:center;color:#15803D;">{i["resolus"]}</td>'
-        f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;text-align:center;color:#F59E0B;">{i["ouverts"]}</td>'
-        f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;text-align:center;color:#DC2626;">{i["critiques"]}</td>'
-        f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;">{_bar(i["resolus"], i["total"] or 1, "#15803D")}</td>'
-        f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;text-align:center;font-weight:700;color:{'#15803D' if i["taux"] >= 80 else '#F59E0B' if i["taux"] >= 60 else '#DC2626'};">{i["taux"]}%</td>'
-        f'</tr>'
-        for i in ing
+    parts = []
+    for i in ing:
+        parts.append(
+            f"<strong>{i['nom']} ({i['code']})</strong> a traite <strong>{i['total']} tickets</strong>, "
+            f"en a resolu <strong>{i['resolus']}</strong>, avec <strong>{i['ouverts']} ouverts</strong> "
+            f"et <strong>{i['critiques']} critiques</strong>. Son taux de resolution est de <strong>{i['taux']}%</strong>"
+        )
+    eng_text = ". ".join(parts) + "."
+
+    texte = (
+        f"L'analyse de la performance des ingenieurs reseau revele les resultats suivants. {eng_text} "
+        "Les ingenieurs avec un taux de resolution inferieur a 80% devraient beneficier d'un accompagnement "
+        "supplementaire, tandis que les meilleurs performeurs peuvent servir de referents pour les bonnes pratiques. "
+        "Il est important de surveiller la charge de travail de chaque ingenieur pour eviter les risques de surcharge."
     )
-    return _card(
-        f'<h2 style="margin:0 0 16px;font-size:16px;color:#0F172A;">Performance des Ingenieurs</h2>'
-        f'<table style="width:100%;border-collapse:collapse;">'
-        f'<thead><tr>'
-        f'<th style="padding:10px 14px;text-align:left;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Code</th>'
-        f'<th style="padding:10px 14px;text-align:left;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Nom</th>'
-        f'<th style="padding:10px 14px;text-align:center;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Total</th>'
-        f'<th style="padding:10px 14px;text-align:center;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Resolus</th>'
-        f'<th style="padding:10px 14px;text-align:center;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Ouverts</th>'
-        f'<th style="padding:10px 14px;text-align:center;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Critiques</th>'
-        f'<th style="padding:10px 14px;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Taux</th>'
-        f'<th style="padding:10px 14px;text-align:center;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">%</th>'
-        f'</tr></thead><tbody>{ing_rows}</tbody></table>',
-        "#7C3AED"
-    )
+    return _card(f'<h2 style="margin:0 0 14px;font-size:16px;color:#0F172A;">Performance des Ingenieurs</h2>' + _P(texte), "#7C3AED")
 
 def _section_geographie(d):
     w = d.get('top_wilayas', [])
     if not w:
         return ''
-    rows = ''.join(
-        f'<tr>'
-        f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;font-weight:600;">{x["wilaya"]}</td>'
-        f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;text-align:center;font-weight:700;">{x["nb"]}</td>'
-        f'<td style="padding:9px 14px;border-bottom:1px solid #F1F5F9;">{_bar(x["nb"], w[0]["nb"] if w else 1, "#0EA5E9")}</td>'
-        f'</tr>'
-        for x in w
+    parts = [f"<strong>{x['wilaya']}</strong> ({x['nb']} tickets)" for x in w]
+    geo_text = ", ".join(parts) + "."
+
+    texte = (
+        f"L'analyse geographique des reclamations identifie les zones les plus affectees. "
+        f"Les cinq wilayas concentrent le plus grand volume de tickets : {geo_text} "
+        "Cette concentration peut etre liee a plusieurs facteurs : densite de population, etat "
+        "des infrastructures reseau, conditions climatiques ou evenements locaux specifiques. "
+        "Une etude geographique detaillee permettrait d'identifier les causes profondes "
+        "et de cibler les interventions techniques de maniere plus efficace."
     )
-    return _card(
-        f'<h2 style="margin:0 0 16px;font-size:16px;color:#0F172A;">Repartition Geographique</h2>'
-        f'<p style="font-size:12px;color:#64748B;margin:0 0 12px;">Top 5 wilayas par volume de tickets</p>'
-        f'<table style="width:100%;border-collapse:collapse;">'
-        f'<thead><tr>'
-        f'<th style="padding:10px 14px;text-align:left;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Wilaya</th>'
-        f'<th style="padding:10px 14px;text-align:center;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Tickets</th>'
-        f'<th style="padding:10px 14px;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Volume</th>'
-        f'</tr></thead><tbody>{rows}</tbody></table>',
-        "#0EA5E9"
-    )
+    return _card(f'<h2 style="margin:0 0 14px;font-size:16px;color:#0F172A;">Repartition Geographique</h2>' + _P(texte), "#0EA5E9")
 
 def _section_evolution(d):
     evo = d.get('evolution', [])
     if not evo:
         return ''
-    max_nb = max((x['nb'] for x in evo), default=1)
-    evo_rows = ''.join(
-        f'<tr>'
-        f'<td style="padding:8px 14px;border-bottom:1px solid #F1F5F9;font-size:12px;">{x["jour"]}</td>'
-        f'<td style="padding:8px 14px;border-bottom:1px solid #F1F5F9;text-align:center;font-weight:700;">{x["nb"]}</td>'
-        f'<td style="padding:8px 14px;border-bottom:1px solid #F1F5F9;">{_bar(x["nb"], max_nb, "#E8401A")}</td>'
-        f'</tr>'
-        for x in evo[-15:]
+    total_evo = sum(x['nb'] for x in evo)
+    max_j = max(evo, key=lambda x: x['nb'])
+    min_j = min(evo, key=lambda x: x['nb'])
+    moy = round(total_evo / len(evo), 1) if evo else 0
+
+    texte = (
+        f"Sur les <strong>{len(evo)} derniers jours</strong> analyses, un total de "
+        f"<strong>{total_evo} reclamations</strong> ont ete enregistrees, soit une moyenne "
+        f"de <strong>{moy} tickets par jour</strong>. "
+        f"Le pic d'activite a ete observe le <strong>{max_j['jour']}</strong> avec "
+        f"<strong>{max_j['nb']} tickets</strong>, tandis que le jour le plus calme a ete "
+        f"le <strong>{min_j['jour']}</strong> avec <strong>{min_j['nb']} tickets</strong>. "
+        f"Cette evolution temporelle permet de detecter les tendances et les pics d'activite "
+        f"qui peuvent etre lies a des evenements specifiques ou a des problemes reseau ponctuels."
     )
-    return _card(
-        f'<h2 style="margin:0 0 16px;font-size:16px;color:#0F172A;">Evolution des Tickets</h2>'
-        f'<p style="font-size:12px;color:#64748B;margin:0 0 12px;">Derniers {min(len(evo), 15)} jours</p>'
-        f'<table style="width:100%;border-collapse:collapse;">'
-        f'<thead><tr>'
-        f'<th style="padding:10px 14px;text-align:left;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Date</th>'
-        f'<th style="padding:10px 14px;text-align:center;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Tickets</th>'
-        f'<th style="padding:10px 14px;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Volume</th>'
-        f'</tr></thead><tbody>{evo_rows}</tbody></table>',
-        "#E8401A"
-    )
+    return _card(f'<h2 style="margin:0 0 14px;font-size:16px;color:#0F172A;">Evolution Temporelle</h2>' + _P(texte), "#E8401A")
 
 def _section_mots_cles(d):
     kw = d.get('top_keywords', [])
     if not kw:
         return ''
-    rows = ''.join(
-        f'<tr>'
-        f'<td style="padding:8px 14px;border-bottom:1px solid #F1F5F9;font-size:12px;">{k["mots_cles_ia"]}</td>'
-        f'<td style="padding:8px 14px;border-bottom:1px solid #F1F5F9;text-align:center;font-weight:700;">{k["nb"]}</td>'
-        f'</tr>'
-        for k in kw
+    items = ", ".join(f"<strong>{k['mots_cles_ia']}</strong> ({k['nb']})" for k in kw)
+
+    texte = (
+        f"L'analyse des mots-cles les plus frequents dans les reclamations revele les themes "
+        f"dominants : {items}. "
+        f"Ces mots-cles constituent un indicateur précieux des problemes rencontres par les abonnes "
+        f"et permettent de cibler les axes d'amelioration les plus pertinents. "
+        f"Un suivi regulier de cette frequence permet d'anticiper les tendances emergentes "
+        f"et d'ajuster les actions correctives en consequence."
     )
-    return _card(
-        f'<h2 style="margin:0 0 16px;font-size:16px;color:#0F172A;">Mots-cles les Plus Frequents</h2>'
-        f'<table style="width:100%;border-collapse:collapse;">'
-        f'<thead><tr>'
-        f'<th style="padding:10px 14px;text-align:left;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Mot-cle</th>'
-        f'<th style="padding:10px 14px;text-align:center;background:#F1F5F9;font-size:11px;text-transform:uppercase;color:#475569;border-bottom:2px solid #E5E7EB;">Occurrences</th>'
-        f'</tr></thead><tbody>{rows}</tbody></table>',
-        "#64748B"
-    )
+    return _card(f'<h2 style="margin:0 0 14px;font-size:16px;color:#0F172A;">Mots-cles Frequents</h2>' + _P(texte), "#64748B")
 
 def _section_recommandations(d):
     t = d['tickets']
@@ -643,7 +540,11 @@ INSTRUCTIONS CRITIQUES:
 - Identifie les CAUSES PROBABLES, pas seulement les symptomes
 - Chaque constat doit avoir un "pourquoi" et un "quoi faire"
 - HTML inline CSS, sans balises html/head/body
-- Sections avec couleurs par priorite (rouge=alerte, orange=attention, vert=OK)
+- UNIQUEMENT du texte descriptif, des paragraphes analytiques et des listes
+- INTERDICTION COMPLETE: pas de tableaux, pas de graphiques, pas de barres,
+  pas de SVG, pas de canvas, pas de diagrammes, pas d'element visuel
+- Utilise des <p>, <h2>, <h3>, <strong>, <em>, <ol>, <ul>, <li>
+- Chaque section doit faire au minimum 3-4 paragraphes de developpement
 - 2-3 pages A4 maximum"""
             else:
                 prompt = f"""Tu es un expert analyste reseau senior chez Djezzy, operateur mobile
@@ -680,10 +581,14 @@ FORMAT:
 - HTML inline CSS, sans balises html/head/body
 - Commence par un RENSEIGNEMENT (2-3 phrases: verdict + chiffre cle)
 - Organise en sections logiques de ton CHOIX (pas imposees)
-- Utilise des tableaux pour comparaisons, des couleurs pour alertes
+- UNIQUEMENT du texte descriptif, des paragraphes analytiques et des listes
+- INTERDICTION COMPLETE: pas de tableaux, pas de graphiques, pas de barres,
+  pas de SVG, pas de canvas, pas de diagrammes, pas d'element visuel
+- Utilise des <p>, <h2>, <h3>, <strong>, <em>, <ol>, <ul>, <li>
+- Chaque section doit faire au minimum 3-4 paragraphes de developpement
 - Termine par "Vision de l'expert": ton analyse globale personnelle
 - Sois SPECIFIQUE: cite les wilayas, les ingenieurs, les chiffres exacts
-- 1.5 a 2 pages A4 maximum"""
+- 2 a 3 pages A4 maximum"""
 
             response = client.chat.completions.create(
                 model=MISTRAL_MODEL,

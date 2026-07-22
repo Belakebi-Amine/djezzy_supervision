@@ -133,7 +133,6 @@ function TicketRow({ ticket }) {
         <tr>
           <td colSpan={7} style={{ ...S.edit, padding: '12px 14px', background: '#F8FAFC', borderBottom: '2px solid #e2e8f0' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', fontSize: 11, color: '#475569' }}>
-              <div style={{ padding: '4px 0' }}><strong style={{ color: '#1c212b' }}>Email:</strong> {ticket.email_client || '—'}</div>
               <div style={{ padding: '4px 0' }}><strong style={{ color: '#1c212b' }}>Tél:</strong> {ticket.telephone_client || '—'}</div>
               <div style={{ padding: '4px 0' }}><strong style={{ color: '#1c212b' }}>Type:</strong> {ticket.type_client || '—'}</div>
               <div style={{ padding: '4px 0' }}><strong style={{ color: '#1c212b' }}>Site:</strong> {ticket.site_display || ticket.site?.nom || '—'}</div>

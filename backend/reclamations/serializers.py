@@ -50,7 +50,7 @@ class ReclamationLiteSerializer(serializers.ModelSerializer):
         model = Reclamation
         fields = [
             'id', 'numero_ticket', 'nom_client', 'nom_complet_client',
-            'telephone_client', 'email_client', 'type_client',
+            'telephone_client', 'type_client',
             'mots_cles_ia', 'priorite', 'statut',
             'created_at',
         ]
@@ -146,7 +146,7 @@ class ReclamationSerializer(serializers.ModelSerializer):
             'id', 'numero_ticket',
             'client', 'client_id',
             'nom_client', 'nom_complet_client',
-            'telephone_client', 'email_client', 'type_client',
+            'telephone_client', 'type_client',
             'site', 'site_id', 'site_display', 'mots_cles_ia', 'priorite',
             'groupe', 'groupe_info',
             'statut', 'cree_par', 'assigne_a', 'assigne_a_id', 'assigne_a_display',
