@@ -184,6 +184,7 @@ export default function AdminDashboard() {
   // ─── Navigation & view state ───
   const [currentView, setCurrentView] = useState('dashboard');
   const [period, setPeriod] = useState(30); // reporting period in days
+  const periodLabel = period >= 3650 ? 'TOUT' : `${period} JOURS`;
 
   // ─── Core data state ───
   const [stats, setStats] = useState(null);
@@ -292,8 +293,8 @@ export default function AdminDashboard() {
     } catch { setAuditLogs([]); setAuditLogTotal(0); }
   }, [auditPage, auditFilter]);
   const fetchAuditStats = useCallback(async () => {
-    try { const d = await getAuditStats(); setAuditStats(d); } catch { setAuditStats(null); }
-  }, []);
+    try { const d = await getAuditStats(period); setAuditStats(d); } catch { setAuditStats(null); }
+  }, [period]);
 
   // ─── Initial data load on mount and when period changes ───
   useEffect(() => {
@@ -426,7 +427,7 @@ export default function AdminDashboard() {
 
   // Clear auth tokens and redirect to login
   const handleLogout = () => {
-    ['token', 'access_token', 'refresh_token'].forEach((k) => localStorage.removeItem(k));
+    sessionStorage.clear();
     navigate('/login');
   };
 
@@ -718,15 +719,14 @@ export default function AdminDashboard() {
       <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#10B981', marginRight: 6, verticalAlign: 'middle', animation: 'pulse 2s infinite' }} />SANTÉ SYSTÈME</span></div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
         {[
-          { label: 'Uptime', value: systemHealth?.uptime ?? '—', sub: 'depuis démarrage', color: '#10B981', icon: '●' },
-          { label: 'Latence API', value: systemHealth?.db_latency_ms != null ? `${systemHealth.db_latency_ms}ms` : '—', sub: 'réponse base', color: (systemHealth?.db_latency_ms ?? 0) < 100 ? '#10B981' : (systemHealth?.db_latency_ms ?? 0) < 500 ? '#F59E0B' : '#DC2626', icon: '⚡' },
-          { label: 'Utilisateurs', value: systemHealth?.total_users ?? '—', sub: `${systemHealth?.active_users_count ?? 0} actifs`, color: '#3B82F6', icon: '👥' },
-          { label: 'Utilisateurs Actifs', value: systemHealth?.active_users ?? '—', sub: `${systemHealth?.online_today ?? 0} aujourd'hui`, color: '#10B981', icon: '⚡' },
+          { label: 'Uptime', value: systemHealth?.uptime ?? '—', sub: 'depuis démarrage', color: '#10B981' },
+          { label: 'Latence API', value: systemHealth?.db_latency_ms != null ? `${systemHealth.db_latency_ms}ms` : '—', sub: 'réponse base', color: (systemHealth?.db_latency_ms ?? 0) < 100 ? '#10B981' : (systemHealth?.db_latency_ms ?? 0) < 500 ? '#F59E0B' : '#DC2626' },
+          { label: 'Utilisateurs', value: systemHealth?.total_users ?? '—', sub: `${systemHealth?.active_users_count ?? 0} actifs`, color: '#3B82F6' },
+          { label: 'Taille Base', value: systemHealth?.db_size ?? '—', sub: `${systemHealth?.table_count ?? 0} tables`, color: '#8B5CF6' },
         ].map((kpi, i) => (
           <div key={i} className="fade-in" style={{ animationDelay: `${i * 0.04}s`, background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: '16px 18px', borderLeft: `4px solid ${kpi.color}`, boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <div style={{ marginBottom: 6 }}>
               <span style={{ fontSize: 10, color: 'var(--text-muted3)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: 0.3 }}>{kpi.label}</span>
-              <span style={{ fontSize: 14 }}>{kpi.icon}</span>
             </div>
             <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>{kpi.value}</div>
             <div style={{ fontSize: 10, color: kpi.color, marginTop: 4, fontWeight: 500 }}>{kpi.sub}</div>
@@ -739,8 +739,8 @@ export default function AdminDashboard() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
         {[
           { label: 'Sites UP', value: systemHealth?.reseau?.up ?? '—', sub: `/ ${systemHealth?.reseau?.total ?? 0} total`, color: '#10B981' },
-          { label: 'Sites DOWN', value: systemHealth?.reseau?.down ?? 0, sub: systemHealth?.reseau?.down > 0 ? 'aintenance requise' : 'aucun', color: '#DC2626' },
-          { label: 'Tickets Ouverts', value: systemHealth?.tickets?.ouverts ?? '—', sub: `${systemHealth?.tickets?.ouverts_non_assignes ?? 0} non assignés`, color: '#F59E0B' },
+          { label: 'Sites DOWN', value: systemHealth?.reseau?.down ?? 0, sub: systemHealth?.reseau?.down > 0 ? 'maintenance requise' : 'aucun', color: '#DC2626' },
+          { label: 'Tickets Ouverts', value: systemHealth?.tickets?.ouverts ?? '—', sub: `sur ${systemHealth?.tickets?.total ?? 0} total`, color: '#F59E0B' },
           { label: 'Taux Résolution', value: systemHealth?.tickets?.taux_resolution ?? '—', sub: `${systemHealth?.tickets?.resolus ?? 0} résolus`, color: '#10B981' },
         ].map((kpi, i) => (
           <div key={i} className="fade-in" style={{ animationDelay: `${i * 0.04}s`, background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: '16px 18px', borderLeft: `4px solid ${kpi.color}`, boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
@@ -807,7 +807,7 @@ export default function AdminDashboard() {
       {/* ── ROW 3 : Activité Système ── */}
       {auditStats?.daily_actions && (
         <>
-          <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#8B5CF6', marginRight: 6, verticalAlign: 'middle' }} />ACTIVITÉ SYSTÈME (7 JOURS)</span></div>
+          <div style={{ marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted3)', letterSpacing: 0.5 }}><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#8B5CF6', marginRight: 6, verticalAlign: 'middle' }} />ACTIVITÉ SYSTÈME ({periodLabel})</span></div>
           <div style={styles.chartsRow}>
             <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
               <div style={styles.ch}>
@@ -839,21 +839,33 @@ export default function AdminDashboard() {
                 </ResponsiveContainer>
               </div>
             </div>
-            {/* Top active users */}
+            {/* Top active users — horizontal bar chart */}
             <div className="fade-in chart-card" style={{ ...styles.chartBox, flex: 1 }}>
-              <div style={styles.ch}><span style={styles.cht}>Utilisateurs Actifs (30j)</span></div>
-              <div style={{ ...styles.cb, overflowY: 'auto', padding: '8px 14px' }}>
+              <div style={styles.ch}><span style={styles.cht}>Utilisateurs Actifs ({period >= 3650 ? 'tout' : `${period}j`})</span></div>
+              <div style={styles.cb}>
                 {(auditStats?.top_users ?? []).length === 0 ? <div style={styles.empty}>Aucune donnée</div>
-                : auditStats.top_users.map((u, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: i < auditStats.top_users.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
-                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#E8401A20', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#E8401A', flexShrink: 0 }}>{i + 1}</div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>{u.user_code} — {u.user_name}</div>
-                        <div style={{ fontSize: 9, color: 'var(--text-muted2)' }}>{u.user_role === 'SYSTEM' ? 'Système' : u.user_role}</div>
-                      </div>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: '#E8401A' }}>{u.count}</span>
-                    </div>
-                  ))}
+                : <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={auditStats.top_users.map(u => ({ name: `${u.user_code} — ${u.user_name}`, count: u.count }))}
+                      layout="vertical"
+                      margin={{ top: 5, right: 20, left: 5, bottom: 5 }}
+                    >
+                      <CartesianGrid stroke="#f5f5f5" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 9 }} tickLine={false} axisLine={{ stroke: '#e8e8e8' }} allowDecimals={false} />
+                      <YAxis dataKey="name" type="category" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} width={130} />
+                      <RechartsTooltip
+                        content={({ active, payload }) => {
+                          if (!active || !payload?.length) return null;
+                          return <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 6, padding: '8px 14px', fontSize: 12 }}>
+                            <p style={{ margin: 0, fontWeight: 700 }}>{payload[0].payload.name}</p>
+                            <p style={{ margin: '2px 0', color: '#E8401A' }}>{payload[0].value} actions</p>
+                          </div>;
+                        }}
+                      />
+                      <Bar dataKey="count" fill="#E8401A" radius={[0, 4, 4, 0]} barSize={16} name="Actions" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                }
               </div>
             </div>
           </div>
@@ -880,7 +892,7 @@ export default function AdminDashboard() {
       {auditStats && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 20 }}>
           <div className="fade-in" style={{ background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: '16px 18px', borderLeft: '4px solid #8B5CF6' }}>
-            <span style={{ fontSize: 10, color: 'var(--text-muted3)', textTransform: 'uppercase', fontWeight: 600 }}>Actions totales (30j)</span>
+            <span style={{ fontSize: 10, color: 'var(--text-muted3)', textTransform: 'uppercase', fontWeight: 600 }}>Actions totales ({period >= 3650 ? 'tout' : `${period}j`})</span>
             <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', marginTop: 6 }}>{auditStats.daily_actions?.reduce((a, d) => a + d.count, 0) ?? 0}</div>
           </div>
           <div className="fade-in" style={{ background: 'var(--bg-card)', border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: '16px 18px', borderLeft: '4px solid #10B981' }}>
@@ -1552,7 +1564,7 @@ export default function AdminDashboard() {
               <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
                 <div style={{ fontSize: 12, color: '#94A3B8', marginBottom: 4 }}>Priorité automatique</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ padding: '3px 10px', borderRadius: 12, fontSize: 13, fontWeight: 600, background: prioriteColor(priorite), color: '#fff' }}>{priorite.charAt(0).toUpperCase() + priorite.slice(1)}</span>
+                  <span style={{ padding: '3px 10px', borderRadius: 12, fontSize: 13, fontWeight: 600, background: prioriteColor(priorite), color: '#fff' }}>{{ basse:'Basse', normale:'Normal', haute:'Haute', critique:'Critique' }[priorite] || priorite}</span>
                   <span style={{ fontSize: 12, color: '#94A3B8' }}>Score : {score}</span>
                 </div>
               </div>
@@ -1623,37 +1635,63 @@ export default function AdminDashboard() {
     const forward = STATUS_FLOW[t.statut] || [];
     return (
       <div className="fade-in" style={styles.overlay} onClick={() => setSelectedTicket(null)}>
-        <div className="scale-in" style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div className="scale-in" style={{ ...styles.modal, maxWidth: '850px' }} onClick={(e) => e.stopPropagation()}>
           <div style={styles.modalHeader}>
-            <h2 style={styles.modalTitle}>Ticket {t.numero_ticket}</h2>
-            <button style={styles.modalClose} onClick={() => setSelectedTicket(null)}><IconX /></button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div style={{ width: '4px', height: '36px', borderRadius: '2px', background: 'linear-gradient(180deg, #e60023, #FF6B3D)' }} />
+              <h2 style={styles.modalTitle}>{t.numero_ticket}</h2>
+              <span style={{ padding: '4px 12px', borderRadius: '6px', fontWeight: 700, fontSize: '11px', backgroundColor: stat.bg, color: stat.text, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: stat.dot }} />
+                {statutKey}
+              </span>
+              <span style={{ padding: '4px 12px', borderRadius: '6px', fontWeight: 700, fontSize: '11px', backgroundColor: prio.bg, color: prio.text }}>
+                {{ basse:'Basse', normale:'Normal', haute:'Haute', critique:'Critique' }[t.priorite?.toLowerCase()] || t.priorite}
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {t.statut === 'ouvert' && (
+                <button
+                  disabled={updatingId === t.id}
+                  onClick={() => handleTicketStatus(t.id, 'resolu', t.statut)}
+                  style={{ display: 'flex', alignItems: 'center', backgroundColor: '#DCFCE7', color: '#15803D', border: '1px solid #A7F3D0', padding: '6px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s ease', whiteSpace: 'nowrap' }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '4px' }}><path d="M4 12l5 5 11-11" /></svg>
+                  RESOLU
+                </button>
+              )}
+              <button style={styles.modalClose} onClick={() => setSelectedTicket(null)}><IconX /></button>
+            </div>
           </div>
           <div style={styles.modalBody}>
             <div style={styles.modalGrid}>
               <div style={styles.modalSection}>
-                <h3 style={styles.modalSectionTitle}>Client</h3>
+                <h3 style={styles.modalSectionTitle}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '4px', backgroundColor: '#EFF6FF', marginRight: '8px' }}>
+                    <IconUser style={{ width: '12px', height: '12px', color: '#2563EB' }} />
+                  </span>
+                  Client
+                </h3>
                 <div style={styles.modalField}><span style={styles.modalLabel}>Nom complet</span><span style={styles.modalValue}>{t.nom_client || '-'}</span></div>
                 <div style={styles.modalField}><span style={styles.modalLabel}>Téléphone</span><span style={styles.modalValue}>{t.telephone_client || '-'}</span></div>
                 <div style={styles.modalField}><span style={styles.modalLabel}>Email</span><span style={styles.modalValue}>{t.email_client || '-'}</span></div>
-                <div style={styles.modalField}><span style={styles.modalLabel}>Type</span><span style={styles.modalValue}>{t.type_client || '-'}</span></div>
+                <div style={styles.modalField}>
+                  <span style={styles.modalLabel}>Type</span>
+                  <span style={styles.modalValue}>
+                    {t.type_client ? (
+                      <span style={{ padding: '2px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, backgroundColor: (COLORS.types[t.type_client?.toUpperCase()] || COLORS.types.PARTICULIER).bg, color: (COLORS.types[t.type_client?.toUpperCase()] || COLORS.types.PARTICULIER).text }}>
+                        {t.type_client}
+                      </span>
+                    ) : '-'}
+                  </span>
+                </div>
               </div>
               <div style={styles.modalSection}>
-                <h3 style={styles.modalSectionTitle}>Ticket</h3>
-                <div style={styles.modalField}>
-                  <span style={styles.modalLabel}>Statut</span>
-                  <span style={styles.modalValue}>
-                    <span style={{ ...styles.badgeBase, backgroundColor: stat.bg, color: stat.text }}>
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: stat.dot, marginRight: 6, display: 'inline-block' }} />
-                      {statutKey}
-                    </span>
+                <h3 style={styles.modalSectionTitle}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '4px', backgroundColor: '#FEF3C7', marginRight: '8px' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14,2 14,8 20,8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
                   </span>
-                </div>
-                <div style={styles.modalField}>
-                  <span style={styles.modalLabel}>Priorité</span>
-                  <span style={styles.modalValue}>
-                    <span style={{ ...styles.badgeBase, backgroundColor: prio.bg, color: prio.text }}>{t.priorite?.toUpperCase()}</span>
-                  </span>
-                </div>
+                  Réclamation
+                </h3>
                 <div style={styles.modalField}><span style={styles.modalLabel}>Site concerné</span><span style={styles.modalValue}>{siteDisplay(t)}</span></div>
                 <div style={styles.modalField}>
                   <span style={styles.modalLabel}>Créé par</span>
@@ -1680,13 +1718,27 @@ export default function AdminDashboard() {
               </div>
             </div>
             <div style={styles.modalSection}>
-              <h3 style={styles.modalSectionTitle}>Mots-clés saisis</h3>
-              <p style={styles.modalText}>{t.mots_cles_ia || 'Aucun mot-clé saisi.'}</p>
+              <h3 style={styles.modalSectionTitle}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '4px', backgroundColor: '#F0FDF4', marginRight: '8px' }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
+                </span>
+                Mots-clés saisis
+              </h3>
+              <div style={{ padding: '10px 14px', backgroundColor: 'var(--bg-hover)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                <p style={styles.modalText}>{t.mots_cles_ia || 'Aucun mot-clé saisi.'}</p>
+              </div>
             </div>
             {t.description && (
               <div style={styles.modalSection}>
-                <h3 style={styles.modalSectionTitle}>Description</h3>
-                <p style={styles.modalText}>{t.description}</p>
+                <h3 style={styles.modalSectionTitle}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '4px', backgroundColor: '#EDE9FE', marginRight: '8px' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                  </span>
+                  Description
+                </h3>
+                <div style={{ padding: '12px 14px', backgroundColor: '#F8FAFC', borderRadius: '8px', border: '1px solid var(--border-light)', borderLeft: '3px solid #7C3AED' }}>
+                  <p style={styles.modalText}>{t.description}</p>
+                </div>
               </div>
             )}
           </div>
@@ -1718,7 +1770,7 @@ export default function AdminDashboard() {
                 <IconArchive style={{ width: 12, height: 12, marginRight: 4 }} /> Archiver
               </button>
             </div>
-            <button style={styles.btnCancel} onClick={() => setSelectedTicket(null)}>Fermer</button>
+            <button style={styles.btnClose} onClick={() => setSelectedTicket(null)}>Fermer</button>
           </div>
         </div>
         {/* Floating user tooltip - shows on hover over user chips */}
@@ -1931,21 +1983,22 @@ const styles = {
   btnCancel: { display: 'flex', alignItems: 'center', backgroundColor: COLORS.cardBg, border: `1px solid ${COLORS.border}`, padding: '10px 24px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: COLORS.textDark, fontFamily: 'inherit' },
   btnDanger: { display: 'flex', alignItems: 'center', backgroundColor: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA', padding: '10px 24px', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' },
   btnNew: { display: 'flex', alignItems: 'center', backgroundColor: COLORS.djezzyRed, color: '#FFFFFF', border: 'none', padding: '8px 16px', borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
-  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modal: { backgroundColor: COLORS.cardBg, borderRadius: 12, width: 700, maxWidth: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-modal)' },
-  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}` },
-  modalTitle: { margin: 0, fontSize: 18, fontWeight: 700, color: COLORS.textDark },
-  modalClose: { background: 'none', border: 'none', cursor: 'pointer', color: COLORS.textMuted, padding: 4 },
+  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' },
+  modal: { backgroundColor: COLORS.cardBg, borderRadius: 14, width: 700, maxWidth: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 80px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.05)' },
+  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}`, background: 'linear-gradient(180deg, rgba(248,250,252,0.8) 0%, rgba(255,255,255,0) 100%)' },
+  modalTitle: { margin: 0, fontSize: 18, fontWeight: 700, color: COLORS.textDark, letterSpacing: '-0.01em' },
+  modalClose: { width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FEE2E2', border: 'none', borderRadius: 8, cursor: 'pointer', color: '#DC2626', padding: 4, transition: 'all 0.15s ease' },
   modalBody: { padding: 24, overflowY: 'auto', flex: 1 },
-  modalGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 },
+  modalGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 },
   modalSection: { marginBottom: 20 },
-  modalSectionTitle: { fontSize: 12, fontWeight: 700, color: COLORS.textMuted, textTransform: 'uppercase', margin: '0 0 12px 0', letterSpacing: '0.5px' },
-  modalField: { display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${COLORS.border}` },
+  modalSectionTitle: { fontSize: 11, fontWeight: 700, color: COLORS.textDark, textTransform: 'uppercase', margin: '0 0 12px 0', letterSpacing: '0.6px', display: 'flex', alignItems: 'center', paddingBottom: '8px', borderBottom: '2px solid var(--border-light)' },
+  modalField: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid var(--border-light)` },
   modalLabel: { fontSize: 12, color: COLORS.textMuted, fontWeight: 500 },
   modalValue: { fontSize: 13, color: COLORS.textDark, fontWeight: 600 },
-  modalText: { fontSize: 13, color: COLORS.textDark, lineHeight: 1.6, margin: 0, whiteSpace: 'pre-wrap' },
+  modalText: { fontSize: 13, color: COLORS.textDark, lineHeight: 1.7, margin: 0, whiteSpace: 'pre-wrap' },
   comment: { padding: 12, backgroundColor: 'var(--bg-input)', borderRadius: 8, marginBottom: 8 },
-  modalFooter: { padding: '16px 24px', borderTop: `1px solid ${COLORS.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  modalFooter: { padding: '16px 24px', borderTop: `1px solid ${COLORS.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(0deg, rgba(248,250,252,0.6) 0%, rgba(255,255,255,0) 100%)' },
+  btnClose: { backgroundColor: '#DC2626', color: '#FFFFFF', border: 'none', padding: '10px 28px', borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s ease', boxShadow: '0 2px 8px rgba(220,38,38,0.25)' },
   userChip: { fontSize: 13, color: COLORS.djezzyRed, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px', textDecorationColor: 'rgba(230,0,35,0.3)', position: 'relative' },
   userTooltip: { position: 'fixed', zIndex: 1200, backgroundColor: 'var(--text-primary)', color: 'var(--bg-card)', padding: '10px 14px', borderRadius: 8, fontSize: 12, boxShadow: 'var(--shadow-modal)', pointerEvents: 'none', whiteSpace: 'nowrap' },
   userTooltipArrow: { position: 'absolute', top: '-5px', left: '16px', width: 10, height: 10, backgroundColor: 'var(--text-primary)', transform: 'rotate(45deg)', borderRadius: 2 },

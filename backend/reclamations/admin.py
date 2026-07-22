@@ -4,7 +4,7 @@
 # tickets, clients, and comments.
 # ─────────────────────────────────────────────────────────────
 from django.contrib import admin
-from .models import Reclamation, CommentaireTicket, GroupeTicket, Client
+from .models import Reclamation, GroupeTicket, Client
 
 
 @admin.register(Client)
@@ -68,8 +68,3 @@ class ReclamationAdmin(admin.ModelAdmin):
         if not change:
             obj.cree_par = request.user
         super().save_model(request, obj, form, change)
-
-
-@admin.register(CommentaireTicket)
-class CommentaireAdmin(admin.ModelAdmin):
-    list_display = ['reclamation', 'auteur', 'created_at']

@@ -3,7 +3,7 @@ seed_all_data.py
 ------------------------------------------------------------─
 Injection complète de données réalistes :
   - 80 clients
-  - 400 réclamations -> ~50 GroupeTickets (cascade top-down)
+  - 750 réclamations -> ~50 GroupeTickets (cascade top-down)
   - 12 rapports IA (5 archivés > 3 mois)
   - ~1200 entrées audit log sur 120 jours
 
@@ -20,7 +20,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from decouple import config
-from reclamations.models import Reclamation, CommentaireTicket, GroupeTicket
+from reclamations.models import Reclamation, GroupeTicket
 from dashboard.models import RapportIA
 from sites_reseau.models import SiteReseau
 from reclamations.models import Client
@@ -148,7 +148,7 @@ def _fake_ip():
 
 class Command(BaseCommand):
     help = (
-        "Seed complet : 400 reclamations, ~50 GroupeTickets (cascade top-down), "
+        "Seed complet : 750 reclamations, ~50 GroupeTickets (cascade top-down), "
         "12 rapports IA, ~1200 logs d'audit"
     )
 
@@ -165,12 +165,11 @@ class Command(BaseCommand):
         # ===================================================═
         self.stdout.write("\n[1/7] Nettoyage de l'ancien jeu de données...")
         ActivityLog.objects.all().delete()
-        CommentaireTicket.objects.all().delete()
         Reclamation.objects.all().delete()
         GroupeTicket.objects.all().delete()
         RapportIA.objects.all().delete()
         Client.objects.all().delete()
-        self.stdout.write("  [OK] ActivityLog, CommentaireTicket, Reclamation, GroupeTicket, RapportIA, Client supprimés")
+        self.stdout.write("  [OK] ActivityLog, Reclamation, GroupeTicket, RapportIA, Client supprimés")
 
         # ===================================================═
         # ÉTAPE 2 — 80 Clients
@@ -195,7 +194,7 @@ class Command(BaseCommand):
         # ===================================================═
         # ÉTAPE 3 — 400 Réclamations
         # ===================================================═
-        self.stdout.write("\n[3/7] Création de 400 réclamations...")
+        self.stdout.write("\n[3/7] Création de 750 réclamations...")
 
         sites = list(SiteReseau.objects.filter(archive=False))
         agents_cc = list(User.objects.filter(role='AGENT_CALL_CENTER', is_active=True))
@@ -223,7 +222,7 @@ class Command(BaseCommand):
         all_recl_data = []
         site_family_recls = defaultdict(list)
 
-        for i in range(400):
+        for i in range(750):
             site = random.choice(sites)
             family = random.choice(family_names)
             client = random.choice(clients)
@@ -280,7 +279,7 @@ class Command(BaseCommand):
             ))
 
         Reclamation.objects.bulk_create(reclamations, batch_size=500)
-        self.stdout.write(f"  [OK] {len(reclamations)} réclamations créées (statut: fermé)")
+        self.stdout.write(f"  [OK] {len(reclamations)} réclamations créées (statut: fermé, 750 total)")
 
         recls_list = list(Reclamation.objects.all().order_by('id'))
         updates = []
@@ -296,17 +295,11 @@ class Command(BaseCommand):
 
         recls_fresh = list(Reclamation.objects.select_related('site', 'cree_par').order_by('created_at'))
 
-        # Group by (site_id, family)
-        site_family_map = defaultdict(list)
+        # Group by site, then sub-split into chunks of 10-15
+        site_map = defaultdict(list)
         for r in recls_fresh:
-            family = 'autre'
-            for fname, kws in KEYWORD_FAMILIES.items():
-                if r.mots_cles_ia in kws:
-                    family = fname
-                    break
-            site_family_map[(r.site_id, family)].append(r)
+            site_map[r.site_id].append(r)
 
-        # Sub-split by 3-day windows
         from reclamations.models import PRIORITE_SCORES
         titre_prefixes = {
             "signal": "Perte de signal",
@@ -321,20 +314,25 @@ class Command(BaseCommand):
         }
 
         all_groups = []
-        for (site_id, family), recs in site_family_map.items():
-            recs_sorted = sorted(recs, key=lambda r: r.created_at)
-            sub_clusters = []
-            current_cluster = [recs_sorted[0]]
-            for j in range(1, len(recs_sorted)):
-                gap = (recs_sorted[j].created_at - recs_sorted[j - 1].created_at).total_seconds()
-                if gap <= 3 * 86400:
-                    current_cluster.append(recs_sorted[j])
+        for site_id, recs in site_map.items():
+            # Determine dominant family for this site
+            family_counter = defaultdict(int)
+            for r in recs:
+                for fname, kws in KEYWORD_FAMILIES.items():
+                    if r.mots_cles_ia in kws:
+                        family_counter[fname] += 1
+                        break
                 else:
-                    sub_clusters.append(current_cluster)
-                    current_cluster = [recs_sorted[j]]
-            sub_clusters.append(current_cluster)
-            for cluster in sub_clusters:
-                all_groups.append((site_id, family, cluster))
+                    family_counter['autre'] += 1
+            dominant_family = max(family_counter, key=family_counter.get) if family_counter else 'autre'
+
+            # Sub-split into chunks of 10-15
+            chunk_size = random.randint(10, 15)
+            recs_sorted = sorted(recs, key=lambda r: r.created_at)
+            for i in range(0, len(recs_sorted), chunk_size):
+                chunk = recs_sorted[i:i + chunk_size]
+                if len(chunk) >= 5:  # skip tiny remainders
+                    all_groups.append((site_id, dominant_family, chunk))
 
         # Sort groups: bigger groups first, then shuffle within same size
         all_groups.sort(key=lambda g: -len(g[2]))
@@ -353,7 +351,7 @@ class Command(BaseCommand):
         recl_updates_bulk = []
 
         for idx, (site_id, family, recs) in enumerate(all_groups):
-            site_obj = recs[0].site
+            site_obj = next(r.site for r in recs if r.site_id == site_id)
             representative = recs[0]
             premier = min(r.created_at for r in recs)
             group_status = status_order[idx] if idx < len(status_order) else 'ferme'
@@ -403,7 +401,12 @@ class Command(BaseCommand):
                 r.statut = recl_statut
                 r.assigne_a = assignee
                 r.groupe = gt
-                r.resolu_le = resolu_le_val
+                # Ensure resolu_le is always AFTER created_at
+                if resolu_le_val is not None:
+                    earliest_res = r.created_at + timedelta(hours=random.randint(2, 48))
+                    r.resolu_le = max(resolu_le_val, earliest_res)
+                else:
+                    r.resolu_le = None
                 recl_updates_bulk.append(r)
 
         Reclamation.objects.bulk_update(

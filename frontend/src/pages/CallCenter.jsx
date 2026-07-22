@@ -263,9 +263,7 @@ export default function CallCenter() {
 
   /* Clear auth tokens and redirect to login */
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+    sessionStorage.clear();
     navigate('/login');
   };
 
@@ -300,10 +298,7 @@ export default function CallCenter() {
     }
     return true;
   }).sort((a, b) => {
-    const typeOrder = { entreprise: 0, particulier: 1 };
-    const ta = typeOrder[(a.type_client || '').toLowerCase()] ?? 2;
-    const tb = typeOrder[(b.type_client || '').toLowerCase()] ?? 2;
-    return ta - tb;
+    return new Date(b.created_at) - new Date(a.created_at);
   });
 
   // Normalize the backend statut value to uppercase with spaces for display and lookup
@@ -583,7 +578,7 @@ export default function CallCenter() {
                         <td style={{ ...styles.td, fontWeight: 600, cursor: 'pointer' }}>{ticket.site_display}</td>
                         <td style={styles.td}>
                           <span style={{ ...styles.badgeBase, backgroundColor: prio.bg, color: prio.text }}>
-                            {ticket.priorite?.toUpperCase()}
+                            {{ basse:'Basse', normale:'Normal', haute:'Haute', critique:'Critique' }[ticket.priorite?.toLowerCase()] || ticket.priorite}
                           </span>
                         </td>
                         <td style={styles.td}>
@@ -608,9 +603,19 @@ export default function CallCenter() {
       {selectedTicket && (
         <div className="fade-in" style={styles.overlay} onClick={() => setSelectedTicket(null)}>
           <div className="scale-in" style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            {/* Modal header with ticket number and close button */}
+            {/* Modal header with ticket number, badges, and close button */}
             <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>Réclamation {selectedTicket.numero_ticket}</h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ width: '4px', height: '36px', borderRadius: '2px', background: `linear-gradient(180deg, ${COLORS.djezzyRed}, ${COLORS.djezzyOrange})` }} />
+                <h2 style={styles.modalTitle}>{selectedTicket.numero_ticket}</h2>
+                <span style={{ padding: '4px 12px', borderRadius: '6px', fontWeight: 700, fontSize: '11px', backgroundColor: (COLORS.status[getStatutKey(selectedTicket.statut)] || COLORS.status.FERME).bg, color: (COLORS.status[getStatutKey(selectedTicket.statut)] || COLORS.status.FERME).text, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: (COLORS.status[getStatutKey(selectedTicket.statut)] || COLORS.status.FERME).dot }} />
+                  {getStatutKey(selectedTicket.statut)}
+                </span>
+                <span style={{ padding: '4px 12px', borderRadius: '6px', fontWeight: 700, fontSize: '11px', backgroundColor: (COLORS.priorities[selectedTicket.priorite?.toUpperCase()] || COLORS.priorities.NORMALE).bg, color: (COLORS.priorities[selectedTicket.priorite?.toUpperCase()] || COLORS.priorities.NORMALE).text }}>
+                  {{ basse:'Basse', normale:'Normal', haute:'Haute', critique:'Critique' }[selectedTicket.priorite?.toLowerCase()] || selectedTicket.priorite}
+                </span>
+              </div>
               <button style={styles.modalClose} onClick={() => setSelectedTicket(null)}><IconX /></button>
             </div>
 
@@ -618,7 +623,12 @@ export default function CallCenter() {
               <div style={styles.modalGrid}>
                 {/* Left column: client information */}
                 <div style={styles.modalSection}>
-                  <h3 style={styles.modalSectionTitle}>Client</h3>
+                  <h3 style={styles.modalSectionTitle}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '4px', backgroundColor: '#EFF6FF', marginRight: '8px', fontSize: '11px' }}>
+                      <IconUser style={{ width: '12px', height: '12px', color: '#2563EB' }} />
+                    </span>
+                    Client
+                  </h3>
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Nom complet</span>
                     <span style={styles.modalValue}>{selectedTicket.nom_complet_client || '\u2014'}</span>
@@ -633,29 +643,24 @@ export default function CallCenter() {
                   </div>
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Type</span>
-                    <span style={styles.modalValue}>{selectedTicket.type_client || '\u2014'}</span>
+                    <span style={styles.modalValue}>
+                      {selectedTicket.type_client ? (
+                        <span style={{ padding: '2px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, backgroundColor: (COLORS.types[selectedTicket.type_client?.toUpperCase()] || COLORS.types.PARTICULIER).bg, color: (COLORS.types[selectedTicket.type_client?.toUpperCase()] || COLORS.types.PARTICULIER).text }}>
+                          {selectedTicket.type_client}
+                        </span>
+                      ) : '\u2014'}
+                    </span>
                   </div>
                 </div>
 
                 {/* Right column: ticket metadata */}
                 <div style={styles.modalSection}>
-                  <h3 style={styles.modalSectionTitle}>Réclamation</h3>
-                  <div style={styles.modalField}>
-                    <span style={styles.modalLabel}>Statut</span>
-                    <span style={styles.modalValue}>
-                      <span style={{ ...styles.badgeBase, ...COLORS.status[getStatutKey(selectedTicket.statut)] || COLORS.status.FERME }}>
-                        {getStatutKey(selectedTicket.statut)}
-                      </span>
+                  <h3 style={styles.modalSectionTitle}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '4px', backgroundColor: '#FEF3C7', marginRight: '8px', fontSize: '11px' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14,2 14,8 20,8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
                     </span>
-                  </div>
-                  <div style={styles.modalField}>
-                    <span style={styles.modalLabel}>Priorite</span>
-                    <span style={styles.modalValue}>
-                      <span style={{ ...styles.badgeBase, ...(COLORS.priorities[selectedTicket.priorite?.toUpperCase()] || COLORS.priorities.NORMALE) }}>
-                        {selectedTicket.priorite?.toUpperCase()}
-                      </span>
-                    </span>
-                  </div>
+                    Réclamation
+                  </h3>
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Site concerne</span>
                     <span style={styles.modalValue}>{selectedTicket.site_display || '\u2014'}</span>
@@ -676,13 +681,12 @@ export default function CallCenter() {
                         <span style={{ fontSize: '10px', color: 'var(--text-muted2)', marginTop: '2px', lineHeight: '1.3', textAlign: 'right' }}>
                           {selectedTicket.cree_par.nom_user || selectedTicket.cree_par.code_user}
                         </span>
-                        {/* Expanded user detail card toggled on click */}
                         {expandedField === 'cree_par' && (
-                          <div style={{ marginTop: '6px', padding: '8px 10px', backgroundColor: 'var(--bg-hover)', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '11px', lineHeight: '1.7', width: '180px' }}>
-                            <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{selectedTicket.cree_par.nom_user || selectedTicket.cree_par.code_user}</div>
+                          <div style={{ marginTop: '6px', padding: '10px 12px', backgroundColor: 'var(--bg-hover)', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '11px', lineHeight: '1.7', width: '200px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                            <div style={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: '2px' }}>{selectedTicket.cree_par.nom_user || selectedTicket.cree_par.code_user}</div>
                             <div style={{ color: 'var(--text-muted3)' }}>{selectedTicket.cree_par.code_user}</div>
                             <div style={{ color: 'var(--text-muted3)' }}>{selectedTicket.cree_par.email}</div>
-                            <div style={{ color: 'var(--text-muted3)' }}>{selectedTicket.cree_par.role_user || selectedTicket.cree_par.role}</div>
+                            <div style={{ color: '#2563EB', fontWeight: 600, fontSize: '10px', marginTop: '2px' }}>{selectedTicket.cree_par.role_user || selectedTicket.cree_par.role}</div>
                           </div>
                         )}
                       </div>
@@ -707,11 +711,11 @@ export default function CallCenter() {
                           {selectedTicket.assigne_a?.nom_user || selectedTicket.assigne_a_display}
                         </span>
                         {expandedField === 'assigne_a' && (
-                          <div style={{ marginTop: '6px', padding: '8px 10px', backgroundColor: 'var(--bg-hover)', borderRadius: '6px', border: '1px solid var(--border-light)', fontSize: '11px', lineHeight: '1.7', width: '180px' }}>
-                            <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{selectedTicket.assigne_a?.nom_user || selectedTicket.assigne_a_display}</div>
+                          <div style={{ marginTop: '6px', padding: '10px 12px', backgroundColor: 'var(--bg-hover)', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '11px', lineHeight: '1.7', width: '200px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                            <div style={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: '2px' }}>{selectedTicket.assigne_a?.nom_user || selectedTicket.assigne_a_display}</div>
                             <div style={{ color: 'var(--text-muted3)' }}>{selectedTicket.assigne_a?.code_user}</div>
                             <div style={{ color: 'var(--text-muted3)' }}>{selectedTicket.assigne_a?.email}</div>
-                            <div style={{ color: 'var(--text-muted3)' }}>{selectedTicket.assigne_a?.role_user || selectedTicket.assigne_a?.role}</div>
+                            <div style={{ color: '#2563EB', fontWeight: 600, fontSize: '10px', marginTop: '2px' }}>{selectedTicket.assigne_a?.role_user || selectedTicket.assigne_a?.role}</div>
                           </div>
                         )}
                       </div>
@@ -724,7 +728,6 @@ export default function CallCenter() {
                     <span style={styles.modalLabel}>Date creation</span>
                     <span style={styles.modalValue}>{formatDateTimeFr(selectedTicket.created_at)}</span>
                   </div>
-                  {/* Only show resolution date if the ticket has been resolved */}
                   {selectedTicket.resolu_le && (
                     <div style={styles.modalField}>
                       <span style={styles.modalLabel}>Resolu le</span>
@@ -736,23 +739,37 @@ export default function CallCenter() {
 
               {/* Keywords entered by the call center agent */}
               <div style={styles.modalSection}>
-                <h3 style={styles.modalSectionTitle}>Mots-cles saisis</h3>
-                <p style={styles.modalText}>{selectedTicket.mots_cles_ia || 'Aucun mot-cle saisi.'}</p>
+                <h3 style={styles.modalSectionTitle}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '4px', backgroundColor: '#F0FDF4', marginRight: '8px', fontSize: '11px' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
+                  </span>
+                  Mots-cles saisis
+                </h3>
+                <div style={{ padding: '10px 14px', backgroundColor: 'var(--bg-hover)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                  <p style={styles.modalText}>{selectedTicket.mots_cles_ia || 'Aucun mot-cle saisi.'}</p>
+                </div>
               </div>
 
               {/* AI-generated description (populated by the backend) */}
               {selectedTicket.description && (
                 <div style={styles.modalSection}>
-                  <h3 style={styles.modalSectionTitle}>Description generee par IA</h3>
-                  <p style={styles.modalText}>{selectedTicket.description}</p>
+                  <h3 style={styles.modalSectionTitle}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '4px', backgroundColor: '#EDE9FE', marginRight: '8px', fontSize: '11px' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                    </span>
+                    Description generee par IA
+                  </h3>
+                  <div style={{ padding: '12px 14px', backgroundColor: '#F8FAFC', borderRadius: '8px', border: '1px solid var(--border-light)', borderLeft: '3px solid #7C3AED' }}>
+                    <p style={styles.modalText}>{selectedTicket.description}</p>
+                  </div>
                 </div>
               )}
 
             </div>
 
-            {/* Modal footer with modify and close buttons */}
+            {/* Modal footer with close button */}
             <div style={styles.modalFooter}>
-              <button style={styles.btnCancel} onClick={() => setSelectedTicket(null)}>Fermer</button>
+              <button style={styles.btnClose} onClick={() => setSelectedTicket(null)}>Fermer</button>
             </div>
           </div>
 
@@ -828,21 +845,22 @@ const styles = {
   btnSubmit: { display: 'flex', alignItems: 'center', backgroundColor: COLORS.djezzyRed, color: '#FFFFFF', border: 'none', padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' },
   btnDanger: { display: 'flex', alignItems: 'center', gap: 6, backgroundColor: '#DC2626', color: '#FFFFFF', border: 'none', padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', marginRight: 'auto' },
 
-  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modal: { backgroundColor: 'var(--bg-card)', borderRadius: '12px', width: '850px', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' },
-  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}` },
-  modalTitle: { margin: 0, fontSize: '18px', fontWeight: 700, color: COLORS.textDark },
-  modalClose: { background: 'none', border: 'none', cursor: 'pointer', color: COLORS.textMuted, padding: '4px' },
+  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' },
+  modal: { backgroundColor: 'var(--bg-card)', borderRadius: '14px', width: '850px', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 80px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.05)' },
+  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}`, background: 'linear-gradient(180deg, rgba(248,250,252,0.8) 0%, rgba(255,255,255,0) 100%)' },
+  modalTitle: { margin: 0, fontSize: '18px', fontWeight: 700, color: COLORS.textDark, letterSpacing: '-0.01em' },
+  modalClose: { width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FEE2E2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#DC2626', padding: '4px', transition: 'all 0.15s ease' },
   modalBody: { padding: '24px', overflowY: 'auto', flex: 1 },
-  modalGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' },
+  modalGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' },
   modalSection: { marginBottom: '20px' },
-  modalSectionTitle: { fontSize: '12px', fontWeight: 700, color: COLORS.textMuted, textTransform: 'uppercase', margin: '0 0 12px 0', letterSpacing: '0.5px' },
-  modalField: { display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${COLORS.border}` },
+  modalSectionTitle: { fontSize: '11px', fontWeight: 700, color: COLORS.textDark, textTransform: 'uppercase', margin: '0 0 12px 0', letterSpacing: '0.6px', display: 'flex', alignItems: 'center', paddingBottom: '8px', borderBottom: '2px solid var(--border-light)' },
+  modalField: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid var(--border-light)` },
   modalLabel: { fontSize: '12px', color: COLORS.textMuted, fontWeight: 500 },
   modalValue: { fontSize: '13px', color: COLORS.textDark, fontWeight: 600 },
-  modalText: { fontSize: '13px', color: COLORS.textDark, lineHeight: '1.6', margin: 0, whiteSpace: 'pre-wrap' },
+  modalText: { fontSize: '13px', color: COLORS.textDark, lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' },
   comment: { padding: '12px', backgroundColor: 'var(--bg-input)', borderRadius: '8px', marginBottom: '8px' },
-  modalFooter: { padding: '16px 24px', borderTop: `1px solid ${COLORS.border}`, display: 'flex', justifyContent: 'flex-end' },
+  modalFooter: { padding: '16px 24px', borderTop: `1px solid ${COLORS.border}`, display: 'flex', justifyContent: 'flex-end', background: 'linear-gradient(0deg, rgba(248,250,252,0.6) 0%, rgba(255,255,255,0) 100%)' },
+  btnClose: { backgroundColor: '#DC2626', color: '#FFFFFF', border: 'none', padding: '10px 28px', borderRadius: '8px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s ease', boxShadow: '0 2px 8px rgba(220,38,38,0.25)' },
 
   userChip: { fontSize: '13px', color: COLORS.djezzyRed, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '2px', textDecorationColor: 'rgba(232,64,26,0.3)', position: 'relative' },
 

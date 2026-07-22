@@ -19,7 +19,7 @@ MISTRAL_MODEL = config('MISTRAL_MODEL', default='mistral-small-latest')
 
 SIMILARITY_THRESHOLD = 0.80
 SIMILARITY_HIGH = 0.90
-GROUP_WINDOW_DAYS = 7
+GROUP_WINDOW_DAYS = 3
 
 # ── Keyword → category mapping ──────────────────────────────
 _CATEGORY_KEYWORDS = {
@@ -108,7 +108,7 @@ def trouver_ou_creer_groupe(reclamation):
 
     candidats = GroupeTicket.objects.filter(
         site=reclamation.site,
-        statut__in=['ouvert'],
+        statut__in=['ouvert', 'ferme'],
         created_at__gte=cutoff,
         is_archived=False,
     )
@@ -131,6 +131,7 @@ def trouver_ou_creer_groupe(reclamation):
 
 def _ajouter_au_groupe(reclamation, groupe, similarity):
     reclamation.groupe = groupe
+    reclamation.statut = groupe.statut
     reclamation.save()
 
     groupe.nombre_reclamations = groupe.reclamations.count()
@@ -161,7 +162,7 @@ def _creer_nouveau_groupe(reclamation):
         description=description,
         mots_cles=reclamation.mots_cles_ia or '',
         priorite=reclamation.priorite,
-        statut='ouvert',
+        statut='ferme',
         cree_par=reclamation.cree_par,
         nombre_reclamations=1,
         premier_signalement=reclamation.created_at,

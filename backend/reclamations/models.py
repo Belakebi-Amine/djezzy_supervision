@@ -108,6 +108,15 @@ class GroupeTicket(models.Model):
         related_name='groupes_tickets_archives',
     )
 
+    locked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='groupes_tickets_verrouilles',
+        verbose_name='Verrouillé par',
+    )
+    locked_at = models.DateTimeField(null=True, blank=True, verbose_name='Verrouillé le')
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     resolu_le = models.DateTimeField(null=True, blank=True)
@@ -337,26 +346,4 @@ class Reclamation(models.Model):
         super().save(*args, **kwargs)
 
 
-class CommentaireTicket(models.Model):
-    """
-    Comments added by engineers on tickets. Used for internal
-    communication about issue resolution progress.
-    """
-    reclamation = models.ForeignKey(
-        Reclamation,
-        on_delete=models.CASCADE,
-        related_name='commentaires',
-    )
-    auteur = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-    )
-    contenu = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
 
-    class Meta:
-        ordering = ['created_at']
-
-    def __str__(self):
-        return f"Commentaire de {self.auteur} sur {self.reclamation}"

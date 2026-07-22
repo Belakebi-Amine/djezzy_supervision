@@ -5,10 +5,10 @@
 // (decode, refresh, inject) for each request. Handles all
 // dashboard-related API calls: stats, reporting, sites, tickets,
 // comments, and AI report generation.
+// Tokens stored in sessionStorage (per-tab) for multi-user support.
 // ─────────────────────────────────────────────────────────────
 const API_URL = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000/api";
 
-// Decode JWT payload to check expiration
 const decodePayload = (token) => {
     try {
         const base64Url = token.split('.')[1];
@@ -17,9 +17,16 @@ const decodePayload = (token) => {
     } catch { return null; }
 };
 
-// Refresh the access token when it expires
+const getAccessToken = () => sessionStorage.getItem('access_token');
+const setAccessToken = (t) => sessionStorage.setItem('access_token', t);
+const clearAccessToken = () => sessionStorage.removeItem('access_token');
+const getRefreshToken = () => sessionStorage.getItem('refresh_token');
+const setRefreshToken = (t) => sessionStorage.setItem('refresh_token', t);
+const clearRefreshToken = () => sessionStorage.removeItem('refresh_token');
+const clearAllTokens = () => { clearAccessToken(); clearRefreshToken(); };
+
 const refreshToken = async () => {
-    const refresh = localStorage.getItem('refresh_token');
+    const refresh = getRefreshToken();
     if (!refresh) return null;
     try {
         const response = await fetch(`${API_URL}/token/refresh/`, {
@@ -29,21 +36,17 @@ const refreshToken = async () => {
         });
         if (!response.ok) throw new Error('Refresh failed');
         const data = await response.json();
-        localStorage.setItem('access_token', data.access);
-        localStorage.setItem('token', data.access);
-        if (data.refresh) localStorage.setItem('refresh_token', data.refresh);
+        setAccessToken(data.access);
+        if (data.refresh) setRefreshToken(data.refresh);
         return data.access;
     } catch {
-        localStorage.removeItem('token');
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
+        clearAllTokens();
         return null;
     }
 };
 
-// Build auth headers with automatic token refresh
 const getHeaders = async () => {
-    let token = localStorage.getItem('access_token') || localStorage.getItem('token');
+    let token = getAccessToken();
     const payload = token ? decodePayload(token) : null;
     const valid = payload && Date.now() < payload.exp * 1000;
 
@@ -59,10 +62,11 @@ const getHeaders = async () => {
     };
 };
 
-// Redirect to login on 401 Unauthorized
-const checkAuthAndRedirect = (status) => {
+// On 401, try refresh first. Only clear if refresh also fails.
+const checkAuthAndRedirect = async (status) => {
     if (status === 401) {
-        ['token', 'access_token', 'refresh_token'].forEach(k => localStorage.removeItem(k));
+        const newToken = await refreshToken();
+        if (!newToken) clearAllTokens();
     }
 };
 
@@ -137,18 +141,6 @@ export const updateSite = async (id, data) => {
     });
     checkAuthAndRedirect(response.status);
     if (!response.ok) throw new Error(`Erreur mise à jour site [${response.status}]`);
-    return await response.json();
-};
-
-// ── Comments ──
-
-export const addComment = async (ticketId, contenu) => {
-    const response = await fetch(`${API_URL}/reclamations/${ticketId}/commentaire/`, {
-        method: 'POST',
-        headers: await getHeaders(),
-        body: JSON.stringify({ contenu }),
-    });
-    if (!response.ok) throw new Error(`Erreur commentaire [${response.status}]`);
     return await response.json();
 };
 
@@ -277,8 +269,8 @@ export const getAuditLogs = async (params = {}) => {
     return await response.json();
 };
 
-export const getAuditStats = async () => {
-    const response = await fetch(`${API_URL}/audit/stats/`, {
+export const getAuditStats = async (jours = 7) => {
+    const response = await fetch(`${API_URL}/audit/stats/?jours=${jours}`, {
         headers: await getHeaders(),
     });
     if (!response.ok) throw new Error(`Erreur audit-stats [${response.status}]`);

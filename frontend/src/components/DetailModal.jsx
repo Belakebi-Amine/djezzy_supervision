@@ -22,24 +22,25 @@ import { getReclamationsList, updateSite } from '../api/dashboard';
 const S = {
   overlay: {
     position: 'fixed', inset: 0, zIndex: 9999,
-    background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)',
+    background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     padding: 30,
   },
   modal: {
-    background: '#fff', borderRadius: 12, width: '100%', maxWidth: 1200,
+    background: '#fff', borderRadius: 14, width: '100%', maxWidth: 1200,
     maxHeight: '95vh', display: 'flex', flexDirection: 'column',
-    boxShadow: '0 25px 80px rgba(0,0,0,0.3)', overflow: 'hidden',
+    boxShadow: '0 25px 80px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.05)', overflow: 'hidden',
   },
   head: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     padding: '16px 24px', borderBottom: '1px solid #e2e8f0',
+    background: 'linear-gradient(180deg, rgba(248,250,252,0.8) 0%, rgba(255,255,255,0) 100%)',
   },
-  title: { fontSize: 17, fontWeight: 700, color: '#1c212b', margin: 0 },
+  title: { fontSize: 17, fontWeight: 700, color: '#1c212b', margin: 0, letterSpacing: '-0.01em' },
   close: {
-    width: 32, height: 32, border: 'none', borderRadius: 6, cursor: 'pointer',
-    background: '#f1f4f9', color: '#64748B', fontSize: 20, lineHeight: '32px',
-    textAlign: 'center', fontFamily: 'inherit',
+    width: 32, height: 32, border: 'none', borderRadius: 8, cursor: 'pointer',
+    background: '#FEE2E2', color: '#DC2626', fontSize: 20, lineHeight: '32px',
+    textAlign: 'center', fontFamily: 'inherit', transition: 'all 0.15s ease',
   },
   chartZone: { padding: '16px 24px 8px', borderBottom: '1px solid #f0f0f0' },
   chartBox: { width: '100%', height: 400 },
@@ -92,7 +93,8 @@ const PAL = ['#E8401A', '#2563EB', '#10B981', '#F59E0B', '#8B5CF6'];
 // --- Composant Badge : affiche un texte avec une couleur selon le map ---
 const Badge = ({ text, map }) => {
   const c = map?.[text?.toLowerCase()] || '#64748B';
-  return <span style={S.badge(c)}>{text}</span>;
+  const display = { basse:'Basse', normale:'Normal', haute:'Haute', critique:'Critique' }[text?.toLowerCase()] || text || '—';
+  return <span style={S.badge(c)}>{display}</span>;
 };
 
 // --- Composant Tooltip personnalisé pour les graphiques Recharts ---
@@ -129,16 +131,16 @@ function TicketRow({ ticket }) {
       </tr>
       {show && (
         <tr>
-          <td colSpan={7} style={{ ...S.edit, padding: '10px 14px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', fontSize: 11, color: '#475569' }}>
-              <div><strong>Email:</strong> {ticket.email_client || '—'}</div>
-              <div><strong>Tél:</strong> {ticket.telephone_client || '—'}</div>
-              <div><strong>Type:</strong> {ticket.type_client || '—'}</div>
-              <div><strong>Site:</strong> {ticket.site_display || ticket.site?.nom || '—'}</div>
-              <div><strong>Créé par:</strong> {ticket.cree_par?.nom_user || ticket.cree_par?.code_user || '—'}</div>
-              <div><strong>Assigné à:</strong> {ticket.assigne_a_display || '—'}</div>
-              {ticket.mots_cles_ia && <div style={{ gridColumn: '1 / -1' }}><strong>Mots-clés:</strong> {ticket.mots_cles_ia}</div>}
-              {ticket.description && <div style={{ gridColumn: '1 / -1' }}><strong>Description IA:</strong> {ticket.description}</div>}
+          <td colSpan={7} style={{ ...S.edit, padding: '12px 14px', background: '#F8FAFC', borderBottom: '2px solid #e2e8f0' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', fontSize: 11, color: '#475569' }}>
+              <div style={{ padding: '4px 0' }}><strong style={{ color: '#1c212b' }}>Email:</strong> {ticket.email_client || '—'}</div>
+              <div style={{ padding: '4px 0' }}><strong style={{ color: '#1c212b' }}>Tél:</strong> {ticket.telephone_client || '—'}</div>
+              <div style={{ padding: '4px 0' }}><strong style={{ color: '#1c212b' }}>Type:</strong> {ticket.type_client || '—'}</div>
+              <div style={{ padding: '4px 0' }}><strong style={{ color: '#1c212b' }}>Site:</strong> {ticket.site_display || ticket.site?.nom || '—'}</div>
+              <div style={{ padding: '4px 0' }}><strong style={{ color: '#1c212b' }}>Créé par:</strong> {ticket.cree_par?.nom_user || ticket.cree_par?.code_user || '—'}</div>
+              <div style={{ padding: '4px 0' }}><strong style={{ color: '#1c212b' }}>Assigné à:</strong> {ticket.assigne_a_display || '—'}</div>
+              {ticket.mots_cles_ia && <div style={{ gridColumn: '1 / -1', padding: '6px 10px', backgroundColor: '#F0FDF4', borderRadius: '6px', border: '1px solid #BBF7D0', marginTop: '4px' }}><strong style={{ color: '#16A34A' }}>Mots-clés:</strong> <span style={{ color: '#16A34A' }}>{ticket.mots_cles_ia}</span></div>}
+              {ticket.description && <div style={{ gridColumn: '1 / -1', padding: '6px 10px', backgroundColor: '#F8FAFC', borderRadius: '6px', border: '1px solid #e2e8f0', borderLeft: '3px solid #7C3AED', marginTop: '4px' }}><strong style={{ color: '#7C3AED' }}>Description IA:</strong> <span style={{ color: '#475569' }}>{ticket.description}</span></div>}
             </div>
           </td>
         </tr>

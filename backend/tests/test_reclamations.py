@@ -168,9 +168,3 @@ class TestCommentaire(TestCase):
 
     def _auth(self):
         return {'HTTP_AUTHORIZATION': f'Bearer {self.token}'}
-
-    def test_ajouter_commentaire(self):
-        resp = self.client.post(f'/api/reclamations/{self.r.pk}/commentaire/', {
-            'contenu': 'Test commentaire'
-        }, content_type='application/json', **self._auth())
-        self.assertEqual(resp.status_code, 201)

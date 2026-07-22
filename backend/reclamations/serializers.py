@@ -5,22 +5,13 @@
 # plus write-only ID fields for creation and updates.
 # ─────────────────────────────────────────────────────────────
 from rest_framework import serializers
-from .models import Reclamation, CommentaireTicket, GroupeTicket, Client
+from .models import Reclamation, GroupeTicket, Client
 from accounts.serializers import UserSerializer
 from sites_reseau.serializers import SiteReseauSerializer
 from sites_reseau.models import SiteReseau
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
-
-
-class CommentaireSerializer(serializers.ModelSerializer):
-    auteur = UserSerializer(read_only=True)
-
-    class Meta:
-        model = CommentaireTicket
-        fields = ['id', 'auteur', 'contenu', 'created_at']
-        read_only_fields = ['created_at']
 
 
 class ClientSerializer(serializers.ModelSerializer):
@@ -80,6 +71,7 @@ class GroupeTicketSerializer(serializers.ModelSerializer):
 
     site_display = serializers.CharField(source='site.nom', read_only=True, default='Non spécifié')
     assigne_a_display = serializers.SerializerMethodField()
+    locked_by_display = serializers.SerializerMethodField()
 
     premier_signalement_display = serializers.SerializerMethodField()
 
@@ -89,6 +81,7 @@ class GroupeTicketSerializer(serializers.ModelSerializer):
             'id', 'numero_ticket', 'site', 'site_id', 'site_display',
             'titre', 'description', 'mots_cles', 'priorite', 'statut',
             'assigne_a', 'assigne_a_id', 'assigne_a_display',
+            'locked_by', 'locked_at', 'locked_by_display',
             'cree_par', 'nombre_reclamations', 'reclamations_count',
             'reclamations', 'has_entreprise',
             'premier_signalement', 'premier_signalement_display',
@@ -96,6 +89,7 @@ class GroupeTicketSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             'numero_ticket', 'cree_par', 'nombre_reclamations',
+            'locked_by', 'locked_at',
             'created_at', 'updated_at', 'resolu_le',
         ]
 
@@ -103,6 +97,11 @@ class GroupeTicketSerializer(serializers.ModelSerializer):
         if obj.assigne_a:
             return obj.assigne_a.code_user
         return "-"
+
+    def get_locked_by_display(self, obj):
+        if obj.locked_by:
+            return obj.locked_by.code_user
+        return None
 
     def get_premier_signalement_display(self, obj):
         if obj.premier_signalement:
@@ -131,8 +130,6 @@ class ReclamationSerializer(serializers.ModelSerializer):
     assigne_a = UserSerializer(read_only=True)
     site = SiteReseauSerializer(read_only=True)
     client = ClientSerializer(read_only=True)
-    commentaires = CommentaireSerializer(many=True, read_only=True)
-
     site_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     client_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     assigne_a_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
@@ -153,7 +150,7 @@ class ReclamationSerializer(serializers.ModelSerializer):
             'site', 'site_id', 'site_display', 'mots_cles_ia', 'priorite',
             'groupe', 'groupe_info',
             'statut', 'cree_par', 'assigne_a', 'assigne_a_id', 'assigne_a_display',
-            'commentaires', 'created_at', 'updated_at', 'resolu_le',
+            'created_at', 'updated_at', 'resolu_le',
         ]
         read_only_fields = ['numero_ticket', 'cree_par', 'created_at', 'updated_at', 'resolu_le', 'priorite']
 
@@ -167,7 +164,7 @@ class ReclamationSerializer(serializers.ModelSerializer):
         client_id = validated_data.pop('client_id', None)
         assigne_a_id = validated_data.pop('assigne_a_id', None)
 
-        validated_data.setdefault('statut', 'ouvert')
+        validated_data.setdefault('statut', 'ferme')
         reclamation = Reclamation.objects.create(**validated_data)
 
         if site_id:

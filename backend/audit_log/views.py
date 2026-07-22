@@ -45,6 +45,14 @@ def system_health(request):
         cursor.execute("SELECT pg_size_pretty(pg_database_size(current_database()))")
         db_size = cursor.fetchone()[0]
 
+    # Table count (project models only)
+    from django.apps import apps
+    PROJECT_APPS = ['accounts', 'reclamations', 'sites_reseau', 'audit_log', 'dashboard']
+    table_count = sum(
+        1 for model in apps.get_models()
+        if model._meta.app_label in PROJECT_APPS and not model._meta.proxy
+    )
+
     # Uptime
     now = timezone.now()
     uptime_delta = now - SERVER_START
@@ -85,8 +93,8 @@ def system_health(request):
         perturbe=Count('id', filter=Q(statut='PERTURBE')),
     )
 
-    # Ticket summary
-    ticket_stats = Reclamation.objects.aggregate(
+    # Ticket summary (GroupeTicket = consolidated tickets)
+    ticket_stats = GroupeTicket.objects.aggregate(
         total=Count('id'),
         ouverts=Count('id', filter=Q(statut__iexact='ouvert')),
         resolus=Count('id', filter=Q(statut__iexact='resolu')),
@@ -97,7 +105,7 @@ def system_health(request):
     taux_resolution = round((resolus_t / total_t) * 100, 1) if total_t > 0 else 0.0
 
     # Unassigned open tickets (need attention)
-    ouverts_non_assignes = Reclamation.objects.filter(
+    ouverts_non_assignes = GroupeTicket.objects.filter(
         statut__iexact='ouvert', assigne_a__isnull=True
     ).count()
 
@@ -106,6 +114,7 @@ def system_health(request):
         'server_start': SERVER_START.isoformat(),
         'db_latency_ms': db_latency_ms,
         'db_size': db_size,
+        'table_count': table_count,
         'active_users': active_users,
         'online_today': online_today,
         'total_users': total_users,
@@ -212,42 +221,45 @@ def audit_stats(request):
 
     now = timezone.now()
 
-    # Actions per day over last 7 days
-    seven_days_ago = now - timedelta(days=7)
-    daily_actions = (
-        ActivityLog.objects.filter(created_at__gte=seven_days_ago)
-        .annotate(day=Count('id'))
-        .values_list('created_at__date', flat=True)
-    )
+    # Parse the day range parameter (default: 7 days)
+    jours_param = request.query_params.get('jours', '7')
+    try:
+        nb_jours = int(jours_param)
+    except ValueError:
+        nb_jours = 7
+    nb_jours = max(1, min(nb_jours, 3650))
+
+    date_limite = now - timedelta(days=nb_jours)
+
+    # Actions per day over selected period
     daily_counts_raw = (
-        ActivityLog.objects.filter(created_at__gte=seven_days_ago)
+        ActivityLog.objects.filter(created_at__gte=date_limite)
         .values('created_at__date')
         .annotate(count=Count('id'))
         .order_by('created_at__date')
     )
     daily_counts = {str(d['created_at__date']): d['count'] for d in daily_counts_raw}
 
-    # Build complete 7-day series
+    # Build complete series
     daily_series = []
-    for i in range(6, -1, -1):
+    for i in range(nb_jours - 1, -1, -1):
         d = (now - timedelta(days=i)).date()
         daily_series.append({
             'date': str(d),
             'count': daily_counts.get(str(d), 0),
         })
 
-    # Top 5 most active users (last 30 days)
-    thirty_days_ago = now - timedelta(days=30)
+    # Top 5 most active users (same period)
     top_users = (
-        ActivityLog.objects.filter(created_at__gte=thirty_days_ago, user_code__gt='')
+        ActivityLog.objects.filter(created_at__gte=date_limite, user_code__gt='')
         .values('user_code', 'user_name', 'user_role')
         .annotate(count=Count('id'))
         .order_by('-count')[:5]
     )
 
-    # Action type distribution (last 30 days)
+    # Action type distribution (same period)
     action_dist = (
-        ActivityLog.objects.filter(created_at__gte=thirty_days_ago)
+        ActivityLog.objects.filter(created_at__gte=date_limite)
         .values('action')
         .annotate(count=Count('id'))
         .order_by('-count')[:10]

@@ -430,7 +430,7 @@ export default function SupervisorDashboard() {
 
   // logout – clears all auth tokens and redirects to the login page
   const logout = () => {
-    ['token', 'access_token', 'refresh_token'].forEach((k) => localStorage.removeItem(k));
+    sessionStorage.clear();
     navigate('/login');
   };
 

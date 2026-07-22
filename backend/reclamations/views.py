@@ -11,10 +11,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.utils import timezone
 from django.db.models import Count, Q
+from django.db import transaction
 from django.utils import timezone as tz
 from .models import Reclamation, GroupeTicket
 from .serializers import (
-    ReclamationSerializer, CommentaireSerializer,
+    ReclamationSerializer,
     GroupeTicketSerializer,
 )
 from .services import trouver_ou_creer_groupe
@@ -151,21 +152,6 @@ def detail_reclamation(request, pk):
             ActivityLog.log('update_ticket', user=request.user, details={'numero': reclamation.numero_ticket or f'R{reclamation.pk}', 'champs': list(request.data.keys())}, ip=_get_ip(request))
             return Response(ReclamationSerializer(reclamation).data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated, IsAdminEngineerOrSupervisor])
-def ajouter_commentaire(request, pk):
-    try:
-        reclamation = Reclamation.objects.get(pk=pk)
-    except Reclamation.DoesNotExist:
-        return Response({'error': 'Ticket introuvable'}, status=status.HTTP_404_NOT_FOUND)
-
-    serializer = CommentaireSerializer(data=request.data)
-    if serializer.is_valid():
-        serializer.save(reclamation=reclamation, auteur=request.user)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['POST'])
@@ -378,29 +364,37 @@ def resoudre_groupe_ticket(request, pk):
 @permission_classes([IsAuthenticated])
 def assigner_groupe_ticket(request, pk):
     try:
-        groupe = GroupeTicket.objects.get(pk=pk)
+        with transaction.atomic():
+            groupe = GroupeTicket.objects.select_for_update().get(pk=pk)
+
+            if request.user.role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX, Role.SUPERVISEUR]:
+                return Response({'error': 'Permission refusée'}, status=status.HTTP_403_FORBIDDEN)
+
+            # Lock check: only the locker, assignee, or admin can assign
+            if groupe.locked_by and groupe.locked_by != request.user and request.user.role != Role.ADMIN:
+                return Response({
+                    'error': f'Ticket verrouille par {groupe.locked_by.code_user}',
+                    'locked_by': groupe.locked_by.code_user,
+                }, status=status.HTTP_409_CONFLICT)
+
+            was_closed = groupe.statut in ('ferme', 'resolu')
+
+            groupe.assigne_a = request.user
+            if was_closed:
+                groupe.statut = 'ouvert'
+                groupe.resolu_le = None
+            groupe.save()
+
+            rec_update = {'assigne_a': request.user}
+            if was_closed:
+                rec_update['statut'] = 'ouvert'
+                rec_update['resolu_le'] = None
+            Reclamation.objects.filter(groupe=groupe).update(**rec_update)
+
+            ActivityLog.log('assign_ticket', user=request.user, details={'numero': groupe.numero_ticket, 'a': request.user.code_user}, ip=_get_ip(request))
+            return Response(GroupeTicketSerializer(groupe).data)
     except GroupeTicket.DoesNotExist:
         return Response({'error': 'Ticket introuvable'}, status=status.HTTP_404_NOT_FOUND)
-
-    if request.user.role not in [Role.ADMIN, Role.INGENIEUR_RESEAUX, Role.SUPERVISEUR]:
-        return Response({'error': 'Permission refusée'}, status=status.HTTP_403_FORBIDDEN)
-
-    was_closed = groupe.statut in ('ferme', 'resolu')
-
-    groupe.assigne_a = request.user
-    if was_closed:
-        groupe.statut = 'ouvert'
-        groupe.resolu_le = None
-    groupe.save()
-
-    rec_update = {'assigne_a': request.user}
-    if was_closed:
-        rec_update['statut'] = 'ouvert'
-        rec_update['resolu_le'] = None
-    Reclamation.objects.filter(groupe=groupe).update(**rec_update)
-
-    ActivityLog.log('assign_ticket', user=request.user, details={'numero': groupe.numero_ticket, 'a': request.user.code_user}, ip=_get_ip(request))
-    return Response(GroupeTicketSerializer(groupe).data)
 
 
 @api_view(['POST'])
@@ -426,3 +420,60 @@ def archiver_groupe_ticket(request, pk):
 
     ActivityLog.log('archive_ticket', user=request.user, details={'numero': groupe.numero_ticket, 'type': 'groupe'}, ip=_get_ip(request))
     return Response({'message': 'Ticket groupé archivé', 'id': pk})
+
+
+# ── Lock / Unlock endpoints ─────────────────────────────────
+
+LOCK_EXPIRY_SECONDS = 300  # 5 minutes
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def verrouiller_groupe_ticket(request, pk):
+    try:
+        with transaction.atomic():
+            groupe = GroupeTicket.objects.select_for_update().get(pk=pk)
+            now = timezone.now()
+
+            # Auto-expire stale locks (> 5 min)
+            if groupe.locked_by and groupe.locked_at:
+                elapsed = (now - groupe.locked_at).total_seconds()
+                if elapsed > LOCK_EXPIRY_SECONDS:
+                    groupe.locked_by = None
+                    groupe.locked_at = None
+
+            # Already locked by another user
+            if groupe.locked_by and groupe.locked_by != request.user:
+                return Response({
+                    'error': f'Ticket déjà en cours par {groupe.locked_by.code_user}',
+                    'locked_by': groupe.locked_by.code_user,
+                }, status=status.HTTP_409_CONFLICT)
+
+            # Acquire lock
+            groupe.locked_by = request.user
+            groupe.locked_at = now
+            groupe.save()
+
+            return Response(GroupeTicketSerializer(groupe).data)
+    except GroupeTicket.DoesNotExist:
+        return Response({'error': 'Ticket introuvable'}, status=status.HTTP_404_NOT_FOUND)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def deverrouiller_groupe_ticket(request, pk):
+    try:
+        groupe = GroupeTicket.objects.get(pk=pk)
+    except GroupeTicket.DoesNotExist:
+        return Response({'error': 'Ticket introuvable'}, status=status.HTTP_404_NOT_FOUND)
+
+    # Only the locker or admin can release
+    if groupe.locked_by and groupe.locked_by != request.user and request.user.role != Role.ADMIN:
+        return Response({'error': 'Ce ticket est verrouillé par un autre utilisateur'}, status=status.HTTP_403_FORBIDDEN)
+
+    groupe.locked_by = None
+    groupe.locked_at = None
+    groupe.save()
+
+    return Response(GroupeTicketSerializer(groupe).data)
+

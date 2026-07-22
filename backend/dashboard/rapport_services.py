@@ -170,7 +170,8 @@ def _collecter_donnees(date_debut=None, date_fin=None):
     taux_resolution = round((tickets_resolus / total_tickets * 100), 1) if total_tickets else 0
 
     avg_delai = tickets.filter(
-        statut__in=['resolu', 'ferme'], resolu_le__isnull=False
+        statut__in=['resolu', 'ferme'], resolu_le__isnull=False,
+        resolu_le__gt=models.F('created_at'),
     ).annotate(
         duree=models.ExpressionWrapper(
             models.F('resolu_le') - models.F('created_at'),
@@ -180,9 +181,11 @@ def _collecter_donnees(date_debut=None, date_fin=None):
 
     delai_moyen = "N/A"
     if avg_delai:
-        heures = int(avg_delai.total_seconds() // 3600)
-        minutes = int((avg_delai.total_seconds() % 3600) // 60)
-        delai_moyen = f"{heures}h {minutes}m"
+        total_sec = int(avg_delai.total_seconds())
+        if total_sec >= 0:
+            heures = total_sec // 3600
+            minutes = (total_sec % 3600) // 60
+            delai_moyen = f"{heures}h {minutes}m"
 
     # ── Keywords frequency ──
     top_keywords = list(
@@ -267,6 +270,12 @@ def _detecter_sections(prompt):
     # Default: if no specific section detected, show everything
     if not sections:
         sections = ['kpi', 'reseau', 'tickets', 'priorites', 'resolution', 'performance_equipe', 'geographie', 'evolution', 'recommandations']
+    # Always include KPI + priority sections for summary stats
+    if 'kpi' not in sections:
+        sections.insert(0, 'kpi')
+    if 'priorites' not in sections:
+        idx = sections.index('kpi') + 1 if 'kpi' in sections else 0
+        sections.insert(idx, 'priorites')
     return sections
 
 

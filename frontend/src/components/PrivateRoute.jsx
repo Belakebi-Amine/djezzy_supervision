@@ -24,7 +24,7 @@ const ROLE_ROUTES = {
 };
 
 export default function PrivateRoute({ children, requiredRole }) {
-    const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+    const token = sessionStorage.getItem('access_token');
 
     if (!token) {
         return <Navigate to="/login" replace />;
@@ -34,9 +34,8 @@ export default function PrivateRoute({ children, requiredRole }) {
 
     // Check if token is expired
     if (!payload || Date.now() >= payload.exp * 1000) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
+        sessionStorage.removeItem('access_token');
+        sessionStorage.removeItem('refresh_token');
         return <Navigate to="/login" replace />;
     }
 

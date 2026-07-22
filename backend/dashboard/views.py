@@ -40,6 +40,8 @@ def _format_duree(duree):
     if not duree:
         return "N/A"
     total_seconds = int(duree.total_seconds())
+    if total_seconds < 0:
+        return "N/A"
     heures = total_seconds // 3600
     minutes = (total_seconds % 3600) // 60
     return f"{heures}h {minutes}m"
@@ -101,7 +103,8 @@ def statistiques(request):
     # ── Average resolution delay ──
     # Calculates mean time between ticket creation and resolution
     delai_stats = Reclamation.objects.filter(
-        created_at__gte=date_limite, statut='resolu', resolu_le__isnull=False
+        created_at__gte=date_limite, statut__in=['resolu', 'ferme'],
+        resolu_le__isnull=False, resolu_le__gt=F('created_at'),
     ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
     delai_moyen_str = _format_duree(delai_stats['duree__avg'])
 
@@ -109,7 +112,8 @@ def statistiques(request):
     delai_par_prio = {}
     for prio in ['critique', 'haute', 'normale', 'basse']:
         d = Reclamation.objects.filter(
-            created_at__gte=date_limite, statut='resolu', resolu_le__isnull=False,
+            created_at__gte=date_limite, statut__in=['resolu', 'ferme'],
+            resolu_le__isnull=False, resolu_le__gt=F('created_at'),
             priorite__iexact=prio,
         ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
         delai_par_prio[prio] = _format_duree(d['duree__avg'])
@@ -176,7 +180,8 @@ def statistiques(request):
         resolus = GroupeTicket.objects.filter(assigne_a=ing, statut='resolu', created_at__gte=date_limite).count()
         ouverts = GroupeTicket.objects.filter(assigne_a=ing, statut='ouvert', created_at__gte=date_limite).count()
         delai_ing = GroupeTicket.objects.filter(
-            assigne_a=ing, statut='resolu', resolu_le__isnull=False, created_at__gte=date_limite
+            assigne_a=ing, statut__in=['resolu', 'ferme'], resolu_le__isnull=False,
+            created_at__gte=date_limite, resolu_le__gt=F('created_at'),
         ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
         stats_employes.append({
             'code': ing.code_user,
@@ -268,7 +273,8 @@ def stats_reporting(request):
     taux_resolution = round((resolus_t / total_t) * 100, 1) if total_t > 0 else 0.0
 
     delai_stats = Reclamation.objects.filter(
-        created_at__gte=date_limite, statut='resolu', resolu_le__isnull=False
+        created_at__gte=date_limite, statut__in=['resolu', 'ferme'],
+        resolu_le__isnull=False, resolu_le__gt=F('created_at'),
     ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
     delai_moyen_str = _format_duree(delai_stats['duree__avg'])
 
@@ -300,7 +306,8 @@ def stats_reporting(request):
 
         delai_w_stats = Reclamation.objects.filter(
             created_at__gte=date_limite, site__wilaya__iexact=wilaya_nom,
-            statut='resolu', resolu_le__isnull=False
+            statut__in=['resolu', 'ferme'], resolu_le__isnull=False,
+            resolu_le__gt=F('created_at'),
         ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
         delai_w_str = _format_duree(delai_w_stats['duree__avg'])
 
@@ -639,7 +646,9 @@ def consulter_performance(request, code_user):
     fermes = Reclamation.objects.filter(assigne_a=user, statut='ferme', created_at__gte=date_limite).count()
 
     delai_stats = Reclamation.objects.filter(
-        assigne_a=user, statut='resolu', resolu_le__isnull=False, created_at__gte=date_limite
+        assigne_a=user, statut__in=['resolu', 'ferme'],
+        resolu_le__isnull=False, resolu_le__gt=F('created_at'),
+        created_at__gte=date_limite,
     ).annotate(duree=F('resolu_le') - F('created_at')).aggregate(Avg('duree'))
 
     creees = Reclamation.objects.filter(cree_par=user, created_at__gte=date_limite).count()

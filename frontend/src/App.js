@@ -49,7 +49,7 @@ function AppContent() {
   const location = useLocation();
 
   useEffect(() => {
-    const token = localStorage.getItem('token') || localStorage.getItem('access_token');
+    const token = sessionStorage.getItem('access_token');
     if (token) {
       try {
         const base64Url = token.split('.')[1];

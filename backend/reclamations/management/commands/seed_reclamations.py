@@ -9,7 +9,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from decouple import config
-from reclamations.models import Reclamation, CommentaireTicket
+from reclamations.models import Reclamation
 from sites_reseau.models import SiteReseau
 from accounts.models import Role
 
@@ -112,7 +112,6 @@ class Command(BaseCommand):
         self.stdout.write(f"  Mots de passe synchronises")
 
         # Delete old
-        CommentaireTicket.objects.all().delete()
         Reclamation.objects.all().delete()
         self.stdout.write("  Anciennes donnees supprimees")
 

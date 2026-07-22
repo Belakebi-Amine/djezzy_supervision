@@ -39,7 +39,7 @@ const Login = () => {
 
     // --- Vérification automatique du token au chargement ---
     useEffect(() => {
-        const token = localStorage.getItem('token') || localStorage.getItem('access_token');
+        const token = sessionStorage.getItem('access_token');
         if (token) {
             try {
                 const base64Url = token.split('.')[1];
@@ -85,9 +85,8 @@ const Login = () => {
             });
 
             if (response.data.access) {
-                localStorage.setItem('token', response.data.access);
-                localStorage.setItem('access_token', response.data.access);
-                localStorage.setItem('refresh_token', response.data.refresh || '');
+                sessionStorage.setItem('access_token', response.data.access);
+                sessionStorage.setItem('refresh_token', response.data.refresh || '');
             }
 
             const decoded = response.data.access ? decodeJWT(response.data.access) : null;

@@ -14,7 +14,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { spawnParticles } from '../hooks/useAnimations';
 import { useNotification } from '../context/NotificationContext';
-import { getTickets, getSites, getAllSites, updateSiteStatus, createSite, archiverSite, restoreSite, getTokenRole, getGroupeTickets, getGroupeTicketStats, resoudreGroupeTicket, assignerGroupeTicket, getArchivedSites, getArchivedTickets } from '../api/tickets';
+import { getTickets, getSites, getAllSites, updateSiteStatus, createSite, archiverSite, restoreSite, getTokenRole, getGroupeTickets, getGroupeTicketStats, resoudreGroupeTicket, assignerGroupeTicket, verrouillerGroupeTicket, deverrouillerGroupeTicket, getArchivedSites, getArchivedTickets } from '../api/tickets';
 import MapComponent from '../components/Map';
 import logoDjezzy from '../assets/Djezzy_Logo.png';
 
@@ -47,7 +47,7 @@ const COLORS = {
     OUVERT: { bg: '#DBEAFE', text: '#1D4ED8', dot: '#2563EB' },
     'EN COURS': { bg: '#FDE68A', text: '#B45309', dot: '#D97706' },
     RESOLU: { bg: '#A7F3D0', text: '#047857', dot: '#15803D' },
-    FERME: { bg: '#F1F5F9', text: '#64748B', dot: '#94A3B8' },
+    FERME: { bg: '#FEE2E2', text: '#DC2626', dot: '#DC2626' },
   },
 };
 
@@ -275,6 +275,14 @@ export default function EngineerDashboard() {
     return () => clearInterval(interval);
   }, [refreshTickets, refreshGroupeTickets, fetchGroupeStats]);
 
+  // ─── Lock ticket when opening modal, unlock when closing ───
+  useEffect(() => {
+    if (!selectedGroupe) return;
+    handleVerrouillerGroupe(selectedGroupe.id);
+    const prevGroupeId = selectedGroupe.id;
+    return () => { handleDeverrouillerGroupe(prevGroupeId); };
+  }, [selectedGroupe?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Fetch all sites including archived (for inline grayed-out display)
   const fetchSitesData = useCallback(async () => {
     setSitesLoading(true);
@@ -379,9 +387,7 @@ export default function EngineerDashboard() {
 
   // Logout – clear tokens and redirect to login
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+    sessionStorage.clear();
     navigate('/login');
   };
 
@@ -414,11 +420,35 @@ export default function EngineerDashboard() {
       fetchGroupeTickets();
       fetchGroupeStats();
     } catch (err) {
-      addNotification("Erreur lors de l'assignation du ticket.", 'error');
+      const msg = err?.data?.error || err?.message || "Erreur lors de l'assignation du ticket.";
+      addNotification(msg, 'error');
     } finally {
       setUpdatingGroupeId(null);
     }
   }, [addNotification, fetchGroupeTickets, fetchGroupeStats, groupeTickets]);
+
+  // Lock a ticket when opening the detail modal
+  const handleVerrouillerGroupe = useCallback(async (groupeId) => {
+    try {
+      const data = await verrouillerGroupeTicket(groupeId);
+      setSelectedGroupe(prev => prev && prev.id === groupeId ? { ...prev, ...data } : prev);
+      setGroupeTickets(prev => prev.map(g => g.id === groupeId ? { ...g, ...data } : g));
+    } catch (err) {
+      if (err.status === 409) {
+        addNotification(`Ticket en cours par ${err.data.locked_by} — consultez en lecture seule`, 'warning');
+      }
+      // Still allow viewing — just don't lock
+    }
+  }, [addNotification]);
+
+  // Unlock a ticket when closing the detail modal
+  const handleDeverrouillerGroupe = useCallback(async (groupeId) => {
+    try {
+      const data = await deverrouillerGroupeTicket(groupeId);
+      setSelectedGroupe(prev => prev && prev.id === groupeId ? { ...prev, ...data } : prev);
+      setGroupeTickets(prev => prev.map(g => g.id === groupeId ? { ...g, ...data } : g));
+    } catch {}
+  }, []);
 
   // Convert a raw status string to the uppercase key used in the COLORS map
   const getStatutKey = (statut) => statut?.replace('_', ' ').toUpperCase();
@@ -837,7 +867,7 @@ export default function EngineerDashboard() {
                             <td style={styles.td}>{t.site?.nom || '-'}</td>
                             <td style={styles.td}>
                               <span style={{ padding: '3px 10px', borderRadius: 4, fontWeight: 700, fontSize: 11, backgroundColor: (COLORS.priorities[t.priorite?.toUpperCase()] || COLORS.priorities.NORMALE).bg, color: (COLORS.priorities[t.priorite?.toUpperCase()] || COLORS.priorities.NORMALE).text }}>
-                                {t.priorite?.toUpperCase()}
+                                {{ basse:'Basse', normale:'Normal', haute:'Haute', critique:'Critique' }[t.priorite?.toLowerCase()] || t.priorite}
                               </span>
                             </td>
                             <td style={{ ...styles.td, color: 'var(--text-muted)' }}>{t.archived_at ? new Date(t.archived_at).toLocaleDateString('fr', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</td>
@@ -967,7 +997,7 @@ export default function EngineerDashboard() {
                                   </span>
                                 )}
                                 <span style={{ padding: '2px 7px', borderRadius: '4px', fontWeight: 700, fontSize: '9px', backgroundColor: prio.bg, color: prio.text }}>
-                                  {groupe.priorite?.toUpperCase()}
+                                  {{ basse:'Basse', normale:'Normal', haute:'Haute', critique:'Critique' }[groupe.priorite?.toLowerCase()] || groupe.priorite}
                                 </span>
                               </div>
                             </div>
@@ -1009,7 +1039,12 @@ export default function EngineerDashboard() {
                                       onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#DCFCE7'; }}
                                     >Résoudre</button>
                                   )}
-                                  {groupe.statut === 'ouvert' && (!groupe.assigne_a_display || groupe.assigne_a_display === '-') ? (
+                                  {groupe.locked_by && groupe.locked_by !== '-' ? (
+                                    <span style={{ padding: '4px 8px', borderRadius: '6px', backgroundColor: '#FEF3C7', color: '#92400E', fontSize: '9px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                                      {groupe.locked_by_display || 'En cours'}
+                                    </span>
+                                  ) : groupe.statut === 'ouvert' && (!groupe.assigne_a_display || groupe.assigne_a_display === '-') ? (
                                     <button
                                       disabled={updatingGroupeId === groupe.id}
                                       onClick={(e) => { e.stopPropagation(); handleAssignerGroupe(groupe.id); }}
@@ -1017,14 +1052,6 @@ export default function EngineerDashboard() {
                                       onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#DBEAFE'; }}
                                       onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#EFF6FF'; }}
                                     >S'assigner</button>
-                                  ) : groupe.statut === 'ferme' ? (
-                                    <button
-                                      disabled={updatingGroupeId === groupe.id}
-                                      onClick={(e) => { e.stopPropagation(); handleAssignerGroupe(groupe.id); }}
-                                      style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #F59E0B33', backgroundColor: '#FEF3C7', color: '#D97706', fontSize: '10px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' }}
-                                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#FDE68A'; }}
-                                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#FEF3C7'; }}
-                                    >Prendre</button>
                                   ) : groupe.assigne_a_display && groupe.assigne_a_display !== '-' ? (
                                     <span style={{ fontSize: '10px', color: COLORS.textMuted, padding: '2px 6px', backgroundColor: '#F1F5F9', borderRadius: '4px' }}>
                                       {groupe.assigne_a_display}
@@ -1182,29 +1209,62 @@ export default function EngineerDashboard() {
         <div className="fade-in" style={styles.overlay} onClick={() => setSelectedGroupe(null)}>
           <div className="scale-in" style={{ ...styles.modal, maxWidth: '800px' }} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ width: '4px', height: '36px', borderRadius: '2px', background: 'linear-gradient(180deg, #e60023, #FF6B3D)' }} />
                 <h2 style={styles.modalTitle}>{selectedGroupe.numero_ticket}</h2>
-                <span style={{ padding: '3px 10px', borderRadius: '4px', fontWeight: 700, fontSize: '11px', backgroundColor: (COLORS.priorities[selectedGroupe.priorite?.toUpperCase()] || COLORS.priorities.NORMALE).bg, color: (COLORS.priorities[selectedGroupe.priorite?.toUpperCase()] || COLORS.priorities.NORMALE).text }}>
-                  {selectedGroupe.priorite?.toUpperCase()}
-                </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: '4px', fontWeight: 700, fontSize: '11px', backgroundColor: (COLORS.status[getStatutKey(selectedGroupe.statut)] || COLORS.status.OUVERT).bg, color: (COLORS.status[getStatutKey(selectedGroupe.statut)] || COLORS.status.OUVERT).text }}>
-                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: (COLORS.status[getStatutKey(selectedGroupe.statut)] || COLORS.status.OUVERT).dot, marginRight: '6px', display: 'inline-block' }} />
+                <span style={{ padding: '4px 12px', borderRadius: '6px', fontWeight: 700, fontSize: '11px', backgroundColor: (COLORS.status[getStatutKey(selectedGroupe.statut)] || COLORS.status.OUVERT).bg, color: (COLORS.status[getStatutKey(selectedGroupe.statut)] || COLORS.status.OUVERT).text, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: (COLORS.status[getStatutKey(selectedGroupe.statut)] || COLORS.status.OUVERT).dot }} />
                   {getStatutKey(selectedGroupe.statut)}
                 </span>
+                <span style={{ padding: '4px 12px', borderRadius: '6px', fontWeight: 700, fontSize: '11px', backgroundColor: (COLORS.priorities[selectedGroupe.priorite?.toUpperCase()] || COLORS.priorities.NORMALE).bg, color: (COLORS.priorities[selectedGroupe.priorite?.toUpperCase()] || COLORS.priorities.NORMALE).text }}>
+                  {{ basse:'Basse', normale:'Normal', haute:'Haute', critique:'Critique' }[selectedGroupe.priorite?.toLowerCase()] || selectedGroupe.priorite}
+                </span>
               </div>
-              <button style={styles.modalClose} onClick={() => setSelectedGroupe(null)}><IconX /></button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {selectedGroupe.statut === 'ferme' && (
+                  <button
+                    disabled={updatingGroupeId === selectedGroupe.id}
+                    onClick={() => handleAssignerGroupe(selectedGroupe.id)}
+                    style={{ display: 'flex', alignItems: 'center', backgroundColor: '#FEF3C7', color: '#D97706', border: '1px solid #FDE68A', padding: '6px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s ease', whiteSpace: 'nowrap' }}
+                  >
+                    <IconUser style={{ marginRight: '4px', width: '12', height: '12' }} />
+                    Prendre le ticket
+                  </button>
+                )}
+                {selectedGroupe.statut === 'ouvert' && (
+                  <button
+                    disabled={updatingGroupeId === selectedGroupe.id}
+                    onClick={() => handleResoudreGroupe(selectedGroupe.id)}
+                    style={{ display: 'flex', alignItems: 'center', backgroundColor: '#DCFCE7', color: '#15803D', border: '1px solid #A7F3D0', padding: '6px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s ease', whiteSpace: 'nowrap' }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '4px' }}><path d="M4 12l5 5 11-11" /></svg>
+                    Resoudre
+                  </button>
+                )}
+                <button style={styles.modalClose} onClick={() => setSelectedGroupe(null)}><IconX /></button>
+              </div>
             </div>
 
             <div style={styles.modalBody}>
               {/* Title */}
               <div style={styles.modalSection}>
-                <h3 style={styles.modalSectionTitle}>Titre</h3>
+                <h3 style={styles.modalSectionTitle}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '4px', backgroundColor: '#FEF3C7', marginRight: '8px' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14,2 14,8 20,8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
+                  </span>
+                  Titre
+                </h3>
                 <p style={{ fontSize: '16px', fontWeight: 700, color: COLORS.textDark, margin: 0 }}>{selectedGroupe.titre}</p>
               </div>
 
               {/* Site info */}
               <div style={styles.modalSection}>
-                <h3 style={styles.modalSectionTitle}>Site</h3>
+                <h3 style={styles.modalSectionTitle}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '4px', backgroundColor: '#EFF6FF', marginRight: '8px' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" /><circle cx="12" cy="10" r="3" /></svg>
+                  </span>
+                  Site
+                </h3>
                 <div style={styles.modalGrid}>
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Nom</span>
@@ -1220,9 +1280,14 @@ export default function EngineerDashboard() {
               {/* Description */}
               {selectedGroupe.description && (
                 <div style={styles.modalSection}>
-                  <h3 style={styles.modalSectionTitle}>Description du problème</h3>
-                  <div style={{ padding: '12px', backgroundColor: '#F8FAFC', borderRadius: '8px', border: `1px solid ${COLORS.border}` }}>
-                    <p style={{ fontSize: '13px', color: COLORS.textDark, lineHeight: '1.6', margin: 0, whiteSpace: 'pre-wrap' }}>{selectedGroupe.description}</p>
+                  <h3 style={styles.modalSectionTitle}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '4px', backgroundColor: '#EDE9FE', marginRight: '8px' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                    </span>
+                    Description du problème
+                  </h3>
+                  <div style={{ padding: '12px 14px', backgroundColor: '#F8FAFC', borderRadius: '8px', border: `1px solid ${COLORS.border}`, borderLeft: '3px solid #7C3AED' }}>
+                    <p style={{ fontSize: '13px', color: COLORS.textDark, lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{selectedGroupe.description}</p>
                   </div>
                 </div>
               )}
@@ -1230,10 +1295,15 @@ export default function EngineerDashboard() {
               {/* Keywords */}
               {selectedGroupe.mots_cles && (
                 <div style={styles.modalSection}>
-                  <h3 style={styles.modalSectionTitle}>Mots-clés consolidés</h3>
+                  <h3 style={styles.modalSectionTitle}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '4px', backgroundColor: '#F0FDF4', marginRight: '8px' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
+                    </span>
+                    Mots-clés consolidés
+                  </h3>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                     {selectedGroupe.mots_cles.split(',').map((kw, i) => (
-                      <span key={i} style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, backgroundColor: '#F1F5F9', color: '#475569' }}>
+                      <span key={i} style={{ padding: '4px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 600, backgroundColor: '#F0FDF4', color: '#16A34A', border: '1px solid #BBF7D0' }}>
                         {kw.trim()}
                       </span>
                     ))}
@@ -1243,27 +1313,32 @@ export default function EngineerDashboard() {
 
               {/* Reclamations list */}
               <div style={styles.modalSection}>
-                <h3 style={styles.modalSectionTitle}>Tickets ({selectedGroupe.reclamations?.length || selectedGroupe.reclamations_count || 0})</h3>
+                <h3 style={styles.modalSectionTitle}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '4px', backgroundColor: '#F1F5F9', marginRight: '8px' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2"><path d="M8 6h13" /><path d="M8 12h13" /><path d="M8 18h13" /><path d="M3 6h.01" /><path d="M3 12h.01" /><path d="M3 18h.01" /></svg>
+                  </span>
+                  Réclamations ({selectedGroupe.reclamations?.length || selectedGroupe.reclamations_count || 0})
+                </h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '300px', overflowY: 'auto' }}>
                   {selectedGroupe.reclamations?.map((rec) => {
                     const recPrio = COLORS.priorities[rec.priorite?.toUpperCase()] || COLORS.priorities.NORMALE;
                     const recStat = COLORS.status[getStatutKey(rec.statut)] || COLORS.status.OUVERT;
                     return (
-                      <div key={rec.id} style={{ padding: '12px', backgroundColor: '#FAFBFC', borderRadius: '8px', border: `1px solid ${COLORS.border}`, borderLeft: `3px solid ${recPrio.side}` }}>
+                      <div key={rec.id} style={{ padding: '12px 14px', backgroundColor: '#FAFBFC', borderRadius: '10px', border: `1px solid ${COLORS.border}`, borderLeft: `4px solid ${recPrio.side}`, transition: 'all 0.15s ease' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontSize: '11px', fontWeight: 700, color: COLORS.textMuted }}>{rec.numero_ticket}</span>
-                            <span style={{ padding: '2px 6px', borderRadius: '3px', fontSize: '9px', fontWeight: 700, backgroundColor: recPrio.bg, color: recPrio.text }}>{rec.priorite?.toUpperCase()}</span>
+                            <span style={{ fontSize: '12px', fontWeight: 700, color: COLORS.textDark }}>{rec.numero_ticket}</span>
+                            <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, backgroundColor: recPrio.bg, color: recPrio.text }}>{{ basse:'Basse', normale:'Normal', haute:'Haute', critique:'Critique' }[rec.priorite?.toLowerCase()] || rec.priorite}</span>
                           </div>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: '3px', fontSize: '9px', fontWeight: 700, backgroundColor: recStat.bg, color: recStat.text }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, backgroundColor: recStat.bg, color: recStat.text }}>
                             <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: recStat.dot, marginRight: '4px', display: 'inline-block' }} />
                             {getStatutKey(rec.statut)}
                           </span>
                         </div>
                         <div style={{ fontSize: '12px', color: COLORS.textDark, fontWeight: 600 }}>{rec.nom_complet_client || rec.nom_client}</div>
-                        <div style={{ fontSize: '11px', color: COLORS.textMuted, marginTop: '2px' }}>{rec.telephone_client} — {formatDateFr(rec.created_at)}</div>
+                        <div style={{ fontSize: '11px', color: COLORS.textMuted, marginTop: '3px' }}>{rec.telephone_client} — {formatDateFr(rec.created_at)}</div>
                         {rec.mots_cles_ia && (
-                          <div style={{ fontSize: '10px', color: COLORS.textMuted, marginTop: '4px', fontStyle: 'italic' }}>Mots-clés: {rec.mots_cles_ia}</div>
+                          <div style={{ fontSize: '10px', color: '#16A34A', marginTop: '4px', fontStyle: 'italic', fontWeight: 500 }}>Mots-clés: {rec.mots_cles_ia}</div>
                         )}
                       </div>
                     );
@@ -1273,6 +1348,12 @@ export default function EngineerDashboard() {
 
               {/* Dates */}
               <div style={styles.modalSection}>
+                <h3 style={styles.modalSectionTitle}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', borderRadius: '4px', backgroundColor: '#F1F5F9', marginRight: '8px' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2"><circle cx="12" cy="12" r="10" /><polyline points="12,6 12,12 16,14" /></svg>
+                  </span>
+                  Dates
+                </h3>
                 <div style={styles.modalGrid}>
                   <div style={styles.modalField}>
                     <span style={styles.modalLabel}>Premier signalement</span>
@@ -1294,39 +1375,29 @@ export default function EngineerDashboard() {
 
             {/* Modal footer */}
             <div style={styles.modalFooter}>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                {selectedGroupe.statut === 'ouvert' && (
-                  <button
-                    disabled={updatingGroupeId === selectedGroupe.id}
-                    onClick={() => handleResoudreGroupe(selectedGroupe.id)}
-                    style={{ display: 'flex', alignItems: 'center', backgroundColor: '#DCFCE7', color: '#15803D', border: '1px solid #A7F3D0', padding: '10px 20px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '6px' }}><path d="M4 12l5 5 11-11" /></svg>
-                    Résoudre le ticket
-                  </button>
-                )}
-                {selectedGroupe.statut === 'ferme' && (
-                  <button
-                    disabled={updatingGroupeId === selectedGroupe.id}
-                    onClick={() => handleAssignerGroupe(selectedGroupe.id)}
-                    style={{ display: 'flex', alignItems: 'center', backgroundColor: '#FEF3C7', color: '#D97706', border: '1px solid #FDE68A', padding: '10px 20px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
-                  >
-                    <IconUser style={{ marginRight: '6px' }} />
-                    Prendre le ticket
-                  </button>
-                )}
+              {/* Lock indicator — hidden when ticket is ouvert */}
+              {selectedGroupe.statut !== 'ouvert' && selectedGroupe.locked_by && selectedGroupe.locked_by !== '-' && (
+                <div style={{ width: '100%', padding: '8px 12px', backgroundColor: '#FEF3C7', borderRadius: '8px', fontSize: '11px', color: '#92400E', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '6px', border: '1px solid #FDE68A' }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                  En cours par <strong>{selectedGroupe.locked_by_display || selectedGroupe.locked_by}</strong>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'stretch', width: '100%' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', flex: 1 }}>
                 {selectedGroupe.statut === 'ouvert' && (!selectedGroupe.assigne_a_display || selectedGroupe.assigne_a_display === '-') && (
                   <button
                     disabled={updatingGroupeId === selectedGroupe.id}
                     onClick={() => handleAssignerGroupe(selectedGroupe.id)}
-                    style={{ display: 'flex', alignItems: 'center', backgroundColor: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', padding: '10px 20px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                    style={{ display: 'flex', alignItems: 'center', backgroundColor: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s ease' }}
                   >
-                    <IconUser style={{ marginRight: '6px' }} />
+                    <IconUser style={{ marginRight: '4px', width: '12', height: '12' }} />
                     S'assigner
                   </button>
                 )}
+                </div>
+                <button style={{ display: 'flex', alignItems: 'center', padding: '8px 20px', borderRadius: '8px', fontSize: '12px', fontWeight: 700, border: 'none', backgroundColor: '#DC2626', color: '#FFFFFF', cursor: 'pointer', transition: 'all 0.15s ease', boxShadow: '0 2px 8px rgba(220,38,38,0.25)', whiteSpace: 'nowrap' }} onClick={() => setSelectedGroupe(null)}>Fermer</button>
               </div>
-              <button style={styles.btnCancel} onClick={() => setSelectedGroupe(null)}>Fermer</button>
             </div>
           </div>
         </div>
@@ -1394,21 +1465,21 @@ const styles = {
   statusBtn: { display: 'inline-flex', alignItems: 'center', padding: '3px 8px', borderRadius: '9px', border: '1px solid', fontSize: '9px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.15s ease' },
 
   // Modal overlay and container styles
-  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modal: { backgroundColor: 'var(--cardBg, #FFFFFF)', borderRadius: '12px', width: '700px', maxWidth: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' },
-  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}` },
-  modalTitle: { margin: 0, fontSize: '18px', fontWeight: 700, color: COLORS.textDark },
-  modalClose: { background: 'none', border: 'none', cursor: 'pointer', color: COLORS.textMuted, padding: '4px' },
+  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' },
+  modal: { backgroundColor: 'var(--cardBg, #FFFFFF)', borderRadius: '14px', width: '700px', maxWidth: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 80px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.05)' },
+  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}`, background: 'linear-gradient(180deg, rgba(248,250,252,0.8) 0%, rgba(255,255,255,0) 100%)' },
+  modalTitle: { margin: 0, fontSize: '18px', fontWeight: 700, color: COLORS.textDark, letterSpacing: '-0.01em' },
+  modalClose: { width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FEE2E2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#DC2626', padding: '4px', transition: 'all 0.15s ease' },
   modalBody: { padding: '24px', overflowY: 'auto', flex: 1 },
-  modalGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' },
+  modalGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' },
   modalSection: { marginBottom: '20px' },
-  modalSectionTitle: { fontSize: '12px', fontWeight: 700, color: COLORS.textMuted, textTransform: 'uppercase', margin: '0 0 12px 0', letterSpacing: '0.5px' },
-  modalField: { display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${COLORS.border}` },
+  modalSectionTitle: { fontSize: '11px', fontWeight: 700, color: COLORS.textDark, textTransform: 'uppercase', margin: '0 0 12px 0', letterSpacing: '0.6px', display: 'flex', alignItems: 'center', paddingBottom: '8px', borderBottom: '2px solid var(--border-light)' },
+  modalField: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid var(--border-light)` },
   modalLabel: { fontSize: '12px', color: COLORS.textMuted, fontWeight: 500 },
   modalValue: { fontSize: '13px', color: COLORS.textDark, fontWeight: 600 },
-  modalText: { fontSize: '13px', color: COLORS.textDark, lineHeight: '1.6', margin: 0, whiteSpace: 'pre-wrap' },
+  modalText: { fontSize: '13px', color: COLORS.textDark, lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' },
   comment: { padding: '12px', backgroundColor: 'var(--inputBg, #F8FAFC)', borderRadius: '8px', marginBottom: '8px' },
-  modalFooter: { padding: '16px 24px', borderTop: `1px solid ${COLORS.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  modalFooter: { padding: '16px 24px', borderTop: `1px solid ${COLORS.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(0deg, rgba(248,250,252,0.6) 0%, rgba(255,255,255,0) 100%)' },
   btnCancel: { backgroundColor: 'var(--cardBg, #FFFFFF)', border: `1px solid ${COLORS.border}`, padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', color: COLORS.textDark },
   btnNew: { display: 'flex', alignItems: 'center', backgroundColor: COLORS.djezzyRed, color: '#FFFFFF', border: 'none', padding: '8px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' },
   btnDanger: { display: 'flex', alignItems: 'center', backgroundColor: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA', padding: '10px 24px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' },

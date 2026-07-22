@@ -3,12 +3,23 @@
 // Ticket and site management API functions. Handles CRUD for
 // reclamation tickets, network sites, and user management.
 // Includes JWT token handling for authenticated requests.
+// Tokens stored in sessionStorage (per-tab) so each tab can
+// have a different user logged in simultaneously.
 // ─────────────────────────────────────────────────────────────
 const API_URL = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000/api";
 
+// Helper: read/write tokens from sessionStorage (per-tab isolation)
+const getAccessToken = () => sessionStorage.getItem('access_token');
+const setAccessToken = (t) => sessionStorage.setItem('access_token', t);
+const clearAccessToken = () => sessionStorage.removeItem('access_token');
+const getRefreshToken = () => sessionStorage.getItem('refresh_token');
+const setRefreshToken = (t) => sessionStorage.setItem('refresh_token', t);
+const clearRefreshToken = () => sessionStorage.removeItem('refresh_token');
+const clearAllTokens = () => { clearAccessToken(); clearRefreshToken(); };
+
 // Extract user role from the JWT token payload
 export const getTokenRole = () => {
-    const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+    const token = getAccessToken();
     if (!token) return null;
     const payload = decodePayload(token);
     return payload?.role || null;
@@ -23,7 +34,7 @@ const decodePayload = (token) => {
 };
 
 const refreshToken = async () => {
-    const refresh = localStorage.getItem('refresh_token');
+    const refresh = getRefreshToken();
     if (!refresh) return null;
     try {
         const response = await fetch(`${API_URL}/token/refresh/`, {
@@ -33,20 +44,17 @@ const refreshToken = async () => {
         });
         if (!response.ok) throw new Error('Refresh failed');
         const data = await response.json();
-        localStorage.setItem('access_token', data.access);
-        localStorage.setItem('token', data.access);
-        if (data.refresh) localStorage.setItem('refresh_token', data.refresh);
+        setAccessToken(data.access);
+        if (data.refresh) setRefreshToken(data.refresh);
         return data.access;
     } catch {
-        localStorage.removeItem('token');
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
+        clearAllTokens();
         return null;
     }
 };
 
 const getHeaders = async () => {
-    let token = localStorage.getItem('access_token') || localStorage.getItem('token');
+    let token = getAccessToken();
     const payload = token ? decodePayload(token) : null;
     const valid = payload && Date.now() < payload.exp * 1000;
 
@@ -62,10 +70,11 @@ const getHeaders = async () => {
     };
 };
 
-// On 401, clear tokens — components will handle the redirect gracefully
-const checkAuthAndRedirect = (status) => {
+// On 401, try refresh first. Only clear if refresh also fails.
+const checkAuthAndRedirect = async (status) => {
     if (status === 401) {
-        ['token', 'access_token', 'refresh_token'].forEach(k => localStorage.removeItem(k));
+        const newToken = await refreshToken();
+        if (!newToken) clearAllTokens();
     }
 };
 
@@ -437,7 +446,46 @@ export const assignerGroupeTicket = async (id) => {
         method: 'POST', headers: await getHeaders()
     });
     checkAuthAndRedirect(response.status);
-    if (!response.ok) throw new Error("Erreur lors de l'assignation du ticket groupé");
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        const err = new Error(data.error || "Erreur lors de l'assignation du ticket");
+        err.status = response.status;
+        err.data = data;
+        throw err;
+    }
+    return await response.json();
+};
+
+/**
+ * Locks a grouped ticket so only the locker can take action.
+ */
+export const verrouillerGroupeTicket = async (id) => {
+    const response = await fetch(`${API_URL}/reclamations/groupes/${id}/verrouiller/`, {
+        method: 'POST', headers: await getHeaders()
+    });
+    checkAuthAndRedirect(response.status);
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        const err = new Error(data.error || 'Erreur lors du verrouillage du ticket');
+        err.status = response.status;
+        err.data = data;
+        throw err;
+    }
+    return await response.json();
+};
+
+/**
+ * Unlocks a grouped ticket so others can take action.
+ */
+export const deverrouillerGroupeTicket = async (id) => {
+    const response = await fetch(`${API_URL}/reclamations/groupes/${id}/deverrouiller/`, {
+        method: 'POST', headers: await getHeaders()
+    });
+    checkAuthAndRedirect(response.status);
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Erreur lors du déverrouillage du ticket');
+    }
     return await response.json();
 };
 

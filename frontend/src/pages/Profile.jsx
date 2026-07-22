@@ -47,7 +47,7 @@ const ROLE_DASHBOARDS = {
  */
 const getDecodedRole = () => {
   try {
-    const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+    const token = sessionStorage.getItem('access_token');
     if (!token) return null;
     const base64Url = token.split('.')[1];
     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
@@ -60,7 +60,7 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api';
 
 /* Helper that returns the standard auth headers for every API request */
 const getHeaders = () => {
-  const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+  const token = sessionStorage.getItem('access_token');
   return { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' };
 };
 
@@ -87,7 +87,7 @@ export default function Profile() {
 
   /* ── Fetch the current user's profile on mount ── */
   useEffect(() => {
-    const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+    const token = sessionStorage.getItem('access_token');
     if (!token) { navigate('/login'); return; }
     fetch(`${API_URL}/accounts/me/`, { method: 'GET', headers: getHeaders() })
       .then((res) => { if (!res.ok) throw new Error('Non autorise'); return res.json(); })
@@ -97,7 +97,7 @@ export default function Profile() {
 
   /* Clear all auth tokens from localStorage and redirect to the login page */
   const handleLogout = () => {
-    ['token', 'access_token', 'refresh_token'].forEach((k) => localStorage.removeItem(k));
+    sessionStorage.clear();
     navigate('/login');
   };
 
